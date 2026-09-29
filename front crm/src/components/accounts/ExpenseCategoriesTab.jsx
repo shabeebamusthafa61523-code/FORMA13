@@ -27,9 +27,24 @@ import {
   Loader2
 } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import { useUser } from '../../contexts/UserContext';
+import ConfirmModal from '../ConfirmModal';
+import ExcelExportButton from '../ExcelExportButton';
 
 const ExpenseCategoriesTab = () => {
   const { showToast } = useToast();
+  const { user } = useUser();
+
+  const isSuperAdmin = useMemo(() => {
+    if (user?.isSuperAdmin || user?.role === 'superadmin' || user?.role_id === '0') return true;
+    try {
+      const saved = JSON.parse(localStorage.getItem('user') || '{}');
+      return Boolean(saved.isSuperAdmin || saved.is_super_admin || saved.role === 'superadmin' || saved.role_id === '0');
+    } catch {
+      return false;
+    }
+  }, [user]);
+
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -154,8 +169,18 @@ const ExpenseCategoriesTab = () => {
     }
   };
 
-  const handleDeleteCategory = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete category "${name}"?`)) return;
+  // Delete Confirm Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, name: '' });
+
+  const triggerDeleteCategory = (id, name) => {
+    setDeleteConfirm({ isOpen: true, id, name });
+  };
+
+  const handleExecuteDeleteCategory = async () => {
+    const { id } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, id: null, name: '' });
+    if (!id) return;
+
     try {
       const res = await deleteExpenseCategory(id);
       if (res.success) {
@@ -274,6 +299,19 @@ const ExpenseCategoriesTab = () => {
             <Coins size={16} />
             <span>Set Opening Balances</span>
           </button>
+          <ExcelExportButton
+            data={filteredCategories.map(c => ({
+              'Category Name': c.name || '',
+              'Description': c.description || '',
+              'Opening Balance': c.openingBalance || 0,
+              'Total Inflow': c.totalInflow || 0,
+              'Total Outflow': c.totalOutflow || 0,
+              'Current Balance': c.balance || 0,
+              'Status': c.isActive ? 'Active' : 'Inactive'
+            }))}
+            fileName="expense_categories_export"
+            sheetName="Categories"
+          />
           <button
             onClick={() => {
               setCategoryName('');
@@ -458,11 +496,11 @@ const ExpenseCategoriesTab = () => {
                   >
                     <Edit2 size={14} />
                   </button>
-                  {!cat.isSystemDefault && (
+                  {(isSuperAdmin || !cat.isSystemDefault) && (
                     <button
-                      onClick={() => handleDeleteCategory(cat._id, cat.name)}
+                      onClick={() => triggerDeleteCategory(cat._id, cat.name)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                      title="Delete Category"
+                      title={cat.isSystemDefault ? "Delete System Category (Super Admin)" : "Delete Category"}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -783,6 +821,17 @@ const ExpenseCategoriesTab = () => {
         </div>,
         document.body
       )}
+
+      {/* Viewport Confirmation Modal for Deleting Category */}
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null, name: '' })}
+        onConfirm={handleExecuteDeleteCategory}
+        title="Delete Expense Category"
+        message={`Are you sure you want to delete category "${deleteConfirm.name}"? This action cannot be undone.`}
+        confirmText="Delete Category"
+        type="danger"
+      />
     </div>
   );
 };

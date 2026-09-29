@@ -465,9 +465,12 @@ export const userController = {
         identityNumber
       } = req.body;
 
-      const searchConditions = [{ email }];
+      const finalEmail = (email && email.trim()) ? email.trim() : `${(name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}${phone ? phone.slice(-4) : Date.now()}@fabtec.com`;
+      const finalEmpId = (employeeId && employeeId.trim()) ? employeeId.trim() : `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const searchConditions = [{ email: finalEmail }];
       if (phone) searchConditions.push({ phone });
-      if (employeeId) searchConditions.push({ employeeId });
+      if (finalEmpId) searchConditions.push({ employeeId: finalEmpId });
 
       const existingUsers = await User.find({
         $or: searchConditions
@@ -475,9 +478,9 @@ export const userController = {
 
       if (existingUsers.length > 0) {
         const conflicts = [];
-        const hasEmail = existingUsers.some(u => u.email === email);
+        const hasEmail = existingUsers.some(u => u.email === finalEmail);
         const hasPhone = phone && existingUsers.some(u => u.phone === phone);
-        const hasEmpId = employeeId && existingUsers.some(u => u.employeeId === employeeId);
+        const hasEmpId = finalEmpId && existingUsers.some(u => u.employeeId === finalEmpId);
 
         if (hasEmail) conflicts.push('Email');
         if (hasPhone) conflicts.push('Phone number');
@@ -510,17 +513,17 @@ export const userController = {
       const newUser =
         await User.create({
           name,
-          email,
+          email: finalEmail,
           phone,
           role: role || 'employee',
           role_id: role === 'admin' ? '1' : (role === 'manager' ? '2' : '3'),
           department,
           departmentId,
-          designation: selectedDesignation?.name || '',
+          designation: selectedDesignation?.name || (typeof designation === 'string' ? designation : ''),
           designationId: selectedDesignation?._id,
           reportingManager,
           status: status || 'active',
-          employeeId,
+          employeeId: finalEmpId,
           avatar: fileUrl,
           profile_image: fileUrl,
           passwordHash,
@@ -644,7 +647,10 @@ export const userController = {
         reportingManager,
       };
       if (role) updateFields.role = role;
-      if (status) updateFields.status = status;
+      if (status) {
+        updateFields.status = status;
+        updateFields.isActive = status === 'active';
+      }
 
       if (joining_date !== undefined) updateFields.joining_date = joining_date ? new Date(joining_date) : null;
       if (salary !== undefined) updateFields.salary = parseFloat(salary) || 0;
@@ -696,7 +702,8 @@ export const userController = {
 
       if (role) {
         updateFields.role = role;
-        updateFields.role_id = role === 'admin' ? '1' : (role === 'manager' ? '2' : '3');
+        updateFields.role_id = role === 'superadmin' ? '0' : (role === 'hr' ? '1' : (role === 'admin' ? '2' : '3'));
+        updateFields.isSuperAdmin = role === 'superadmin';
       }
 
       if (status !== undefined) {
@@ -779,10 +786,13 @@ export const userController = {
         );
       }
 
+      const role_id = role === 'superadmin' ? '0' : (role === 'hr' ? '1' : (role === 'admin' ? '2' : '3'));
+      const isSuperAdmin = role === 'superadmin';
+
       const updatedUser =
         await User.findByIdAndUpdate(
           id,
-          { role },
+          { role, role_id, isSuperAdmin },
           { new: true }
         );
 
@@ -980,6 +990,9 @@ export const userController = {
         if (user.isSuperAdmin) {
           user.role = 'superadmin';
           user.role_id = '0';
+        } else if (user.role === 'superadmin') {
+          user.role = 'admin';
+          user.role_id = '2';
         }
       }
       if (role !== undefined && role) {
@@ -987,6 +1000,9 @@ export const userController = {
         if (role === 'superadmin') {
           user.isSuperAdmin = true;
           user.role_id = '0';
+        } else {
+          user.isSuperAdmin = false;
+          user.role_id = role === 'hr' ? '1' : (role === 'admin' ? '2' : '3');
         }
       }
 

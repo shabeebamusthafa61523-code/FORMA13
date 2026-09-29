@@ -25,9 +25,9 @@ import {
   Phone,
   MapPin,
   Download,
-  Edit3,
-  Trash2
+  ExternalLink
 } from 'lucide-react';
+import ExcelExportButton from '../components/ExcelExportButton';
 import {
   getSalaryPayments,
   approveOrRejectSalaryPayment,
@@ -728,16 +728,31 @@ export default function ApprovalsPage() {
           </div>
         </div>
 
-        {activeTab === 'salary' && (
-          <button
-            onClick={handleApproveAllSalaries}
-            disabled={bulkSubmitting || pendingSalaryCount === 0}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-          >
-            {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
-            Approve All Pending Salaries ({pendingSalaryCount})
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <ExcelExportButton
+            data={
+              activeTab === 'leave'
+                ? filteredLeaves.map(l => ({ 'Applicant': l.applicantName || l.applicant_id?.name || '', 'Type': l.leaveType || l.leave_type || '', 'Dates': `${l.startDate ? new Date(l.startDate).toLocaleDateString() : ''} to ${l.endDate ? new Date(l.endDate).toLocaleDateString() : ''}`, 'Reason': l.reason || '', 'Status': l.status || 'PENDING' }))
+                : activeTab === 'salary'
+                ? filteredSalaries.map(s => ({ 'Employee': s.employeeName || s.employee_id?.name || '', 'Month/Year': s.monthYear || s.month_year || '', 'Amount': s.paidAmount || s.paid_amount || 0, 'Status': s.status || 'PENDING' }))
+                : activeTab === 'expense'
+                ? filteredExpenses.map(e => ({ 'Title': e.title || '', 'Category': e.category || '', 'Amount': e.amount || 0, 'Recorded By': e.recordedBy?.name || '', 'Status': e.approvalStatus || 'APPROVED' }))
+                : filteredRecruitment.map(r => ({ 'Candidate': r.name || '', 'Phone': r.phone || '', 'Status': r.status || '', 'Selection': r.selected || 'No', 'MD Approval': r.approval_status || 'Pending' }))
+            }
+            fileName={`approvals_${activeTab}_export`}
+            sheetName="Approvals"
+          />
+          {activeTab === 'salary' && (
+            <button
+              onClick={handleApproveAllSalaries}
+              disabled={bulkSubmitting || pendingSalaryCount === 0}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
+            >
+              {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
+              Approve All Pending Salaries ({pendingSalaryCount})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

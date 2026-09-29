@@ -366,9 +366,12 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     return found ? (found.departmentId?.name || found.department || "") : "";
   }, [allUsers]);
 
-  // Filtered operators list
+  // Filtered operators list (excludes superadmins)
   const filteredUsers = useMemo(() => {
     return allUsers.filter(u => {
+      const userRoleId = String(u.roleId || u.role_id || u.role || '');
+      const isSuper = u.isSuperAdmin === true || u.role === 'superadmin' || userRoleId === '0' || userRoleId.toLowerCase() === 'superadmin';
+      if (isSuper) return false;
       if (globalDepartment !== "all") {
         const deptName = u.departmentId?.name || u.department || "";
         if (deptName.toLowerCase() !== globalDepartment.toLowerCase()) return false;
@@ -485,7 +488,11 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     // Departments that belong to MD view only — excluded from admin Operational Task Analytics
     const MD_ONLY_DEPTS = ["academy", "hr analytics", "hr/admin", "hr", "daily task tracker"];
 
-    let list = allUsers.map(u => {
+    let list = allUsers.filter(u => {
+      const userRoleId = String(u.roleId || u.role_id || u.role || '');
+      const isSuper = u.isSuperAdmin === true || u.role === 'superadmin' || userRoleId === '0' || userRoleId.toLowerCase() === 'superadmin';
+      return !isSuper;
+    }).map(u => {
       const userIdStr = String(u.id || u._id || "").trim();
       const userTasks = tasks.filter(t => {
         const assignedId = (t.assigned_to && typeof t.assigned_to === "object")
@@ -1083,6 +1090,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
   // ----------------------------------------------------
   const renderAdminView = () => {
     const filteredUsersCount = allUsers.filter(u => {
+      const userRoleId = String(u.roleId || u.role_id || u.role || '');
+      const isSuper = u.isSuperAdmin === true || u.role === 'superadmin' || userRoleId === '0' || userRoleId.toLowerCase() === 'superadmin';
+      if (isSuper) return false;
       if (globalDepartment === "all") return true;
       const deptName = u.departmentId?.name || u.department || "";
       return deptName.toLowerCase() === globalDepartment.toLowerCase();

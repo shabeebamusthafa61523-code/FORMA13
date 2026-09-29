@@ -7,6 +7,7 @@ import {
 import { getOperations, createOperation, updateOperation, deleteOperation } from '../../services/accountsService';
 import ConfirmModal from '../ConfirmModal';
 import { useToast } from '../ToastProvider';
+import ExcelExportButton from '../ExcelExportButton';
 
 const OperationTab = () => {
   const [operations, setOperations] = useState([]);
@@ -298,8 +299,23 @@ const OperationTab = () => {
             title="Refresh Data"
             className="p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition cursor-pointer"
           >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
+
+          {/* Export Excel Button */}
+          <ExcelExportButton
+            data={filteredOperations.map(o => ({
+              'Date': o.date ? new Date(o.date).toISOString().split('T')[0] : '',
+              'Particulars': o.particulars || '',
+              'Given By': o.givenBy || '',
+              'Given To': o.givenTo || '',
+              'Amount (₹)': Number(o.amount || 0),
+              'Remarks': o.remarks || ''
+            }))}
+            fileName="Operation_Accounts_Ledger"
+            sheetName="Operations"
+            title="Export Excel"
+          />
         </div>
       </div>
 

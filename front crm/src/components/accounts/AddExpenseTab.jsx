@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getExpenseCategories, getExpenses, createExpense, updateExpense, deleteExpense, approveOrRejectExpense } from '../../services/accountsService';
+import { getExpenseCategories, getExpenses, createExpense, updateExpense, deleteExpense, approveOrRejectExpense, getVendors } from '../../services/accountsService';
 import ExpenseCategoriesTab from './ExpenseCategoriesTab';
+import VendorModal from './VendorModal';
+import ExcelExportButton from '../ExcelExportButton';
 import { 
   PlusCircle, 
   Search, 
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react';
 import { getOpeningBalance, setOpeningBalance as saveOpeningBalanceApi } from '../../services/accountsService';
 import { useToast } from '../ToastProvider';
+import ConfirmModal from '../ConfirmModal';
 
 const AddExpenseTab = () => {
   const { showToast } = useToast();
@@ -52,11 +55,6 @@ const AddExpenseTab = () => {
   });
 
   const handleOpenEdit = (exp) => {
-    const st = String(exp.status || 'PENDING').toUpperCase();
-    if (st === 'APPROVED') {
-      showToast('Approved expenses cannot be edited.', 'warning');
-      return;
-    }
     setEditingExpense(exp);
     let expDate = new Date().toISOString().split('T')[0];
     if (exp.date) {
@@ -210,18 +208,23 @@ const AddExpenseTab = () => {
 
   // Add Expense Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [vendors, setVendors] = useState([]);
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
 
   // Form State
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [categoryId, setCategoryId] = useState('');
+  const [categoryName, setCategoryName] = useState('');
   const [amount, setAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [paidTo, setPaidTo] = useState('');
+  const [receiptNo, setReceiptNo] = useState('');
   const [description, setDescription] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreviewName, setAttachmentPreviewName] = useState('');
 
   // Tax & GST States
+  const [showGstOptions, setShowGstOptions] = useState(false);
   const [taxOption, setTaxOption] = useState('No GST'); // 'No GST', 'Exclusive GST', 'Inclusive GST'
   const [gstCategory, setGstCategory] = useState('CGST_SGST'); // 'CGST_SGST', 'IGST', 'UTGST', 'EXEMPT'
   const [gstRate, setGstRate] = useState(0);
@@ -309,6 +312,36 @@ const AddExpenseTab = () => {
     return count;
   }, [filterCategory, filterMode, filterStatus, startDate, endDate, sortBy, sortOrder]);
 
+  // Top Expense Summary Metrics Calculation
+  const expenseSummaryMetrics = React.useMemo(() => {
+    let totalOutflow = 0;
+    let count = expenses.length;
+
+    expenses.forEach(e => {
+      const amt = Number(e.totalAmount || e.amount || 0);
+      totalOutflow += amt;
+    });
+
+    return { totalOutflow, count };
+  }, [expenses]);
+
+  const handleRemoveReceiptAttachment = async () => {
+    if (!editingExpense) return;
+    if (!window.confirm('Are you sure you want to remove the receipt attachment from this expense entry?')) return;
+    try {
+      const res = await updateExpense(editingExpense._id, { removeAttachment: true });
+      if (res.success || res.data) {
+        showToast('Receipt attachment removed successfully!', 'success');
+        setEditingExpense(prev => prev ? { ...prev, attachment: '' } : null);
+        setExpenses(prev => prev.map(item => String(item._id) === String(editingExpense._id) ? { ...item, attachment: '' } : item));
+      } else {
+        showToast(res.message || 'Failed to remove receipt.', 'warning');
+      }
+    } catch (err) {
+      showToast('Error removing receipt attachment.', 'error');
+    }
+  };
+
   const sortedAndFilteredExpenses = React.useMemo(() => {
     let result = [...expenses];
     if (searchTerm) {
@@ -356,6 +389,18 @@ const AddExpenseTab = () => {
     return result;
   }, [expenses, searchTerm, startDate, endDate, sortBy, sortOrder]);
 
+  const expenseExportData = React.useMemo(() => {
+    return sortedAndFilteredExpenses.map(e => ({
+      'Date': e.date ? new Date(e.date).toISOString().split('T')[0] : '',
+      'Category': e.categoryName || e.category?.name || 'Expense',
+      'Paid To / Vendor': e.paidTo || '',
+      'Payment Mode': e.paymentMode || '',
+      'Amount (₹)': Number(e.totalAmount || e.amount || 0),
+      'Description / Notes': e.description || '',
+      'Added By': e.addedByName || e.addedBy?.name || 'Accountant'
+    }));
+  }, [sortedAndFilteredExpenses]);
+
   // View Attachment Modal
   const [previewFile, setPreviewFile] = useState(null);
 
@@ -375,12 +420,14 @@ const AddExpenseTab = () => {
     setLoading(true);
     setError('');
     try {
-      const [catRes, expRes] = await Promise.all([
+      const [catRes, expRes, venRes] = await Promise.all([
         getExpenseCategories(),
-        getExpenses({ category: filterCategory, paymentMode: filterMode, status: filterStatus, search: searchTerm })
+        getExpenses({ category: filterCategory, paymentMode: filterMode, status: filterStatus, search: searchTerm }),
+        getVendors().catch(() => ({ success: false, data: [] }))
       ]);
       if (catRes.success) setCategories(catRes.data || []);
       if (expRes.success) setExpenses(expRes.data || []);
+      if (venRes && venRes.success) setVendors(venRes.data || []);
     } catch (err) {
       console.error('Data load error:', err);
       setError('Failed to load expense records.');
@@ -397,27 +444,7 @@ const AddExpenseTab = () => {
     return categories.reduce((sum, c) => sum + (Number(c.openingBalance) || 0), 0);
   }, [categories]);
 
-  const pendingCount = useMemo(() => {
-    return expenses.filter(e => (e.status || 'APPROVED').toUpperCase() === 'PENDING').length;
-  }, [expenses]);
 
-  const handleExpenseAction = async (id, action) => {
-    let rejectionReason = '';
-    if (action === 'REJECTED') {
-      const input = window.prompt('Enter rejection reason (Optional):');
-      if (input === null) return;
-      rejectionReason = input;
-    }
-    try {
-      const res = await approveOrRejectExpense(id, { action, rejectionReason });
-      if (res.success) {
-        showToast(`Expense ${action.toLowerCase()} successfully!`, 'success');
-        loadData();
-      }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to update expense status.', 'error');
-    }
-  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -447,6 +474,7 @@ const AddExpenseTab = () => {
       formData.append('amount', amount);
       formData.append('paymentMode', paymentMode);
       formData.append('paidTo', paidTo.trim());
+      if (receiptNo) formData.append('receiptNo', receiptNo.trim());
       formData.append('description', description.trim());
       formData.append('taxOption', taxOption);
       formData.append('gstCategory', gstCategory);
@@ -465,6 +493,7 @@ const AddExpenseTab = () => {
         showToast('Expense record saved successfully!', 'success');
         setAmount('');
         setPaidTo('');
+        setReceiptNo('');
         setDescription('');
         setAttachment(null);
         setAttachmentPreviewName('');
@@ -478,8 +507,17 @@ const AddExpenseTab = () => {
     }
   };
 
-  const handleDeleteExpense = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this expense entry?')) return;
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+
+  const triggerDeleteExpense = (id) => {
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const handleExecuteDeleteExpense = async () => {
+    const { id } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, id: null });
+    if (!id) return;
+
     try {
       const res = await deleteExpense(id);
       if (res.success) {
@@ -548,6 +586,42 @@ const AddExpenseTab = () => {
         <ExpenseCategoriesTab />
       ) : (
         <>
+          {/* Top Summary Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="bg-white dark:bg-slate-900 border border-rose-500/20 dark:border-rose-500/30 rounded-2xl p-3.5 shadow-2xs min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Total Expense Outflow">Total Expense Outflow</p>
+                <DollarSign size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
+              </div>
+              <h4 className="text-base font-black text-rose-600 dark:text-rose-400 mt-1 font-mono min-w-0 truncate" title={`₹${expenseSummaryMetrics.totalOutflow.toLocaleString('en-IN')}`}>
+                ₹{expenseSummaryMetrics.totalOutflow.toLocaleString('en-IN')}
+              </h4>
+              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate">Total Expenses Recorded</p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-blue-500/20 dark:border-blue-500/30 rounded-2xl p-3.5 shadow-2xs min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Expense Count">Expense Count</p>
+                <Receipt size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+              </div>
+              <h4 className="text-base font-black text-blue-600 dark:text-blue-400 mt-1 font-mono min-w-0 truncate" title={`${expenseSummaryMetrics.count}`}>
+                {expenseSummaryMetrics.count} Entries
+              </h4>
+              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate">Total Expense Vouchers</p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-3.5 shadow-2xs min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Opening Balance">Global Opening Balance</p>
+                <Coins size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              </div>
+              <h4 className="text-base font-black text-amber-600 dark:text-amber-400 mt-1 font-mono min-w-0 truncate" title={`₹${expenseObAmount.toLocaleString('en-IN')}`}>
+                ₹{expenseObAmount.toLocaleString('en-IN')}
+              </h4>
+              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate">Expense Opening Balance</p>
+            </div>
+          </div>
+
           {/* Sleek 1-Row Toolbar Header */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl p-3 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Left Title */}
@@ -577,23 +651,6 @@ const AddExpenseTab = () => {
               <Tag size={13} />
               <span>Categories OB: ₹{totalCategoryOb.toLocaleString('en-IN')}</span>
             </div>
-          )}
-
-          {/* Pending Expenses Badge Toggle */}
-          {pendingCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setFilterStatus(prev => prev === 'PENDING' ? '' : 'PENDING')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold shrink-0 cursor-pointer transition border ${
-                filterStatus === 'PENDING'
-                  ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                  : 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
-              }`}
-              title="Click to filter showing only Pending Expenses"
-            >
-              <UserCheck size={13} />
-              <span>⏳ {pendingCount} Pending Approval{pendingCount > 1 ? 's' : ''}</span>
-            </button>
           )}
         </div>
 
@@ -639,6 +696,14 @@ const AddExpenseTab = () => {
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
 
+          {/* Export Excel Button */}
+          <ExcelExportButton
+            data={expenseExportData}
+            fileName="Expenses_List"
+            sheetName="Expenses"
+            title="Export Excel"
+          />
+
           {/* Set Expense Opening Balance Button */}
           <button
             type="button"
@@ -660,6 +725,309 @@ const AddExpenseTab = () => {
         </div>
       </div>
 
+      {/* Inline Add Expense Form (In Page Itself - Placed Above Expense List) */}
+      {isAddModalOpen && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs p-5 mb-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <PlusCircle size={18} className="text-indigo-500" />
+              Record New Expense Entry
+            </h3>
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(false)}
+              className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold transition cursor-pointer"
+            >
+              Cancel & Back to List
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmitExpense} className="space-y-4 text-xs">
+            {/* Row 1: Date (1 col) + Expense Category (1 col) + Amount (1 col) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Date <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-medium"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Category <span className="text-rose-500">*</span>
+                  </label>
+                </div>
+                <select
+                  required
+                  value={categoryId}
+                  onChange={(e) => {
+                    const selectedCatId = e.target.value;
+                    setCategoryId(selectedCatId);
+                    const selectedCatObj = categories.find(c => String(c._id || c.id) === String(selectedCatId));
+                    if (selectedCatObj) setCategoryName(selectedCatObj.name);
+                  }}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
+                >
+                  <option value="">Select Expense Category...</option>
+                  {categories.map((cat) => (
+                    <option key={cat._id || cat.id} value={cat._id || cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Base Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showGstOptions) {
+                        setShowGstOptions(false);
+                        setTaxOption('No GST');
+                        setGstRate(0);
+                      } else {
+                        setShowGstOptions(true);
+                        setTaxOption('Exclusive GST');
+                        setGstRate(18);
+                      }
+                    }}
+                    className={`text-[11px] font-bold transition flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border ${
+                      showGstOptions
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400'
+                        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100'
+                    }`}
+                  >
+                    <Receipt size={11} />
+                    <span>{showGstOptions ? '- Hide GST Options' : '+ Add GST Options'}</span>
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Tax Treatment & GST Breakdown (Only shown if enabled) */}
+            {showGstOptions && (
+              <div className="bg-slate-50/70 dark:bg-slate-950/50 p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Tax / GST Option
+                    </label>
+                    <select
+                      value={taxOption}
+                      onChange={(e) => {
+                        setTaxOption(e.target.value);
+                        if (e.target.value !== 'No GST' && gstRate === 0) setGstRate(18);
+                      }}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
+                    >
+                      <option value="No GST">No GST / Exempt</option>
+                      <option value="Exclusive GST">Exclusive GST (+ Tax)</option>
+                      <option value="Inclusive GST">Inclusive GST (Tax Included)</option>
+                    </select>
+                  </div>
+
+                  {taxOption !== 'No GST' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        GST Rate (%)
+                      </label>
+                      <select
+                        value={gstRate}
+                        onChange={(e) => setGstRate(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
+                      >
+                        <option value="0">0% (Exempt)</option>
+                        <option value="5">5% GST</option>
+                        <option value="12">12% GST</option>
+                        <option value="18">18% GST</option>
+                        <option value="28">28% GST</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      GST Amount (₹)
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={`₹${(currentTaxCalc.gstAmount || 0).toLocaleString('en-IN')}`}
+                      className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Total Net Expense (₹)
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={`₹${(currentTaxCalc.totalAmount || 0).toLocaleString('en-IN')}`}
+                      className="w-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl px-3 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-mono font-extrabold"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Row 3: Paid To / Vendor + Payment Mode + Receipt / Bill No */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Paid To <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsVendorModalOpen(true)}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    title="Manage suppliers"
+                  >
+                    <PlusCircle size={12} />
+                    <span>+ Manage Suppliers</span>
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {vendors.length > 0 && (
+                    <select
+                      value={vendors.some(v => v.name === paidTo) ? paidTo : ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setPaidTo(e.target.value);
+                        }
+                      }}
+                      className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer"
+                    >
+                      <option value="">-- Select Registered Vendor --</option>
+                      {vendors.map((v) => (
+                        <option key={v._id || v.id} value={v.name}>
+                          {v.name} {v.phone ? `(${v.phone})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Electric Company / Vendor Name"
+                    value={paidTo}
+                    onChange={(e) => setPaidTo(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Payment Mode <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={paymentMode}
+                  onChange={(e) => setPaymentMode(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI / QR Code</option>
+                  <option value="Bank">Bank Transfer / NEFT / IMPS</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Receipt / Bill No.
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. BILL-2026-901"
+                  value={receiptNo}
+                  onChange={(e) => setReceiptNo(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                />
+              </div>
+            </div>
+
+            {/* Row 4: Attachment & Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Attachment / Bill Copy
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={handleFileChange}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Description / Remarks
+                </label>
+                <input
+                  type="text"
+                  placeholder="Additional remarks or bill notes..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="animate-spin" size={13} />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Expense Entry'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Expenses Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -671,7 +1039,6 @@ const AddExpenseTab = () => {
                 <th className="py-3 px-4">Paid To</th>
                 <th className="py-3 px-4">Mode</th>
                 <th className="py-3 px-4 text-right">Amount (₹)</th>
-                <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Added By</th>
                 <th className="py-3 px-4 text-center">Attachment</th>
                 <th className="py-3 px-4 text-right">Action</th>
@@ -680,20 +1047,19 @@ const AddExpenseTab = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 text-slate-700 dark:text-slate-300 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Loader2 className="animate-spin text-indigo-600 mx-auto mb-2" size={24} />
                     Loading expenses...
                   </td>
                 </tr>
               ) : sortedAndFilteredExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     No expense records found matching current filters.
                   </td>
                 </tr>
               ) : (
                 sortedAndFilteredExpenses.map((exp) => {
-                  const status = exp.status || 'PENDING';
                   return (
                     <tr key={exp._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/30 transition">
                       <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
@@ -743,23 +1109,6 @@ const AddExpenseTab = () => {
                           return exp.amount || 0;
                         })()).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-3.5 px-4">
-                        {status === 'APPROVED' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-bold">
-                            ✓ Approved
-                          </span>
-                        )}
-                        {status === 'REJECTED' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 text-[10px] font-bold">
-                            ✕ Rejected
-                          </span>
-                        )}
-                        {status === 'PENDING' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-[10px] font-bold">
-                            ⏳ Pending
-                          </span>
-                        )}
-                      </td>
                       <td className="py-3.5 px-4 text-slate-500 text-[11px]">
                         {exp.addedByName || exp.addedBy?.name || 'Accountant'}
                       </td>
@@ -778,33 +1127,15 @@ const AddExpenseTab = () => {
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
-                          {status === 'PENDING' && (
-                            <button
-                              onClick={() => handleOpenEdit(exp)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
-                              title="Edit Expense"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                          )}
-                          {isApprover && status === 'PENDING' && (
-                            <>
-                              <button
-                                onClick={() => handleExpenseAction(exp._id, 'APPROVED')}
-                                className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 transition cursor-pointer"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleExpenseAction(exp._id, 'REJECTED')}
-                                className="px-2 py-1 rounded-lg bg-rose-600 text-white font-bold text-[10px] hover:bg-rose-700 transition cursor-pointer"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
                           <button
-                            onClick={() => handleDeleteExpense(exp._id)}
+                            onClick={() => handleOpenEdit(exp)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                            title="Edit Expense"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            onClick={() => triggerDeleteExpense(exp._id)}
                             className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                             title="Delete"
                           >
@@ -820,280 +1151,7 @@ const AddExpenseTab = () => {
           </table>
         </div>
       </div>
-
-      {/* Display-Centered Wide Add Expense Modal (Responsive Scrollable Flexbox - Portal to document.body) */}
-      {isAddModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
-          <div className="fixed inset-0 bg-slate-950/60" onClick={() => setIsAddModalOpen(false)} />
-          <div className="relative z-10 w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden my-auto">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60 shrink-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <PlusCircle size={16} className="text-indigo-500" />
-                Record New Expense Entry
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmitExpense} className="p-5 overflow-y-auto space-y-4 text-xs">
-              {/* Row 1: Date (1 col) + Expense Category (1 col) + Amount (1 col) */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Expense Category <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
-                  >
-                    <option value="">-- Select Category --</option>
-                    {categories.map((cat) => (
-                      <option key={cat._id} value={cat._id}>
-                        {cat.name} {Number(cat.openingBalance || 0) > 0 ? `(OB: ₹${Number(cat.openingBalance).toLocaleString('en-IN')})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {categoryId && (() => {
-                    const selectedCat = categories.find(c => String(c._id) === String(categoryId));
-                    if (selectedCat && Number(selectedCat.openingBalance || 0) > 0) {
-                      return (
-                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-medium flex items-center gap-1">
-                          <span>Opening Balance:</span>
-                          <span className="font-bold font-mono">₹{Number(selectedCat.openingBalance).toLocaleString('en-IN')}</span>
-                        </p>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Amount (₹) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="any"
-                    placeholder="e.g. 2500"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-bold"
-                  />
-                </div>
-              </div>
-
-              {/* Tax & GST Section with GST Categories and (+) Plus Button for Custom GST */}
-              <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                    <Receipt size={14} className="text-indigo-500" />
-                    Tax & GST Options
-                  </label>
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    Calculated GST: <strong className="text-indigo-600 dark:text-indigo-400">₹{currentTaxCalc.gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong> | Total: <strong className="text-slate-900 dark:text-white">₹{currentTaxCalc.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">GST Application</label>
-                    <select
-                      value={taxOption}
-                      onChange={(e) => {
-                        setTaxOption(e.target.value);
-                        if (e.target.value !== 'No GST' && gstRate === 0) setGstRate(18);
-                      }}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                    >
-                      <option value="No GST">No GST (0%)</option>
-                      <option value="Exclusive GST">Exclusive GST (Base + GST Tax)</option>
-                      <option value="Inclusive GST">Inclusive GST (Amount Includes GST)</option>
-                    </select>
-                  </div>
-
-                  {taxOption !== 'No GST' && (
-                    <>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">GST Category / Type</label>
-                        <select
-                          value={gstCategory}
-                          onChange={(e) => setGstCategory(e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                        >
-                          <option value="CGST_SGST">CGST + SGST (Intra-State / Same State)</option>
-                          <option value="IGST">IGST (Inter-State / Outside State)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                          GST Rate (%)
-                        </label>
-                        <div className="flex items-center gap-1.5">
-                          <select
-                            value={gstRate}
-                            onChange={(e) => setGstRate(parseFloat(e.target.value))}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                          >
-                            {gstRatesList.map((rate) => (
-                              <option key={rate} value={rate}>
-                                GST {rate}%
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleAddCustomGst}
-                            className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition cursor-pointer shrink-0 shadow-xs"
-                            title="Add Custom GST Rate %"
-                          >
-                            <Plus size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {taxOption !== 'No GST' && currentTaxCalc.gstAmount > 0 && (
-                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center gap-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 flex-wrap">
-                    {gstCategory === 'CGST_SGST' ? (
-                      <>
-                        <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold">
-                          CGST ({gstRate / 2}%): ₹{currentTaxCalc.cgstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold">
-                          SGST ({gstRate / 2}%): ₹{currentTaxCalc.sgstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold">
-                        IGST ({gstRate}%): ₹{currentTaxCalc.igstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Row 2: Payment Mode (1 col) + Paid To (1 col) + Attachment (1 col) */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Payment Mode <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Bank">Bank Transfer</option>
-                    <option value="UPI">UPI / QR</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Paid To <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Vendor or Receiver Name"
-                    value={paidTo}
-                    onChange={(e) => setPaidTo(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                    Attachment (Optional)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={handleFileChange}
-                      className="hidden"
-                      id="expense-attachment-modal-input"
-                    />
-                    <label
-                      htmlFor="expense-attachment-modal-input"
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-300 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    >
-                      <span className="truncate">{attachmentPreviewName || 'Choose file...'}</span>
-                      <Paperclip size={14} className="shrink-0 text-slate-400" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 3: Description / Notes (3 cols) */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                  Description / Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Purchased monthly printer paper & cartridges"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-medium"
-                />
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="animate-spin" size={13} />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Expense Entry'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
+        </>
       )}
 
       {/* Attachment Preview Modal (Portal to document.body) */}
@@ -1300,38 +1358,20 @@ const AddExpenseTab = () => {
                 </select>
               </div>
 
-              {/* Payment Mode & Status Filter Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                    <CreditCard size={13} className="text-indigo-500" /> Payment Mode
-                  </label>
-                  <select
-                    value={filterMode}
-                    onChange={(e) => setFilterMode(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  >
-                    <option value="">All Payment Modes</option>
-                    <option value="Cash">Cash in Hand</option>
-                    <option value="UPI_BANK">UPI / Bank Account</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                    <UserCheck size={13} className="text-indigo-500" /> Approval Status
-                  </label>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="PENDING">Pending Approval</option>
-                    <option value="APPROVED">Approved</option>
-                    <option value="REJECTED">Rejected</option>
-                  </select>
-                </div>
+              {/* Payment Mode Filter */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <CreditCard size={13} className="text-indigo-500" /> Payment Mode
+                </label>
+                <select
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/40"
+                >
+                  <option value="">All Payment Modes</option>
+                  <option value="Cash">Cash in Hand</option>
+                  <option value="UPI_BANK">UPI / Bank Account</option>
+                </select>
               </div>
 
               {/* Date Range Filter Grid */}
@@ -1465,7 +1505,33 @@ const AddExpenseTab = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Paid To / Recipient</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] font-bold uppercase text-slate-400">Paid To / Recipient</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsVendorModalOpen(true)}
+                      className="text-[10px] font-extrabold text-amber-600 hover:text-amber-700 dark:text-amber-400 flex items-center gap-0.5 cursor-pointer hover:underline"
+                    >
+                      <PlusCircle size={11} />
+                      <span>+ Manage Vendors</span>
+                    </button>
+                  </div>
+                  {vendors.length > 0 && (
+                    <select
+                      value={vendors.some(v => v.name === editForm.paidTo) ? editForm.paidTo : ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setEditForm({ ...editForm, paidTo: e.target.value });
+                        }
+                      }}
+                      className="w-full mb-1 bg-amber-50/50 dark:bg-slate-800 border border-amber-200/80 dark:border-slate-700 rounded-xl px-2 py-1 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Select Saved Vendor --</option>
+                      {vendors.map((v) => (
+                        <option key={v._id || v.id} value={v.name}>{v.name}</option>
+                      ))}
+                    </select>
+                  )}
                   <input
                     type="text"
                     required
@@ -1533,6 +1599,24 @@ const AddExpenseTab = () => {
                 />
               </div>
 
+              {/* Attached Receipt Action */}
+              {editingExpense.attachment && (
+                <div className="p-3 bg-rose-50/60 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-300 min-w-0 truncate">
+                    <Paperclip size={14} className="shrink-0 text-rose-600" />
+                    <span className="truncate">Attached Receipt File</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveReceiptAttachment}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0 transition cursor-pointer"
+                    title="Delete attached receipt file"
+                  >
+                    <Trash2 size={13} /> Delete Receipt
+                  </button>
+                </div>
+              )}
+
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -1555,8 +1639,32 @@ const AddExpenseTab = () => {
         </div>,
         document.body
       )}
-        </>
-      )}
+
+      {/* Vendor Management Modal */}
+      <VendorModal
+        isOpen={isVendorModalOpen}
+        onClose={() => setIsVendorModalOpen(false)}
+        onSelectVendor={(vName) => {
+          if (isEditModalOpen) {
+            setEditForm(prev => ({ ...prev, paidTo: vName }));
+          } else {
+            setPaidTo(vName);
+          }
+        }}
+        initialVendors={vendors}
+        onRefreshVendors={(updatedVendors) => setVendors(updatedVendors)}
+      />
+
+      {/* Viewport Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+        onConfirm={handleExecuteDeleteExpense}
+        title="Delete Expense Entry"
+        message="Are you sure you want to delete this expense entry? This action cannot be undone."
+        confirmText="Delete Expense"
+        type="danger"
+      />
     </div>
   );
 };

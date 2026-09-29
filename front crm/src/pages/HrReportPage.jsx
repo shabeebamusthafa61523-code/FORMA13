@@ -13,6 +13,7 @@ import autoTable from 'jspdf-autotable';
 import { fetchCompletedTasks } from '../utils/taskUtils';
 import SignatureUpload from '../components/SignatureUpload';
 import { AiAnalyzeButton, AiAnalyzeModal } from '../components/AiAnalyzeModal';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -1976,6 +1977,17 @@ const HrReportPage = () => {
                     });
                     setIsAiModalOpen(true);
                   }}
+                />
+
+                <ExcelExportButton
+                  data={dailyOperations.map(op => ({
+                    'Time / Period': op.period || '',
+                    'Activity / Task': op.activity || '',
+                    'Status / Outcome': op.status || '',
+                    'Remarks': op.remarks || ''
+                  }))}
+                  fileName={`hr_report_${selectedDate}_export`}
+                  sheetName="HR Operations"
                 />
 
                 <button

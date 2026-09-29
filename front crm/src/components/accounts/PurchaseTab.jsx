@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShoppingCart, 
   PlusCircle, 
@@ -16,6 +17,11 @@ import {
   PackageCheck
 } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import ConfirmModal from '../ConfirmModal';
+import ExcelExportButton from '../ExcelExportButton';
+import VendorModal from './VendorModal';
+import AddItemOptionModal from './AddItemOptionModal';
+import { getVendors } from '../../services/accountsService';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -42,23 +48,93 @@ const getAuthHeaders = () => {
 const PurchaseTab = () => {
   const { showToast } = useToast();
   const [purchases, setPurchases] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [itemOptions, setItemOptions] = useState(() => {
+    const saved = localStorage.getItem('crm_item_options');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ['Office Laptops', 'Printing Paper', 'Server Hosting', 'Stationery Items', 'Raw Materials'];
+  });
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  const fetchVendorsList = async () => {
+    try {
+      const res = await getVendors();
+      if (res && res.success && Array.isArray(res.data)) {
+        setVendors(res.data);
+      }
+    } catch (e) {
+      console.warn('Error fetching vendors list:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchVendorsList();
+  }, []);
 
   // Tab View state ('list' | 'record')
   const [viewMode, setViewMode] = useState('list');
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
 
+  // Background scroll lock when modal is open
+  useEffect(() => {
+    if (isViewModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isViewModalOpen]);
+
+  // Automatic sync for offline purchase records when network restores
+  useEffect(() => {
+    const handleOnlineSync = async () => {
+      try {
+        const savedLocal = JSON.parse(localStorage.getItem('crm_purchase_records') || '[]');
+        const offlineEntries = savedLocal.filter(p => String(p._id || p.id || '').startsWith('pur_'));
+        if (offlineEntries.length > 0) {
+          for (const entry of offlineEntries) {
+            try {
+              await fetch(getApiEndpoint('/accounts/expenses'), {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(entry)
+              });
+            } catch (err) {}
+          }
+          showToast(`Synced ${offlineEntries.length} offline purchase record(s) to server!`, 'success');
+        }
+      } catch (e) {
+        console.warn('Error syncing offline purchase records:', e);
+      } finally {
+        fetchPurchasesData();
+      }
+    };
+
+    window.addEventListener('online', handleOnlineSync);
+    return () => window.removeEventListener('online', handleOnlineSync);
+  }, []);
+
   // Form State
+  const [showGstRate, setShowGstRate] = useState(false);
   const [formData, setFormData] = useState({
     billNo: '',
     vendorName: '',
     itemName: '',
     purchaseDate: new Date().toISOString().split('T')[0],
     amount: '',
-    gstRate: '18',
+    gstRate: '0',
     paymentStatus: 'Paid',
     paymentMethod: 'Bank Transfer',
     remarks: ''
@@ -170,8 +246,17 @@ const PurchaseTab = () => {
     fetchPurchasesData();
   };
 
-  const handleDeletePurchase = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this purchase entry?')) return;
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+
+  const triggerDeletePurchase = (id) => {
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const handleExecuteDeletePurchase = async () => {
+    const { id } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, id: null });
+    if (!id) return;
+
     try {
       await fetch(getApiEndpoint(`/accounts/expenses/${id}`), { method: 'DELETE', headers: getAuthHeaders() });
     } catch (e) {
@@ -237,6 +322,21 @@ const PurchaseTab = () => {
             <option value="PENDING">Pending</option>
           </select>
 
+          {/* Export Excel Button */}
+          <ExcelExportButton
+            data={filteredPurchases.map(p => ({
+              'Date': p.date ? new Date(p.date).toISOString().split('T')[0] : '',
+              'Vendor / Supplier': p.paidTo || p.vendorName || '',
+              'Item / Service': p.itemName || p.description || '',
+              'Payment Mode': p.paymentMode || '',
+              'Status': p.paymentStatus || p.status || '',
+              'Total Amount (₹)': Number(p.totalAmount || p.amount || 0)
+            }))}
+            fileName="Purchase_Procurement_List"
+            sheetName="Purchases"
+            title="Export Excel"
+          />
+
           {viewMode === 'list' ? (
             <button
               onClick={() => setViewMode('record')}
@@ -301,33 +401,112 @@ const PurchaseTab = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-extrabold text-slate-500 mb-1">Vendor / Supplier Name *</label>
-                <input
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-extrabold text-slate-500">Vendor / Supplier Name *</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsVendorModalOpen(true)}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    title="Manage suppliers"
+                  >
+                    <PlusCircle size={13} />
+                    <span>+ Manage Suppliers</span>
+                  </button>
+                </div>
+                {vendors.length > 0 && (
+                  <select
+                    value={vendors.some(v => v.name === formData.vendorName) ? formData.vendorName : ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setFormData({ ...formData, vendorName: e.target.value });
+                      }
+                    }}
+                    className="w-full mb-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-bold text-slate-800 dark:text-slate-100 text-xs cursor-pointer"
+                  >
+                    <option value="">-- Select Registered Supplier / Vendor --</option>
+                    {vendors.map((v) => (
+                      <option key={v._id || v.id} value={v.name}>
+                        {v.name} {v.phone ? `(${v.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {/* <input
                   type="text"
                   required
                   placeholder="e.g. Dell India / Stationery Suppliers / Hostinger"
                   value={formData.vendorName}
                   onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-bold"
-                />
+                /> */}
               </div>
 
               <div>
-                <label className="block font-extrabold text-slate-500 mb-1">Item / Asset / Service Purchased *</label>
-                <input
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-extrabold text-slate-500">Item / Asset / Service Purchased *</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddItemModalOpen(true)}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    title="Manage items, assets & services"
+                  >
+                    <PlusCircle size={13} />
+                    <span>+ Manage Items</span>
+                  </button>
+                </div>
+                {itemOptions.length > 0 && (
+                  <select
+                    value={itemOptions.includes(formData.itemName) ? formData.itemName : ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setFormData({ ...formData, itemName: e.target.value });
+                      }
+                    }}
+                    className="w-full mb-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-bold text-slate-800 dark:text-slate-100 text-xs cursor-pointer"
+                  >
+                    <option value="">-- Select Registered Item / Service Choice --</option>
+                    {itemOptions.map((opt, i) => (
+                      <option key={i} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {/* <input
                   type="text"
                   required
                   placeholder="e.g. Office Laptops / Printing Paper / Server Hosting"
                   value={formData.itemName}
                   onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-bold"
-                />
+                /> */}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={`grid grid-cols-1 ${showGstRate ? 'sm:grid-cols-2' : ''} gap-4`}>
               <div>
-                <label className="block font-extrabold text-slate-500 mb-1">Base Amount (₹) *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-extrabold text-slate-500">Base Amount (₹) *</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showGstRate) {
+                        setShowGstRate(false);
+                        setFormData(prev => ({ ...prev, gstRate: '0' }));
+                      } else {
+                        setShowGstRate(true);
+                        setFormData(prev => ({ ...prev, gstRate: '18' }));
+                      }
+                    }}
+                    className={`text-xs font-bold transition flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg border ${
+                      showGstRate
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400'
+                        : 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400 hover:bg-purple-100'
+                    }`}
+                  >
+                    <span>{showGstRate ? '- Hide GST' : '+ Add GST Rate'}</span>
+                  </button>
+                </div>
                 <input
                   type="number"
                   required
@@ -338,20 +517,22 @@ const PurchaseTab = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-mono font-bold"
                 />
               </div>
-              <div>
-                <label className="block font-extrabold text-slate-500 mb-1">GST Rate (%)</label>
-                <select
-                  value={formData.gstRate}
-                  onChange={(e) => setFormData({ ...formData, gstRate: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-semibold cursor-pointer"
-                >
-                  <option value="0">0% (Exempt / No GST)</option>
-                  <option value="5">5% GST</option>
-                  <option value="12">12% GST</option>
-                  <option value="18">18% GST</option>
-                  <option value="28">28% GST</option>
-                </select>
-              </div>
+              {showGstRate && (
+                <div>
+                  <label className="block font-extrabold text-slate-500 mb-1">GST Rate (%)</label>
+                  <select
+                    value={formData.gstRate}
+                    onChange={(e) => setFormData({ ...formData, gstRate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none font-semibold cursor-pointer"
+                  >
+                    <option value="0">0% (Exempt / No GST)</option>
+                    <option value="5">5% GST</option>
+                    <option value="12">12% GST</option>
+                    <option value="18">18% GST</option>
+                    <option value="28">28% GST</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -527,7 +708,7 @@ const PurchaseTab = () => {
       )}
 
       {/* VIEW PURCHASE DETAILS MODAL */}
-      {isViewModalOpen && selectedPurchase && (
+      {isViewModalOpen && selectedPurchase && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto my-auto animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -580,8 +761,41 @@ const PurchaseTab = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
+
+      {/* Viewport Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+        onConfirm={handleExecuteDeletePurchase}
+        title="Delete Purchase Entry"
+        message="Are you sure you want to delete this purchase entry? This action cannot be undone."
+        confirmText="Delete Purchase"
+        type="danger"
+      />
+
+      {/* Supplier & Vendor Directory Management Modal */}
+      <VendorModal
+        isOpen={isVendorModalOpen}
+        onClose={() => setIsVendorModalOpen(false)}
+        onSelectVendor={(name) => setFormData(prev => ({ ...prev, vendorName: name }))}
+        initialVendors={vendors}
+        onRefreshVendors={(updatedList) => setVendors(updatedList)}
+      />
+
+      {/* Item / Service Option Directory Management Modal */}
+      <AddItemOptionModal
+        isOpen={isAddItemModalOpen}
+        onClose={() => setIsAddItemModalOpen(false)}
+        itemOptions={itemOptions}
+        onUpdateOptions={(opts) => {
+          setItemOptions(opts);
+          localStorage.setItem('crm_item_options', JSON.stringify(opts));
+        }}
+        onSelectItem={(itemName) => setFormData(prev => ({ ...prev, itemName }))}
+      />
     </div>
   );
 };

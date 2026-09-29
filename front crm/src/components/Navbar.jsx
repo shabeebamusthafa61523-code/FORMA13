@@ -247,81 +247,42 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
         </div>
 
         {/* Right Section Container */}
-        <section className="flex items-center gap-2 relative">
+        <section className="flex items-center gap-3 relative">
+          {/* Night mode / Light mode toggle button */}
+          <button
+            type="button"
+            onClick={() => setIsDark(prev => !prev)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs"
+            title={isDark ? "Switch to Light Mode" : "Switch to Night Mode"}
+          >
+            {isDark ? (
+              <>
+                <Sun size={16} className="text-amber-400" />
+                <span className="text-xs font-bold hidden sm:inline">Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon size={16} className="text-indigo-600 dark:text-indigo-400" />
+                <span className="text-xs font-bold hidden sm:inline">Night Mode</span>
+              </>
+            )}
+          </button>
 
-          {/* Universal AI Page Analyzer (Outside of card) */}
-          <AiAnalyzeButton
-            onClick={() => {
-              let pageText = "";
-              try {
-                const mainEl = document.querySelector('main');
-                if (mainEl) {
-                  pageText = mainEl.innerText.replace(/\s+/g, ' ').slice(0, 7000);
-                }
-              } catch (e) {
-                console.error("Failed to extract page context for AI", e);
-              }
-              setPageContextData({
-                pageTitle: pageTitle,
-                pathname: location.pathname,
-                visiblePageSummary: pageText
-              });
-              setIsPageAiOpen(true);
-            }}
-            label="AI Analyze Page"
-          />
-
-          {/* Right Actions Card (Notification Bell, Theme, Profile) */}
-          <div className="flex items-center gap-2 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-200/30 dark:border-slate-800/30 p-1 rounded-xl shadow-sm transition-colors relative">
-
-            {/* Bell Icon Notification Trigger */}
-            <button
-              onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-lime-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all cursor-pointer relative"
-              title="Notifications"
-            >
-              <Bell size={18} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white dark:ring-slate-900 animate-pulse" />
-              )}
-            </button>
-
-            {/* Theme Toggle Button */}
-            <button
-              onClick={() => setIsDark(!isDark)}
-              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-lime-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all cursor-pointer relative"
-              title="Toggle theme"
-            >
-              <motion.div
-                initial={false}
-                animate={{ rotate: isDark ? 180 : 0, scale: isDark ? 0.95 : 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                {isDark ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
-              </motion.div>
-            </button>
-
-            <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1"></div>
-
+          {/* Right Actions Card (Profile) */}
+          <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1 rounded-xl shadow-sm transition-colors relative">
             {/* Profile Trigger */}
             <div
               onClick={() => setIsProfileOpen(true)}
               className="flex items-center gap-2 p-1 group cursor-pointer"
               title={currentUser.name}
             >
-              <div className="relative w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700/50 flex items-center justify-center text-slate-600 dark:text-slate-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/10 dark:group-hover:bg-indigo-500/20 transition-all shadow-sm overflow-hidden">
+              <div className="relative w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-200 group-hover:border-indigo-500 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/40 transition-all shadow-sm overflow-hidden">
                 <User size={16} />
               </div>
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 pr-2">
+                {currentUser.name}
+              </span>
             </div>
-
-            {/* Notification Popover Dropdown */}
-            <NotificationPopover
-              isOpen={isNotificationOpen}
-              onClose={() => setIsNotificationOpen(false)}
-              notifications={notifications}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAllRead={handleMarkAllRead}
-            />
           </div>
         </section>
 

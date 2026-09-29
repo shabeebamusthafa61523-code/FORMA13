@@ -7,6 +7,7 @@ import {
   BookOpen, Users, CheckCircle2, Archive, Eye, Edit, X, Trash2
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -286,6 +287,18 @@ const BatchManagement = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <ExcelExportButton
+            data={filteredBatches.map(b => ({
+              'Batch Code': b.batchCode || '',
+              'Batch Name': b.batchName || b.name || '',
+              'Course': b.courseName || b.courseId?.courseName || '',
+              'Students Count': Array.isArray(b.students) ? b.students.length : (Array.isArray(b.studentIds) ? b.studentIds.length : 0),
+              'Status': b.status || 'UPCOMING'
+            }))}
+            fileName="batches_export"
+            sheetName="Batches"
+          />
+
           <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <button 
               onClick={() => setViewMode('grid')} 

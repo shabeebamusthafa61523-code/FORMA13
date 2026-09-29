@@ -44,6 +44,10 @@ import {
   createOperation,
   updateOperation,
   deleteOperation,
+  getVendors,
+  createVendor,
+  updateVendor,
+  deleteVendor,
   uploadPublicPdf,
   servePublicPdf
 } from '../controllers/account.controller.js';
@@ -136,5 +140,11 @@ router.get('/reports/daily', getDailyReport);
 router.get('/reports/monthly', getMonthlyReport);
 router.get('/reports/category-wise', getCategoryWiseReport);
 router.get('/reports/salary', getSalaryReport);
+
+// ── Vendor Routes ──
+router.get('/vendors', getVendors);
+router.post('/vendors', createVendor);
+router.put('/vendors/:id', updateVendor);
+router.delete('/vendors/:id', deleteVendor);
 
 export default router;

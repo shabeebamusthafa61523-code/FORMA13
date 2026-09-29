@@ -7,6 +7,7 @@ import CalendarView from "../modules/calendar/CalendarView";
 import CalendarWorkModal from "../modules/calendar/CalendarWorkModal";
 import CalendarWorkDetails from "../modules/calendar/CalendarWorkDetails";
 import ConfirmModal from "../components/ConfirmModal";
+import ExcelExportButton from "../components/ExcelExportButton";
 import {
   getCalendarWorks,
   getMyCalendarWork,
@@ -380,6 +381,19 @@ const CalendarWorkPage = () => {
         </div>
 
         <div className="flex gap-2">
+          <ExcelExportButton
+            data={calendarItems.map(item => ({
+              'Title': item.title || item.workTitle || '',
+              'Content Type': item.contentType?.name || item.contentType || '',
+              'Platform': item.platform || '',
+              'Scheduled Date': item.date || item.scheduledDate || '',
+              'Assignee': item.assignedTo?.name || '',
+              'Work Status': item.workStatus || item.status || '',
+              'Posting Status': item.postingStatus || ''
+            }))}
+            fileName="calendar_work_export"
+            sheetName="CalendarWork"
+          />
           <button
             onClick={handleRefresh}
             disabled={loading}

@@ -16,6 +16,7 @@ import {
   Pencil
 } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import ExcelExportButton from '../ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -861,14 +862,32 @@ const CapitalTab = () => {
           />
         </div>
 
-        {/* Add Entry Button */}
-        <button
-          onClick={handleOpenAddModal}
-          className="w-full md:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Record Capital Entry</span>
-        </button>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+          <ExcelExportButton
+            data={filteredRecords.map(r => ({
+              'Voucher No': r.voucherNo || '',
+              'Date': r.date || '',
+              'Investor Name': r.investorName || '',
+              'Sub Investors': r.innerInvestors || '',
+              'Initial / Contribution Capital (₹)': Number(r.amount || 0),
+              'Opening Balance (₹)': Number(r.openingBalance || 0),
+              'Total Capital (₹)': Number((r.amount || 0) + (r.openingBalance || 0)),
+              'Payment Mode': r.paymentMethod || '',
+              'Reference No': r.referenceNo || ''
+            }))}
+            fileName="Capital_Accounts_Ledger"
+            sheetName="Capital"
+            title="Export Excel"
+          />
+          <button
+            onClick={handleOpenAddModal}
+            className="w-full md:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Record Capital Entry</span>
+          </button>
+        </div>
       </div>
 
       {/* Capital Ledger Table */}

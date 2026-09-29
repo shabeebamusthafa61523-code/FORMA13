@@ -3,42 +3,24 @@ import { createPortal } from 'react-dom';
 import { X, Save, ShieldAlert, Loader2, CheckCircle2, Building } from 'lucide-react';
 import { updateClient } from '../../services/clientService';
 import { formatApiError } from '../../utils/errorUtils';
-import { CLIENT_INDUSTRIES } from '../../constants/clientIndustries';
 
 const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState({
+    clientName: '',
+    phone: '',
+    remarks: ''
+  });
 
   useEffect(() => {
     if (client && isOpen) {
       setFormData({
-        companyName: client.companyName || '',
-        clientName: client.clientName || '',
-        email: client.email || '',
+        clientName: client.clientName || client.companyName || '',
         phone: client.phone || '',
-        alternativePhone: client.alternativePhone || '',
-        whatsapp: client.whatsapp || '',
-        industry: client.industry || 'Technology',
-        website: client.website || '',
-        gstNumber: client.gstNumber || '',
-        country: client.country || 'India',
-        state: client.state || '',
-        city: client.city || '',
-        address: client.address || '',
-        postalCode: client.postalCode || '',
-        status: client.status || 'Active',
-        clientType: client.clientType || 'SMB',
-        leadSource: client.leadSource || 'Direct',
-        priority: client.priority || 'Medium',
-        ndaStatus: client.ndaStatus || 'Pending',
-        expectedMonthlyRevenue: client.expectedMonthlyRevenue || 0,
-        supportPlan: client.supportPlan || 'Standard 8/5',
-        notes: client.notes || '',
-        contractStart: client.contractStart ? new Date(client.contractStart).toISOString().split('T')[0] : '',
-        contractEnd: client.contractEnd ? new Date(client.contractEnd).toISOString().split('T')[0] : ''
+        remarks: client.notes || client.remarks || ''
       });
       setError('');
       setSuccessMsg('');
@@ -57,31 +39,33 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
     setError('');
     setSuccessMsg('');
 
-    if (!formData.companyName.trim()) {
-      setError('Company Name is required.');
-      return;
-    }
-    if (!formData.clientName.trim()) {
+    const cleanName = formData.clientName.trim();
+    const cleanPhone = formData.phone.trim();
+
+    if (!cleanName) {
       setError('Client Name is required.');
       return;
     }
-    if (!formData.email.trim()) {
-      setError('Email is required.');
-      return;
-    }
-    if (!formData.phone.trim()) {
-      setError('Phone number is required.');
+    if (!cleanPhone) {
+      setError('Phone Number is required.');
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const payload = { ...formData };
-      if (!payload.contractStart) delete payload.contractStart;
-      if (!payload.contractEnd) delete payload.contractEnd;
-
       const clientId = client._id || client.id;
+      const fallbackEmail = client.email || `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}@client.local`;
+
+      const payload = {
+        ...client,
+        clientName: cleanName,
+        companyName: client.companyName || cleanName,
+        phone: cleanPhone,
+        email: fallbackEmail,
+        notes: formData.remarks.trim()
+      };
+
       const res = await updateClient(clientId, payload);
 
       if (res && res.success) {
@@ -100,8 +84,7 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
     }
   };
 
-  const inputCls = 'px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden';
-  const selectCls = 'px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-semibold focus:outline-hidden';
+  const inputCls = 'w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden';
 
   return createPortal(
     <div 
@@ -109,7 +92,7 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
       onClick={onClose}
     >
       <div 
-        className="relative z-10 w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto flex flex-col max-h-[90vh]"
+        className="relative z-10 w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden my-auto flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -119,8 +102,8 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
               <Building className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Edit Client Profile</h2>
-              <p className="text-xs text-slate-400 font-medium">Update client account details.</p>
+              <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Edit Client</h2>
+              <p className="text-xs text-slate-400 font-medium">Update client details.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
@@ -129,137 +112,33 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden m-0">
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6">
+          <div className="p-6 flex flex-col gap-4">
             {error && (
-              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-600 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-600 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
             {successMsg && (
-              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+              <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>{successMsg}</span>
               </div>
             )}
 
-            {/* Company Info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Company Name *</label>
-                <input type="text" required name="companyName" value={formData.companyName} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Primary Contact Person *</label>
-                <input type="text" required name="clientName" value={formData.clientName} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Email *</label>
-                <input type="email" required name="email" value={formData.email} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
-                <input type="text" required name="phone" value={formData.phone} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Alternative Phone Number</label>
-                <input type="text" name="alternativePhone" value={formData.alternativePhone} onChange={handleChange} placeholder="+91 98765 43211" className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Industry</label>
-                <select name="industry" value={formData.industry} onChange={handleChange} className={selectCls}>
-                  {CLIENT_INDUSTRIES.map(ind => (
-                    <option key={ind} value={ind}>{ind}</option>
-                  ))}
-                  {formData.industry && !CLIENT_INDUSTRIES.includes(formData.industry) && (
-                    <option value={formData.industry}>{formData.industry}</option>
-                  )}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Website</label>
-                <input type="text" name="website" value={formData.website} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp</label>
-                <input type="text" name="whatsapp" value={formData.whatsapp} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">GST Number</label>
-                <input type="text" name="gstNumber" value={formData.gstNumber} onChange={handleChange} className={inputCls} />
-              </div>
-            </div>
-
-            {/* Location */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Country</label>
-                <input type="text" name="country" value={formData.country} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">State</label>
-                <input type="text" name="state" value={formData.state} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">City</label>
-                <input type="text" name="city" value={formData.city} onChange={handleChange} className={inputCls} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Postal Code</label>
-                <input type="text" name="postalCode" value={formData.postalCode} onChange={handleChange} className={inputCls} />
-              </div>
-            </div>
-
-            {/* Status & Commercial */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Status</label>
-                <select name="status" value={formData.status} onChange={handleChange} className={selectCls}>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="On Hold">On Hold</option>
-                  <option value="Lead">Lead</option>
-                  <option value="Archived">Archived</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Client Type</label>
-                <select name="clientType" value={formData.clientType} onChange={handleChange} className={selectCls}>
-                  <option value="Enterprise">Enterprise</option>
-                  <option value="SMB">SMB</option>
-                  <option value="Startup">Startup</option>
-                  <option value="Government">Government</option>
-                  <option value="Retainer">Retainer</option>
-                  <option value="One-Time">One-Time</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Priority</label>
-                <select name="priority" value={formData.priority} onChange={handleChange} className={selectCls}>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="VIP">VIP</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">NDA Status</label>
-                <select name="ndaStatus" value={formData.ndaStatus} onChange={handleChange} className={selectCls}>
-                  <option value="Signed">Signed</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Not Applicable">Not Applicable</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Expected Monthly Revenue (₹)</label>
-                <input type="number" name="expectedMonthlyRevenue" value={formData.expectedMonthlyRevenue} onChange={handleChange} className={inputCls} />
-              </div>
-            </div>
-
-            {/* Notes */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Notes</label>
-              <textarea rows={3} name="notes" value={formData.notes} onChange={handleChange} className={inputCls} />
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Client Name *</label>
+              <input type="text" required name="clientName" value={formData.clientName} onChange={handleChange} placeholder="Enter client name" className={inputCls} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
+              <input type="text" required name="phone" value={formData.phone} onChange={handleChange} placeholder="Enter phone number" className={inputCls} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Remarks</label>
+              <textarea rows={3} name="remarks" value={formData.remarks} onChange={handleChange} placeholder="Enter any notes or remarks..." className={inputCls} />
             </div>
           </div>
 
@@ -269,7 +148,7 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
               Cancel
             </button>
             <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50">
-              {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving...</span></> : <><Save className="w-4 h-4" /><span>Update Client</span></>}
+              {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving...</span></> : <><Save className="w-4 h-4" /><span>Save Client</span></>}
             </button>
           </div>
         </form>
@@ -280,4 +159,3 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
 };
 
 export default EditClientModal;
-

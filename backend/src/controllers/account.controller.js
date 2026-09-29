@@ -10,6 +10,7 @@ import Income from '../models/income.model.js';
 import OpeningBalance from '../models/openingBalance.model.js';
 import Capital from '../models/capital.model.js';
 import OperationAccount from '../models/operationAccount.model.js';
+import Vendor from '../models/vendor.model.js';
 import { sendEmail } from '../services/emailService.js';
 
 const DEFAULT_CATEGORIES = [
@@ -376,11 +377,6 @@ export const createExpense = async (req, res) => {
     const isSalary = resolvedCategoryName.toLowerCase() === 'salary';
     const isPur = isPurchase === true || resolvedCategoryName.toLowerCase().includes('purchase') || resolvedCategoryName.toLowerCase().includes('inventory') || resolvedCategoryName.toLowerCase().includes('vendor');
 
-    let initialStatus = (isSalary || expAmount > 1000) ? 'PENDING' : 'APPROVED';
-    if (req.body.status && isMdUser) {
-      initialStatus = req.body.status;
-    }
-
     const expense = await Expense.create({
       date: date ? new Date(date) : new Date(),
       category: catObj ? catObj._id : null,
@@ -402,14 +398,12 @@ export const createExpense = async (req, res) => {
       sgstAmount: parseFloat(sgstAmount || 0),
       igstAmount: parseFloat(igstAmount || 0),
       totalAmount: parseFloat(totalAmount || expAmount),
-      status: initialStatus
+      status: 'APPROVED'
     });
 
     return res.status(201).json({
       success: true,
-      message: initialStatus === 'PENDING'
-        ? 'Expense recorded successfully and submitted for MD approval.'
-        : 'Expense recorded successfully.',
+      message: 'Expense recorded successfully.',
       data: expense
     });
   } catch (error) {
@@ -421,7 +415,7 @@ export const createExpense = async (req, res) => {
 export const updateExpense = async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, category, amount, paymentMode, paidTo, description } = req.body;
+    const { date, category, amount, paymentMode, paidTo, description, deleteAttachment, removeAttachment } = req.body;
 
     const expense = await Expense.findById(id);
     if (!expense) {
@@ -448,6 +442,8 @@ export const updateExpense = async (req, res) => {
 
     if (req.file) {
       expense.attachment = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    } else if (deleteAttachment || removeAttachment || req.body.attachment === '' || req.body.attachment === null) {
+      expense.attachment = '';
     }
 
     await expense.save();
@@ -518,16 +514,19 @@ export const getSalaryPayments = async (req, res) => {
 export const createSalaryPayment = async (req, res) => {
   try {
     const {
-      employeeId, month, basicSalary, paidAmount, paymentDate, paymentMode, remarks,
+      employeeId, month, basicSalary, paidAmount, paymentDate, paymentMode, remarks, status,
       kbEmployeeId, department, designation, location, payPeriod, payDateStr, workingDays, daysWorked, daysInLeave,
       hra, medicalAllowance, specialAllowance, transportAllowance, otherAllowance, otherAllowanceRemark, integrityAward, bonus, totalEarnings,
       pf, professionalTax, incomeTax, unpaidLeave, advanceSalary, otherDeductions, otherDeductionsRemark, totalDeductions
     } = req.body;
 
-    if (!employeeId || !month || (paidAmount === undefined && totalEarnings === undefined) || !paymentMode) {
+    const parsedPaymentDate = paymentDate ? new Date(paymentDate) : new Date();
+    const resolvedMonth = month || parsedPaymentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    if (!employeeId || !resolvedMonth || (paidAmount === undefined && totalEarnings === undefined) || !paymentMode) {
       return res.status(400).json({
         success: false,
-        message: 'Employee, Month, Paid Amount, and Payment Mode are required.'
+        message: 'Employee, Amount, Payment Date, and Payment Mode are required.'
       });
     }
 
@@ -556,12 +555,21 @@ export const createSalaryPayment = async (req, res) => {
       if (adminUser) addedByName = adminUser.name;
     }
 
-    const computedBasic = Number(basicSalary || employeeObj.salary || 0);
-    const computedTotalEarnings = Number(totalEarnings || (computedBasic + Number(hra || 0) + Number(medicalAllowance || 0) + Number(specialAllowance || 0) + Number(transportAllowance || 0) + Number(otherAllowance || 0) + Number(integrityAward || 0) + Number(bonus || 0)));
+    const computedBasic = Number(basicSalary !== undefined ? basicSalary : (employeeObj.salary || 0));
+    const computedTotalEarnings = Number(totalEarnings !== undefined ? totalEarnings : (computedBasic + Number(hra || 0) + Number(medicalAllowance || 0) + Number(specialAllowance || 0) + Number(transportAllowance || 0) + Number(otherAllowance || 0) + Number(integrityAward || 0) + Number(bonus || 0)));
     const computedTotalDeductions = Number(totalDeductions || (Number(pf || 0) + Number(professionalTax || 0) + Number(incomeTax || 0) + Number(unpaidLeave || 0) + Number(advanceSalary || 0) + Number(otherDeductions || 0)));
-    const finalPaidAmount = Number(paidAmount !== undefined ? paidAmount : Math.max(0, computedTotalEarnings - computedTotalDeductions));
+    const calculatedNetPay = Math.max(0, computedTotalEarnings - computedTotalDeductions);
 
-    let resolvedDepartment = department ? String(department).trim() : '';
+    const initialStatus = ['COMPLETED', 'PARTIALLY_PAID', 'PENDING', 'APPROVED', 'REJECTED'].includes(status) ? status : 'PENDING';
+
+    let finalPaidAmount = 0;
+    if (initialStatus === 'COMPLETED' || initialStatus === 'APPROVED') {
+      finalPaidAmount = Number(paidAmount !== undefined ? paidAmount : calculatedNetPay);
+    } else if (initialStatus === 'PARTIALLY_PAID') {
+      finalPaidAmount = Number(paidAmount !== undefined ? paidAmount : Math.round(computedBasic / 2));
+    } else { // PENDING
+      finalPaidAmount = Number(paidAmount || 0);
+    }
     if (!resolvedDepartment && employeeObj) {
       if (employeeObj.departmentId && typeof employeeObj.departmentId === 'object' && employeeObj.departmentId.name) {
         resolvedDepartment = employeeObj.departmentId.name;
@@ -585,18 +593,22 @@ export const createSalaryPayment = async (req, res) => {
     const salaryPayment = new SalaryPayment({
       employee: employeeObj._id,
       employeeName: employeeObj.name,
-      month,
+      month: resolvedMonth,
       basicSalary: computedBasic,
       paidAmount: finalPaidAmount,
-      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+      paymentDate: parsedPaymentDate,
       paymentMode,
       remarks: remarks ? remarks.trim() : '',
+      status: initialStatus,
+      actionBy: initialStatus !== 'PENDING' ? (req.user?.id || null) : null,
+      actionByName: initialStatus !== 'PENDING' ? addedByName : '',
+      actionAt: initialStatus !== 'PENDING' ? new Date() : null,
       kbEmployeeId: kbEmployeeId || employeeObj.employeeId || `KB-${(employeeObj.name || '').slice(0, 2).toUpperCase()}-001`,
       department: resolvedDepartment,
       designation: resolvedDesignation,
       location: location || 'HEAD OFFICE',
-      payPeriod: payPeriod || `${month}`,
-      payDateStr: payDateStr || `On or Before 10th ${month}`,
+      payPeriod: payPeriod || `${resolvedMonth}`,
+      payDateStr: payDateStr || `On or Before 10th ${resolvedMonth}`,
       workingDays: Number(workingDays || 27),
       daysWorked: Number(daysWorked || 27),
       daysInLeave: Number(daysInLeave || 0),
@@ -644,12 +656,12 @@ export const createSalaryPayment = async (req, res) => {
       amount: salaryPayment.paidAmount,
       paymentMode: salaryPayment.paymentMode,
       paidTo: employeeObj.name,
-      description: `Employee Salary Payment for ${month}${remarks ? ' (' + remarks.trim() + ')' : ''}`,
+      description: `Employee Wage Payment for ${resolvedMonth}${remarks ? ' (' + remarks.trim() + ')' : ''}`,
       addedBy: req.user?.id || null,
       addedByName,
       type: 'Salary',
       salaryPaymentId: salaryPayment._id,
-      status: 'PENDING'
+      status: salaryPayment.status
     });
 
     // Link back expense ID to salary payment
@@ -681,7 +693,7 @@ export const updateSalaryPayment = async (req, res) => {
 
     // Fields that can be updated
     const allowedFields = [
-      'month', 'payPeriod', 'payDateStr', 'location',
+      'month', 'payPeriod', 'payDateStr', 'location', 'status',
       'kbEmployeeId', 'employeeName', 'designation', 'department',
       'workingDays', 'daysWorked', 'daysInLeave',
       'basicSalary', 'hra', 'medicalAllowance', 'specialAllowance',
@@ -710,23 +722,28 @@ export const updateSalaryPayment = async (req, res) => {
       Number(payment.unpaidLeave || 0) + Number(payment.advanceSalary || 0) + Number(payment.otherDeductions || 0)
     ));
 
-    const finalNetPay = payment.customNetPay !== undefined && payment.customNetPay !== null && !isNaN(Number(payment.customNetPay))
-      ? Number(payment.customNetPay)
-      : (req.body.paidAmount !== undefined
-          ? Number(req.body.paidAmount)
-          : Math.max(0, calcEarnings - calcDeductions));
+    const finalNetPay = (payment.status === 'COMPLETED' || payment.status === 'APPROVED')
+      ? (payment.customNetPay !== undefined && payment.customNetPay !== null && !isNaN(Number(payment.customNetPay))
+          ? Number(payment.customNetPay)
+          : (req.body.paidAmount !== undefined ? Number(req.body.paidAmount) : Math.max(0, calcEarnings - calcDeductions)))
+      : (payment.status === 'PARTIALLY_PAID'
+          ? (req.body.paidAmount !== undefined ? Number(req.body.paidAmount) : Number(payment.paidAmount || 0))
+          : (payment.status === 'PENDING'
+              ? (req.body.paidAmount !== undefined ? Number(req.body.paidAmount) : 0)
+              : Number(payment.paidAmount || 0)));
 
     payment.paidAmount = finalNetPay;
     await payment.save();
 
-    // Sync linked expense entry amount to net paid amount
+    // Sync linked expense entry amount and status
     if (payment.expenseId) {
       await Expense.findByIdAndUpdate(payment.expenseId, {
         amount: finalNetPay,
         totalAmount: finalNetPay,
         paidTo: payment.employeeName,
         paymentMode: payment.paymentMode,
-        description: `Employee Salary Payment for ${payment.month}${payment.remarks ? ' (' + payment.remarks.trim() + ')' : ''}`
+        status: payment.status,
+        description: `Employee Wage Payment for ${payment.month}${payment.remarks ? ' (' + payment.remarks.trim() + ')' : ''}`
       });
     } else {
       await Expense.updateMany(
@@ -736,14 +753,15 @@ export const updateSalaryPayment = async (req, res) => {
           totalAmount: finalNetPay,
           paidTo: payment.employeeName,
           paymentMode: payment.paymentMode,
-          description: `Employee Salary Payment for ${payment.month}${payment.remarks ? ' (' + payment.remarks.trim() + ')' : ''}`
+          status: payment.status,
+          description: `Employee Wage Payment for ${payment.month}${payment.remarks ? ' (' + payment.remarks.trim() + ')' : ''}`
         }
       );
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Payslip updated successfully.',
+      message: 'Salary payment record updated successfully.',
       data: payment
     });
   } catch (error) {
@@ -826,11 +844,16 @@ export const getCashBook = async (req, res) => {
       const expList = await Expense.find(expenseQuery)
         .populate('category', 'name')
         .populate('addedBy', 'name email')
+        .populate('salaryPaymentId', 'paidAmount status')
         .sort({ date: -1, createdAt: -1 });
 
       expenses = expList.map(e => {
         const cat = String(e.categoryName || e.category?.name || '').toLowerCase();
         const isPur = e.isPurchase === true || cat.includes('purchase') || cat.includes('inventory') || cat.includes('vendor');
+        let outflowAmount = e.amount || 0;
+        if (e.type === 'Salary' && e.salaryPaymentId && typeof e.salaryPaymentId.paidAmount === 'number') {
+          outflowAmount = e.salaryPaymentId.paidAmount;
+        }
         return {
           _id: e._id,
           entryType: 'EXPENSE', // Outflow
@@ -839,7 +862,7 @@ export const getCashBook = async (req, res) => {
           categoryName: e.type === 'Salary' ? 'Employee Salary' : (isPur ? 'Inventory & Purchase' : (e.categoryName || e.category?.name || 'General')),
           paidTo: e.paidTo || 'N/A',
           paymentMode: e.paymentMode || 'Cash',
-          amount: e.amount || 0,
+          amount: outflowAmount,
           date: e.date || e.createdAt,
           referenceNo: e.receiptNo || e.billNo || e._id,
           description: e.description || ''
@@ -2877,6 +2900,117 @@ export const servePublicPdf = async (req, res) => {
     return res.status(500).send('Error serving PDF document.');
   }
 };
+
+// ==========================================
+// VENDOR CONTROLLERS
+// ==========================================
+
+export const getVendors = async (req, res) => {
+  try {
+    const vendors = await Vendor.find({ isActive: true }).sort({ name: 1 });
+    return res.status(200).json({
+      success: true,
+      data: vendors
+    });
+  } catch (error) {
+    console.error('getVendors Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createVendor = async (req, res) => {
+  try {
+    const { name, phone, email, gstin, address, notes } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Vendor name is required.' });
+    }
+
+    const cleanName = name.trim();
+    const escapedName = cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let existing = await Vendor.findOne({
+      name: { $regex: new RegExp(`^${escapedName}$`, 'i') },
+      isActive: true
+    });
+
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Vendor with this name already exists.' });
+    }
+
+    const newVendor = await Vendor.create({
+      name: cleanName,
+      phone: phone ? phone.trim() : '',
+      email: email ? email.trim() : '',
+      gstin: gstin ? gstin.trim() : '',
+      address: address ? address.trim() : '',
+      notes: notes ? notes.trim() : '',
+      createdBy: req.user?._id || null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Vendor created successfully.',
+      data: newVendor
+    });
+  } catch (error) {
+    console.error('createVendor Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateVendor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, email, gstin, address, notes } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Vendor name is required.' });
+    }
+
+    const vendor = await Vendor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    }
+
+    vendor.name = name.trim();
+    if (phone !== undefined) vendor.phone = phone.trim();
+    if (email !== undefined) vendor.email = email.trim();
+    if (gstin !== undefined) vendor.gstin = gstin.trim();
+    if (address !== undefined) vendor.address = address.trim();
+    if (notes !== undefined) vendor.notes = notes.trim();
+
+    await vendor.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Vendor updated successfully.',
+      data: vendor
+    });
+  } catch (error) {
+    console.error('updateVendor Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteVendor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await Vendor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    }
+
+    await Vendor.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Vendor deleted successfully.'
+    });
+  } catch (error) {
+    console.error('deleteVendor Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 
 
 

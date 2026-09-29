@@ -116,7 +116,7 @@ NODE_ENV=development
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
 
 # Database Connection (MongoDB Atlas)
-MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/crm
+MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/fab
 
 # Security Token Key
 JWT_SECRET=your_jwt_secret_key_here

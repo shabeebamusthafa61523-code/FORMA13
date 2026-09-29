@@ -29,6 +29,7 @@ import academyRoutes from './academy.routes.js';
 import leaveRoutes from './leave.routes.js';
 import recruitmentRoutes from './recruitment.routes.js';
 import calendarRoutes from './calendar.routes.js';
+import dailyOperationsRoutes from './dailyOperations.routes.js';
 
 const router = Router();
 
@@ -63,5 +64,6 @@ router.use('/employee-reports', employeeReportPDFRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/performance', performanceRoutes);
 router.use('/calendar-work', calendarRoutes);
+router.use('/daily-operations', dailyOperationsRoutes);
 
 export default router;

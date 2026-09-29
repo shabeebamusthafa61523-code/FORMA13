@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, Download, Building2, GraduationCap, Coins, ShieldCheck, FileText, CheckCircle2, Pencil, Loader2, Save, History, Receipt, Plus, User, Trash2, Check, MessageCircle, ChevronDown } from 'lucide-react';
 import { updatePaymentSettlement, deletePaymentSettlement } from '../../services/accountsService';
+import ConfirmModal from '../ConfirmModal';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -91,10 +92,18 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
     }
   };
 
-  const handleDeleteLog = async (paymentId) => {
+  const [deleteLogConfirm, setDeleteLogConfirm] = useState({ isOpen: false, paymentId: null });
+
+  const triggerDeleteLog = (paymentId) => {
+    setDeleteLogConfirm({ isOpen: true, paymentId });
+  };
+
+  const handleExecuteDeleteLog = async () => {
+    const paymentId = deleteLogConfirm.paymentId;
+    setDeleteLogConfirm({ isOpen: false, paymentId: null });
     const recId = currentRecord?._id || incomeRecord?._id;
     if (!recId || !paymentId) return;
-    if (!window.confirm('Are you sure you want to delete this payment log entry? This will update total collected amount and balance due.')) return;
+
     setDeletingLogId(paymentId);
     try {
       const res = await deletePaymentSettlement(recId, paymentId);
@@ -1705,7 +1714,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteLog(st._id)}
+                                  onClick={() => triggerDeleteLog(st._id)}
                                   disabled={isDeletingThis}
                                   className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-[10px] shadow-2xs flex items-center gap-1 transition cursor-pointer"
                                   title="Delete this payment settlement"
@@ -1847,6 +1856,17 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
           )}
         </div>
       </div>
+
+      {/* Viewport Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteLogConfirm.isOpen}
+        onClose={() => setDeleteLogConfirm({ isOpen: false, paymentId: null })}
+        onConfirm={handleExecuteDeleteLog}
+        title="Delete Payment Settlement Log"
+        message="Are you sure you want to delete this payment log entry? This will update total collected amount and balance due."
+        confirmText="Delete Log"
+        type="danger"
+      />
     </div>,
     document.body
   );

@@ -27,6 +27,7 @@ import {
   Trash2,
   Crown
 } from 'lucide-react';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 import { useToast } from '../components/ToastProvider';
 
@@ -486,12 +487,26 @@ export default function LeavesPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => setIsApplyModalOpen(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" /> Apply for Leave
-        </button>
+        <div className="flex items-center gap-3">
+          <ExcelExportButton
+            data={filteredLeaves.map(l => ({
+              'Employee Name': l.applicantName || l.applicant_id?.name || '',
+              'Leave Type': l.leaveType || l.leave_type || '',
+              'Start Date': l.startDate ? new Date(l.startDate).toLocaleDateString() : '',
+              'End Date': l.endDate ? new Date(l.endDate).toLocaleDateString() : '',
+              'Reason': l.reason || '',
+              'Status': l.status || 'PENDING'
+            }))}
+            fileName="leave_requests_export"
+            sheetName="Leaves"
+          />
+          <button
+            onClick={() => setIsApplyModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Apply for Leave
+          </button>
+        </div>
       </div>
 
       {/* Navigation Tabs */}

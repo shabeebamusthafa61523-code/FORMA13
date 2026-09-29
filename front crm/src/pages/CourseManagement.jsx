@@ -8,6 +8,7 @@ import {
   FolderKanban, ShieldCheck, ArrowUpRight
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -341,6 +342,19 @@ const CourseManagement = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <ExcelExportButton
+            data={filteredCourses.map(c => ({
+              'Course Name': c.courseName || '',
+              'Category': c.category || '',
+              'Duration': c.duration || '',
+              'Fee (₹)': c.fee || 0,
+              'Active Batches': c.batchCount || c.batches?.length || 0,
+              'Status': c.status || 'ACTIVE'
+            }))}
+            fileName="courses_export"
+            sheetName="Courses"
+          />
+
           <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <button 
               onClick={() => setViewMode('grid')} 

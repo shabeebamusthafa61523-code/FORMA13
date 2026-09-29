@@ -12,6 +12,7 @@ import Register from './pages/Register';
 import Attendance from './pages/Attendance';
 import Todo from './pages/Todo';
 import Users from './pages/Users';
+import UserDetailPage from './pages/UserDetailPage';
 import Leads from './pages/Leads';
 import LeadsTelecaller from './pages/LeadsTelecaller';
 import LeadCounselor from './pages/LeadCounselor';
@@ -61,6 +62,7 @@ import PayslipsPage from './pages/PayslipsPage';
 import PersonalPayslipPage from './pages/PersonalPayslipPage';
 import RecruitmentPage from './pages/RecruitmentPage';
 import CalendarWorkPage from './pages/CalendarWorkPage';
+import DailyOperationsPage from './pages/DailyOperationsPage';
 
 // Client & Project Management Module Pages
 import ClientsPage from './pages/ClientsPage';
@@ -186,6 +188,7 @@ function App() {
         <Route path="/attendance" element={<ProtectedRoute><MainLayout><Attendance /></MainLayout></ProtectedRoute>} />
         <Route path="/todo" element={<ProtectedRoute><MainLayout><RestrictedRoute><Todo /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><MainLayout><RestrictedRoute><Users /></RestrictedRoute></MainLayout></ProtectedRoute>} />
+        <Route path="/users/:userId" element={<ProtectedRoute><MainLayout><RestrictedRoute><UserDetailPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/sidebar-permissions" element={<ProtectedRoute><MainLayout><RestrictedRoute><SidebarPermissionsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/permissions/:userId" element={<ProtectedRoute><MainLayout><RestrictedRoute><UserPermissionsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/leads" element={<ProtectedRoute><MainLayout><RestrictedRoute><Leads /></RestrictedRoute></MainLayout></ProtectedRoute>} />
@@ -250,6 +253,7 @@ function App() {
         <Route path="/accounts/categories" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/expenses" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/salary" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
+        <Route path="/accounts/employee-ledger" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/cash-book" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/operation" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/reports" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
@@ -266,6 +270,9 @@ function App() {
 
         {/* Content Calendar Module Route */}
         <Route path="/calendar-work" element={<ProtectedRoute><MainLayout><CalendarWorkPage /></MainLayout></ProtectedRoute>} />
+
+        {/* Daily Operations OS Route */}
+        <Route path="/daily-operations" element={<ProtectedRoute><MainLayout><DailyOperationsPage /></MainLayout></ProtectedRoute>} />
 
         {/* Default Landing Route */}
         <Route path="/" element={<LandingRoute />} />

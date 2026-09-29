@@ -95,11 +95,20 @@ export const mdDashboardController = {
       });
       recentStudents = Array.from(mergedStudentMap.values()).slice(0, 8);
 
+      const superAdminFilter = {
+        role: { $nin: ['superadmin', '0'] },
+        role_id: { $ne: '0' },
+        isSuperAdmin: { $ne: true }
+      };
+
       const activeEmployeesCount = await User.countDocuments({
         status: { $regex: /^active$/i },
-        isActive: { $ne: false }
+        isActive: { $ne: false },
+        ...superAdminFilter
       });
-      const totalEmployeesCount = await User.countDocuments({});
+      const totalEmployeesCount = await User.countDocuments({
+        ...superAdminFilter
+      });
 
       // 2. SALES & GROWTH TAB METRICS & LEAD FUNNEL
       const totalLeads = await Lead.countDocuments({});

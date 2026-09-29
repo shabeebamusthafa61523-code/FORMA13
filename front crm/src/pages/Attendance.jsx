@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Calendar
 } from 'lucide-react';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 // ===============================
@@ -380,13 +381,26 @@ const Attendance = () => {
             </div>
           </div>
 
-          <div className="hidden md:block bg-white dark:bg-slate-900 px-6 py-3 rounded-2xl border">
-            {currentTime.toLocaleDateString('en-IN', {
-              weekday: 'short',
-              day: '2-digit',
-              month: 'short',
-              timeZone: 'Asia/Kolkata'
-            }).toUpperCase()}
+          <div className="flex items-center gap-3">
+            <ExcelExportButton
+              data={[{
+                'Date': selectedDate,
+                'Check In': selectedLog?.check_in_time ? new Date(selectedLog.check_in_time).toLocaleTimeString() : 'N/A',
+                'Check Out': selectedLog?.check_out_time ? new Date(selectedLog.check_out_time).toLocaleTimeString() : 'N/A',
+                'Working Hours': liveWorkingHours || '0.00',
+                'Status': selectedLog?.check_in_time ? 'Present' : 'Absent'
+              }]}
+              fileName={`attendance_${selectedDate}_export`}
+              sheetName="Attendance"
+            />
+            <div className="hidden md:block bg-white dark:bg-slate-900 px-6 py-3 rounded-2xl border">
+              {currentTime.toLocaleDateString('en-IN', {
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                timeZone: 'Asia/Kolkata'
+              }).toUpperCase()}
+            </div>
           </div>
         </header>
 

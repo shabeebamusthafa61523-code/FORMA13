@@ -2,100 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, DollarSign, Users, Calendar, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
-import { createSalaryPayment } from '../../services/accountsService';
+import {
+  X, Plus, DollarSign, Users, Calendar, Sparkles, Loader2, CheckCircle2, Clock,
+  BookOpen, FileText, CheckCircle, XCircle, RefreshCw
+} from 'lucide-react';
+import { createSalaryPayment, getSalaryPayments } from '../../services/accountsService';
 import { useToast } from '../ToastProvider';
 
 const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
   const { showToast } = useToast();
+  const [activeTab, setActiveTab] = useState('add'); // 'add' | 'ledger'
   const [employees, setEmployees] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form States
+  // Core Daily Wage Form States
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
-  const [kbEmployeeId, setKbEmployeeId] = useState('KB-DV-002');
-  const [location, setLocation] = useState('HEAD OFFICE');
-  const [payPeriod, setPayPeriod] = useState(() => {
-    const d = new Date();
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const m = monthNames[d.getMonth()];
-    const y = d.getFullYear();
-    const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
-    return `01 ${m} ${y} - ${lastDay} ${m} ${y}`;
-  });
-  const [payDateStr, setPayDateStr] = useState(() => {
-    const d = new Date();
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    return `On or Before 10th ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
-  });
-  const [workingDays, setWorkingDays] = useState(27);
-  const [daysWorked, setDaysWorked] = useState(27);
-  const [daysInLeave, setDaysInLeave] = useState(0);
-  const [paymentMode, setPaymentMode] = useState('Bank');
+  const [dailyWageRate, setDailyWageRate] = useState('');
+  const [daysWorked, setDaysWorked] = useState('1');
+  const [amount, setAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [status, setStatus] = useState('PENDING');
+  const [partialPaidAmount, setPartialPaidAmount] = useState('');
+  const [paymentMode, setPaymentMode] = useState('Cash');
   const [remarks, setRemarks] = useState('');
 
-  // Earnings
-  const [basicSalary, setBasicSalary] = useState('');
-  const [hra, setHra] = useState('0');
-  const [medicalAllowance, setMedicalAllowance] = useState('0');
-  const [specialAllowance, setSpecialAllowance] = useState('0');
-  const [transportAllowance, setTransportAllowance] = useState('0');
-  const [otherAllowance, setOtherAllowance] = useState('0');
-  const [otherAllowanceRemark, setOtherAllowanceRemark] = useState('');
-  const [integrityAward, setIntegrityAward] = useState('0');
-  const [bonus, setBonus] = useState('0');
+  // Employee Ledger State
+  const [ledgerLogs, setLedgerLogs] = useState([]);
+  const [loadingLedger, setLoadingLedger] = useState(false);
 
-  // Deductions
-  const [pf, setPf] = useState('0');
-  const [professionalTax, setProfessionalTax] = useState('0');
-  const [incomeTax, setIncomeTax] = useState('0');
-  const [unpaidLeave, setUnpaidLeave] = useState('0');
-  const [advanceSalary, setAdvanceSalary] = useState('0');
-  const [otherDeductions, setOtherDeductions] = useState('0');
-  const [otherDeductionsRemark, setOtherDeductionsRemark] = useState('');
-  const [department, setDepartment] = useState('');
-  const [designation, setDesignation] = useState('');
-  const [month, setMonth] = useState(() => {
-    const d = new Date();
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    return `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
-  });
-
-  const getEmployeeDepartment = (emp) => {
-    if (!emp) return 'GENERAL';
-    if (emp.departmentId && typeof emp.departmentId === 'object' && emp.departmentId.name) {
-      return emp.departmentId.name;
-    }
-    if (emp.department && typeof emp.department === 'string' && emp.department.trim()) {
-      return emp.department;
-    }
-    if (emp.department && typeof emp.department === 'object' && emp.department.name) {
-      return emp.department.name;
-    }
-    if (emp.department_name && typeof emp.department_name === 'string' && emp.department_name.trim()) {
-      return emp.department_name;
-    }
-    return 'GENERAL';
-  };
-
-  const getEmployeeDesignation = (emp) => {
-    if (!emp) return 'STAFF MEMBER';
-    if (emp.designationName && typeof emp.designationName === 'string' && emp.designationName.trim()) {
-      return emp.designationName;
-    }
-    if (emp.designation && typeof emp.designation === 'string' && emp.designation.trim()) {
-      return emp.designation;
-    }
-    if (emp.designationId && typeof emp.designationId === 'object' && emp.designationId.name) {
-      return emp.designationId.name;
-    }
-    return 'STAFF MEMBER';
-  };
-
-  // Fetch Active Employees
+  // Fetch Active Employees & Reset Date to Today
   useEffect(() => {
     if (!isOpen) return;
+    setPaymentDate(new Date().toISOString().split('T')[0]);
     const fetchEmployees = async () => {
       setLoadingEmployees(true);
       try {
@@ -116,15 +55,17 @@ const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
           setEmployees(activeList);
           if (activeList.length > 0 && !selectedEmployeeId) {
             const firstEmp = activeList[0];
-            setSelectedEmployeeId(firstEmp._id || firstEmp.id);
-            setBasicSalary(firstEmp.salary || '12000');
-            setKbEmployeeId(firstEmp.employeeId || `KB-${(firstEmp.name || '').slice(0, 2).toUpperCase()}-001`);
-            setDepartment(getEmployeeDepartment(firstEmp));
-            setDesignation(getEmployeeDesignation(firstEmp));
+            const empId = firstEmp._id || firstEmp.id;
+            setSelectedEmployeeId(empId);
+            const initSalary = firstEmp.salary || 0;
+            if (initSalary > 0) {
+              setDailyWageRate(String(initSalary));
+              setAmount(String(initSalary));
+            }
           }
         }
       } catch (err) {
-        console.error('Error loading employees for payslip:', err);
+        console.error('Error loading employees for wage payment:', err);
       } finally {
         setLoadingEmployees(false);
       }
@@ -132,21 +73,56 @@ const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
     fetchEmployees();
   }, [isOpen]);
 
+  // Fetch Employee Ledger logs whenever selected employee changes or modal opens
+  const fetchEmployeeLedger = async (empId) => {
+    if (!empId) {
+      setLedgerLogs([]);
+      return;
+    }
+    setLoadingLedger(true);
+    try {
+      const res = await getSalaryPayments({ employeeId: empId });
+      if (res.success) {
+        setLedgerLogs(res.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching employee wage ledger:', err);
+    } finally {
+      setLoadingLedger(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && selectedEmployeeId) {
+      fetchEmployeeLedger(selectedEmployeeId);
+    }
+  }, [isOpen, selectedEmployeeId]);
+
   const handleEmployeeChange = (e) => {
     const empId = e.target.value;
     setSelectedEmployeeId(empId);
     const empObj = employees.find(u => (u._id || u.id) === empId);
-    if (empObj) {
-      setBasicSalary(empObj.salary || '12000');
-      setKbEmployeeId(empObj.employeeId || `KB-${(empObj.name || '').slice(0, 2).toUpperCase()}-001`);
-      setDepartment(getEmployeeDepartment(empObj));
-      setDesignation(getEmployeeDesignation(empObj));
+    if (empObj && empObj.salary) {
+      setDailyWageRate(String(empObj.salary));
+      setAmount(String(Number(empObj.salary) * Number(daysWorked || 1)));
     }
   };
 
-  const totalEarnings = (Number(basicSalary) || 0) + (Number(hra) || 0) + (Number(medicalAllowance) || 0) + (Number(specialAllowance) || 0) + (Number(transportAllowance) || 0) + (Number(otherAllowance) || 0) + (Number(integrityAward) || 0) + (Number(bonus) || 0);
-  const totalDeductions = (Number(pf) || 0) + (Number(professionalTax) || 0) + (Number(incomeTax) || 0) + (Number(unpaidLeave) || 0) + (Number(advanceSalary) || 0) + (Number(otherDeductions) || 0);
-  const netPay = Math.max(0, totalEarnings - totalDeductions);
+  const handleDailyRateChange = (rateVal) => {
+    setDailyWageRate(rateVal);
+    if (rateVal !== '' && !isNaN(rateVal)) {
+      const computed = Number(rateVal) * Number(daysWorked || 1);
+      setAmount(String(computed));
+    }
+  };
+
+  const handleDaysWorkedChange = (daysVal) => {
+    setDaysWorked(daysVal);
+    if (dailyWageRate !== '' && !isNaN(dailyWageRate)) {
+      const computed = Number(dailyWageRate) * Number(daysVal || 1);
+      setAmount(String(computed));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -154,61 +130,81 @@ const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
       showToast('Please select an employee.', 'error');
       return;
     }
-    if (!month) {
-      showToast('Please enter pay month.', 'error');
+    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+      showToast('Please enter a valid positive wage amount.', 'error');
+      return;
+    }
+    if (!paymentDate) {
+      showToast('Please select a payment date.', 'error');
       return;
     }
 
     setSubmitting(true);
     try {
+      const finalPaidVal = status === 'PARTIALLY_PAID'
+        ? Number(partialPaidAmount || 0)
+        : Number(amount);
+
       const payload = {
         employeeId: selectedEmployeeId,
-        month,
-        department: department ? department.trim() : 'GENERAL',
-        designation: designation ? designation.trim() : 'STAFF MEMBER',
-        basicSalary: Number(basicSalary || 0),
-        paidAmount: netPay,
+        paidAmount: finalPaidVal,
+        basicSalary: Number(amount),
+        paymentDate,
+        month: paymentDate ? new Date(paymentDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+        status,
+        remarks: remarks ? remarks.trim() : '',
         paymentMode,
-        remarks,
-        kbEmployeeId,
-        location,
-        payPeriod,
-        payDateStr,
-        workingDays: Number(workingDays || 27),
-        daysWorked: Number(daysWorked || 21),
-        daysInLeave: Number(daysInLeave || 6),
-        hra: Number(hra || 0),
-        medicalAllowance: Number(medicalAllowance || 0),
-        specialAllowance: Number(specialAllowance || 0),
-        transportAllowance: Number(transportAllowance || 0),
-        otherAllowance: Number(otherAllowance || 0),
-        otherAllowanceRemark: otherAllowanceRemark ? otherAllowanceRemark.trim() : '',
-        integrityAward: Number(integrityAward || 0),
-        bonus: Number(bonus || 0),
-        totalEarnings,
-        pf: Number(pf || 0),
-        professionalTax: Number(professionalTax || 0),
-        incomeTax: Number(incomeTax || 0),
-        unpaidLeave: Number(unpaidLeave || 0),
-        advanceSalary: Number(advanceSalary || 0),
-        otherDeductions: Number(otherDeductions || 0),
-        otherDeductionsRemark: otherDeductionsRemark ? otherDeductionsRemark.trim() : '',
-        totalDeductions
+        daysWorked: Number(daysWorked || 1),
+        workingDays: Number(daysWorked || 1)
       };
 
       const res = await createSalaryPayment(payload);
       if (res.success) {
-        showToast('Payslip generated and salary record created successfully!', 'success');
+        showToast('Daily wage entry created successfully!', 'success');
+        fetchEmployeeLedger(selectedEmployeeId);
         onSuccess();
         onClose();
       } else {
-        showToast(res.message || 'Failed to generate payslip.', 'error');
+        showToast(res.message || 'Failed to create wage entry.', 'error');
       }
     } catch (err) {
-      console.error('Error generating payslip:', err);
-      showToast(err.response?.data?.message || 'Error creating payslip.', 'error');
+      console.error('Error creating wage entry:', err);
+      showToast(err.response?.data?.message || 'Error creating wage entry.', 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const selectedEmpObj = employees.find(u => (u._id || u.id) === selectedEmployeeId);
+  const totalPaidLedgerAmount = ledgerLogs.reduce((acc, curr) => acc + Number(curr.paidAmount ?? curr.customNetPay ?? curr.basicSalary ?? 0), 0);
+
+  const renderStatusBadge = (logStatus) => {
+    switch (logStatus) {
+      case 'COMPLETED':
+      case 'APPROVED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 size={11} /> {logStatus === 'COMPLETED' ? 'Completed' : 'Approved'}
+          </span>
+        );
+      case 'PARTIALLY_PAID':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+            <Clock size={11} /> Partially Paid
+          </span>
+        );
+      case 'REJECTED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle size={11} /> Rejected
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            <Clock size={11} /> Pending
+          </span>
+        );
     }
   };
 
@@ -222,46 +218,284 @@ const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative z-10 w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto"
+          className="relative z-10 w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto"
         >
-          {/* Modal Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold shadow-md">
-                <Plus size={20} />
+          {/* Modal Header & Tabs */}
+          <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+            <div className="flex items-center justify-between px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold shadow-md">
+                  <Plus size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                    Wage Management
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Add wage entry or view employee ledger logs
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">Create Official Employee Payslip</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Generate itemized KOD.BRAND salary slip</p>
-              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X size={18} />
-            </button>
+
+            {/* Navigation Tabs */}
+            <div className="flex border-t border-slate-200/80 dark:border-slate-800 px-6 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('add')}
+                className={`flex items-center gap-2 py-2.5 px-4 font-extrabold text-xs border-b-2 transition cursor-pointer ${
+                  activeTab === 'add'
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <Plus size={14} /> Add Wage Entry
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('ledger')}
+                className={`flex items-center gap-2 py-2.5 px-4 font-extrabold text-xs border-b-2 transition cursor-pointer ${
+                  activeTab === 'ledger'
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <BookOpen size={14} /> Employee Ledger
+                {selectedEmployeeId && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold">
+                    {ledgerLogs.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
-          {/* Modal Form */}
-          <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 text-xs text-slate-800 dark:text-slate-200">
-            {/* 1. Employee & Period Details Header */}
-            <div className="bg-slate-50 dark:bg-slate-950/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <h4 className="font-extrabold uppercase tracking-wider text-[11px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                <Users size={14} /> Employee & Pay Period Information
-              </h4>
+          {/* Modal Body */}
+          <div className="p-6 overflow-y-auto text-xs text-slate-800 dark:text-slate-200">
+            {/* TAB 1: ADD WAGE FORM */}
+            {activeTab === 'add' && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* 1ST ROW: Employee Selection & Auto-Fetched Today's Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                      <Users size={14} className="text-indigo-600 dark:text-indigo-400" /> Select Employee *
+                    </label>
+                    <select
+                      required
+                      value={selectedEmployeeId}
+                      onChange={handleEmployeeChange}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {loadingEmployees ? (
+                        <option value="">Loading staff list...</option>
+                      ) : (
+                        employees.map(e => (
+                          <option key={e._id || e.id} value={e._id || e.id}>
+                            {e.name} ({e.designationName || e.designation || 'Staff'})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                      <Calendar size={14} className="text-indigo-600 dark:text-indigo-400" /> Wage Date *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={paymentDate}
+                      onChange={e => setPaymentDate(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* 2ND ROW: Daily Wage Rate & Days Worked */}
+                <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-2xl border border-indigo-100 dark:border-indigo-900/50">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Daily Wage Rate (₹/day)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 500"
+                      value={dailyWageRate}
+                      onChange={e => handleDailyRateChange(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Days Worked
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="1"
+                      value={daysWorked}
+                      onChange={e => handleDaysWorkedChange(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* 3RD ROW: Wage Amount & Payment Mode */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                      <DollarSign size={14} className="text-emerald-600 dark:text-emerald-400" /> Wage Amount (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="any"
+                      placeholder="Total wage amount"
+                      value={amount}
+                      onChange={e => setAmount(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-sm font-extrabold text-emerald-600 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Payment Mode *
+                    </label>
+                    <select
+                      value={paymentMode}
+                      onChange={e => setPaymentMode(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Cash">Cash Disbursal</option>
+                      <option value="Bank">Bank Transfer</option>
+                      <option value="UPI">UPI / Online</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4TH ROW: Status */}
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Select Employee *</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <Clock size={14} className="text-amber-600 dark:text-amber-400" /> Status *
+                  </label>
                   <select
-                    required
+                    value={status}
+                    onChange={e => {
+                      const newSt = e.target.value;
+                      setStatus(newSt);
+                      if (newSt === 'PARTIALLY_PAID' && !partialPaidAmount) {
+                        setPartialPaidAmount(String(Math.round(Number(amount || 0) / 2)));
+                      }
+                    }}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="PENDING">Pending</option>
+                    <option value="PARTIALLY_PAID">Partially Paid</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+
+                {/* Partial Payment Breakdown if PARTIALLY_PAID */}
+                {status === 'PARTIALLY_PAID' && (
+                  <div className="p-3.5 bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 rounded-2xl space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-sky-800 dark:text-sky-300 mb-1">
+                          Amount Paid So Far (₹) *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          max={Number(amount || 0)}
+                          step="any"
+                          value={partialPaidAmount}
+                          onChange={e => setPartialPaidAmount(e.target.value)}
+                          placeholder="e.g. 2500"
+                          className="w-full bg-white dark:bg-slate-900 border border-sky-300 dark:border-sky-700 rounded-xl p-2.5 font-extrabold text-sky-700 dark:text-sky-300 outline-none"
+                        />
+                      </div>
+
+                      <div className="flex flex-col justify-center bg-rose-50/80 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/40">
+                        <span className="text-[10px] font-black uppercase text-rose-600 dark:text-rose-400">Minus Amount (Remaining Due)</span>
+                        <span className="text-base font-black text-rose-700 dark:text-rose-300">
+                          -₹{Math.max(0, Number(amount || 0) - Number(partialPaidAmount || 0)).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5TH ROW: Remarks */}
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Remarks / Description
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter wage payment remarks or details..."
+                    value={remarks}
+                    onChange={e => setRemarks(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold transition shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Saving Entry...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>Add Wage Entry</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: EMPLOYEE LEDGER LOGS */}
+            {activeTab === 'ledger' && (
+              <div className="space-y-4">
+                {/* Employee Selection Bar for Ledger */}
+                <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <Users size={14} className="text-indigo-600 dark:text-indigo-400" /> Select Employee for Ledger
+                  </label>
+                  <select
                     value={selectedEmployeeId}
                     onChange={handleEmployeeChange}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-900 dark:text-white"
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {loadingEmployees ? (
-                      <option>Loading staff list...</option>
+                      <option value="">Loading staff list...</option>
                     ) : (
                       employees.map(e => (
                         <option key={e._id || e.id} value={e._id || e.id}>
@@ -272,367 +506,95 @@ const CreatePayslipModal = ({ isOpen, onClose, onSuccess }) => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Employee Code (ID)</label>
-                  <input
-                    type="text"
-                    value={kbEmployeeId}
-                    onChange={e => setKbEmployeeId(e.target.value)}
-                    placeholder="KB-DV-002"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={department}
-                    onChange={e => setDepartment(e.target.value)}
-                    placeholder="e.g. Operations / Development"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Pay Month *</label>
-                  <input
-                    type="text"
-                    required
-                    value={month}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setMonth(val);
-                      if (val && val.trim()) {
-                        const parts = val.trim().split(/\s+/);
-                        const mName = parts[0] || '';
-                        const yearStr = parts[1] || new Date().getFullYear();
-                        setPayDateStr(`On or Before 10th ${mName} ${yearStr}`);
-                      }
-                    }}
-                    placeholder="September 2026"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Location</label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={e => setLocation(e.target.value)}
-                    placeholder="HEAD OFFICE"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Pay Period Dates</label>
-                  <input
-                    type="text"
-                    value={payPeriod}
-                    onChange={e => setPayPeriod(e.target.value)}
-                    placeholder="01 July 2026 - 31 July 2026"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Pay Date Text</label>
-                  <input
-                    type="text"
-                    value={payDateStr}
-                    onChange={e => setPayDateStr(e.target.value)}
-                    placeholder="On or Before 10th August 2026"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Working Days</label>
-                  <input
-                    type="number"
-                    value={workingDays}
-                    onChange={e => {
-                      const wd = Number(e.target.value) || 0;
-                      setWorkingDays(wd);
-                      const dw = Number(daysWorked) || 0;
-                      setDaysInLeave(Math.max(0, wd - dw));
-                    }}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Days Worked</label>
-                  <input
-                    type="number"
-                    value={daysWorked}
-                    onChange={e => {
-                      const dw = Number(e.target.value) || 0;
-                      setDaysWorked(dw);
-                      const wd = Number(workingDays) || 0;
-                      setDaysInLeave(Math.max(0, wd - dw));
-                    }}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Days in Leave</label>
-                  <input
-                    type="number"
-                    value={daysInLeave}
-                    onChange={e => {
-                      const dil = Number(e.target.value) || 0;
-                      setDaysInLeave(dil);
-                      const wd = Number(workingDays) || 0;
-                      setDaysWorked(Math.max(0, wd - dil));
-                    }}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium text-amber-600 dark:text-amber-400"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Earnings Particulars */}
-            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <h4 className="font-extrabold uppercase tracking-wider text-[11px] text-emerald-600 dark:text-emerald-400">
-                  EARNINGS PARTICULAR BREAKDOWN (₹)
-                </h4>
-                <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                  Total Earnings: ₹{totalEarnings.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Basic Salary *</label>
-                  <input
-                    type="number"
-                    required
-                    value={basicSalary}
-                    onChange={e => setBasicSalary(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">House Rent (HRA)</label>
-                  <input
-                    type="number"
-                    value={hra}
-                    onChange={e => setHra(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Medical Allowance</label>
-                  <input
-                    type="number"
-                    value={medicalAllowance}
-                    onChange={e => setMedicalAllowance(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Special Allowance</label>
-                  <input
-                    type="number"
-                    value={specialAllowance}
-                    onChange={e => setSpecialAllowance(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Transport Allowance</label>
-                  <input
-                    type="number"
-                    value={transportAllowance}
-                    onChange={e => setTransportAllowance(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Other Allowance</label>
-                  <input
-                    type="number"
-                    value={otherAllowance}
-                    onChange={e => setOtherAllowance(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-
-                {(Number(otherAllowance) > 0 || (otherAllowance && String(otherAllowance).trim() !== '0' && String(otherAllowance).trim() !== '')) && (
-                  <div className="col-span-1 sm:col-span-2 md:col-span-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-300/70 dark:border-amber-800/40 p-2.5 rounded-xl space-y-1 my-1 animate-in fade-in duration-200">
-                    <label className="block text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-                      Other Allowance Remark / Reason
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Travel Reimbursement, Project Incentive, Relocation Stipend"
-                      value={otherAllowanceRemark}
-                      onChange={e => setOtherAllowanceRemark(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl p-2 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500/40"
-                    />
+                {/* Ledger Summary Box */}
+                <div className="p-3.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between shadow-md">
+                  <div>
+                    <h4 className="font-extrabold text-xs tracking-wide text-indigo-200 uppercase">
+                      {selectedEmpObj?.name || 'Employee'} - Wage Ledger
+                    </h4>
+                    <p className="text-[11px] text-slate-300">
+                      Total {ledgerLogs.length} payment record(s) logged
+                    </p>
                   </div>
-                )}
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">KODBRAND Integrity</label>
-                  <input
-                    type="number"
-                    value={integrityAward}
-                    onChange={e => setIntegrityAward(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Bonus</label>
-                  <input
-                    type="number"
-                    value={bonus}
-                    onChange={e => setBonus(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Deductions Particulars */}
-            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <h4 className="font-extrabold uppercase tracking-wider text-[11px] text-rose-600 dark:text-rose-400">
-                  DEDUCTIONS PARTICULAR BREAKDOWN (₹)
-                </h4>
-                <span className="font-black text-rose-600 dark:text-rose-400 text-sm">
-                  Total Deductions: ₹{totalDeductions.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">PF (Provident Fund)</label>
-                  <input
-                    type="number"
-                    value={pf}
-                    onChange={e => setPf(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Professional Tax</label>
-                  <input
-                    type="number"
-                    value={professionalTax}
-                    onChange={e => setProfessionalTax(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Income Tax</label>
-                  <input
-                    type="number"
-                    value={incomeTax}
-                    onChange={e => setIncomeTax(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Unpaid Leave</label>
-                  <input
-                    type="number"
-                    value={unpaidLeave}
-                    onChange={e => setUnpaidLeave(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-semibold text-rose-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Advance Salary</label>
-                  <input
-                    type="number"
-                    value={advanceSalary}
-                    onChange={e => setAdvanceSalary(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-semibold mb-1">Other Deductions</label>
-                  <input
-                    type="number"
-                    value={otherDeductions}
-                    onChange={e => setOtherDeductions(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2"
-                  />
-                </div>
-
-                {(Number(otherDeductions) > 0 || (otherDeductions && String(otherDeductions).trim() !== '0' && String(otherDeductions).trim() !== '')) && (
-                  <div className="col-span-1 sm:col-span-2 md:col-span-3 bg-rose-50/70 dark:bg-rose-950/20 border border-rose-300/70 dark:border-rose-800/40 p-2.5 rounded-xl space-y-1 my-1 animate-in fade-in duration-200">
-                    <label className="block text-[10px] font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider">
-                      Other Deductions Remark / Reason
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Asset Damage Recovery, Excess Disbursal Adjustment, Fine"
-                      value={otherDeductionsRemark}
-                      onChange={e => setOtherDeductionsRemark(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/60 rounded-xl p-2 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-rose-500/40"
-                    />
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase font-bold text-slate-400">Total Disbursed</span>
+                    <span className="text-lg font-black text-emerald-400">
+                      ₹{totalPaidLedgerAmount.toLocaleString('en-IN')}
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* Net Pay Highlight & Disbursal Mode */}
-            <div className="bg-indigo-50 dark:bg-indigo-950/40 p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div>
-                <span className="block text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">NET PAYABLE AMOUNT (₹)</span>
-                <span className="text-2xl font-black text-indigo-700 dark:text-indigo-300">₹{netPay.toLocaleString('en-IN')}</span>
-              </div>
+                {/* Ledger Table */}
+                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                        <tr>
+                          <th className="py-2.5 px-3 font-bold">Payment Date</th>
+                          <th className="py-2.5 px-3 font-bold text-right">Amount (₹)</th>
+                          <th className="py-2.5 px-3 font-bold">Mode</th>
+                          <th className="py-2.5 px-3 font-bold">Status</th>
+                          <th className="py-2.5 px-3 font-bold">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {loadingLedger ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400">
+                              <Loader2 size={18} className="animate-spin inline-block mr-2" />
+                              Fetching wage ledger logs...
+                            </td>
+                          </tr>
+                        ) : ledgerLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400">
+                              No wage payment logs found for {selectedEmpObj?.name || 'this employee'}.
+                            </td>
+                          </tr>
+                        ) : (
+                          ledgerLogs.map((log) => {
+                            const paidVal = log.paidAmount !== undefined ? log.paidAmount : (log.customNetPay !== undefined ? log.customNetPay : (log.basicSalary || 0));
+                            return (
+                              <tr key={log._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                                  {log.paymentDate ? new Date(log.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                  ₹{Number(paidVal).toLocaleString('en-IN')}
+                                </td>
+                                <td className="py-2.5 px-3 font-medium">
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold">
+                                    {log.paymentMode || 'Cash'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {renderStatusBadge(log.status || 'PENDING')}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={log.remarks}>
+                                  {log.remarks || '-'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="flex-1 sm:flex-none">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Payment Mode</label>
-                  <select
-                    value={paymentMode}
-                    onChange={e => setPaymentMode(e.target.value)}
-                    className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-bold text-xs"
+                {/* Footer Switch button */}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('add')}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
-                    <option value="Bank">Bank Transfer</option>
-                    <option value="Cash">Cash Disbursal</option>
-                    <option value="UPI">UPI / Online</option>
-                  </select>
+                    <Plus size={14} /> Add New Wage Entry
+                  </button>
                 </div>
               </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Generating Payslip...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={16} />
-                    <span>Generate & Issue Payslip</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+            )}
+          </div>
         </motion.div>
       </div>
     </AnimatePresence>,

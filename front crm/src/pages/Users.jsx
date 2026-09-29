@@ -1,18 +1,46 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit3, Trash2, Eye, X, Mail, Phone,
   Briefcase, Folder, UserCheck, ShieldAlert, Image as ImageIcon,
   Loader2, User, ChevronRight, CheckCircle2, AlertTriangle, Shield, BarChart3,
-  ShieldCheck, KeyRound, Lock
+  ShieldCheck, KeyRound, Lock, Calendar, DollarSign, MapPin
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
 import ConfirmModal from '../components/ConfirmModal';
 import PerformanceTab from '../components/PerformanceTab';
 import PerformanceDashboard from './PerformanceDashboard';
+import ExcelExportButton from '../components/ExcelExportButton';
+
 const RAW_API_BASE = import.meta.env.VITE_API_URL || '/api';
 const API_BASE = (RAW_API_BASE.endsWith('/') ? RAW_API_BASE.slice(0, -1) : RAW_API_BASE).replace(/\/+$/, '');
+
+const useLockBodyScroll = (isOpen = true) => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const scrollY = window.scrollY || window.pageYOffset;
+    const originalOverflow = document.body.style.overflow;
+    const originalPosition = document.body.style.position;
+    const originalTop = document.body.style.top;
+    const originalWidth = document.body.style.width;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.position = originalPosition;
+      document.body.style.top = originalTop;
+      document.body.style.width = originalWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen]);
+};
 const ROLES = [
   { id: "0", name: "superadmin" },
   { id: "1", name: "hr" },
@@ -96,14 +124,15 @@ const ALL_SIDEBAR_ITEMS = [
 
 const STATUS_META = {
   active: { label: 'Active', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
-  inactive: { label: 'Inactive', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400', dot: 'bg-amber-500' },
-  blocked: { label: 'Blocked', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400', dot: 'bg-rose-500' }
+  inactive: { label: 'Inactive', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400', dot: 'bg-amber-500' }
 };
 
 const PermissionModal = ({ isOpen, onClose, user, onSave, showToast, getAuthHeaders }) => {
   const [selectedPermissions, setSelectedPermissions] = useState([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useLockBodyScroll(isOpen);
 
   const loggedInUser = useMemo(() => {
     try {
@@ -244,14 +273,14 @@ const PermissionModal = ({ isOpen, onClose, user, onSave, showToast, getAuthHead
   // Group items by category
   const categories = [...new Set(availableSidebarItems.map(i => i.category))];
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[6000] bg-slate-900/50 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-md flex justify-center items-center p-4 overflow-hidden"
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden my-6"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden my-auto"
       >
         {/* Header */}
         <div className="p-6 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 text-white flex justify-between items-center">
@@ -384,7 +413,8 @@ const PermissionModal = ({ isOpen, onClose, user, onSave, showToast, getAuthHead
           </button>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };
 
@@ -392,9 +422,7 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('all'); // all, active, inactive, blocked
-  const [showKpiAnalytics, setShowKpiAnalytics] = useState(false);
-  // Ensure it is initialized like this inside your component:
+  const [activeTab, setActiveTab] = useState('all'); // all, active, inactive
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState({ isOpen: false, id: null, name: '' });
@@ -444,8 +472,7 @@ const Users = () => {
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
-      // Appended roles parameter to query only explicit structural system role IDs
-      const res = await fetch(`${API_BASE}/v1/users?roles=1,2,3`, {
+      const res = await fetch(`${API_BASE}/v1/users`, {
         headers: getAuthHeaders()
       });
       if (!res.ok) {
@@ -461,10 +488,11 @@ const Users = () => {
         incomingUsers = data;
       }
 
-      // Strict structural filtering: ensures only matching target IDs (1, 2, 3) enter UI state
+      // Exclude superadmin users from staff directory listing
       const targetRolesOnly = incomingUsers.filter(user => {
-        const userRoleId = String(user.roleId || user.role || '');
-        return ['1', '2', '3'].includes(userRoleId) || ['hr', 'admin', 'employee'].includes(userRoleId.toLowerCase());
+        const userRoleId = String(user.roleId || user.role_id || user.role || '');
+        const isSuper = user.isSuperAdmin === true || user.role === 'superadmin' || userRoleId === '0' || userRoleId.toLowerCase() === 'superadmin';
+        return !isSuper;
       });
 
       setUsers(targetRolesOnly);
@@ -557,8 +585,7 @@ const Users = () => {
     return {
       all: users.length,
       active: users.filter(u => (u.status || 'active') === 'active').length,
-      inactive: users.filter(u => (u.status || 'active') === 'inactive').length,
-      blocked: users.filter(u => (u.status || 'active') === 'blocked').length
+      inactive: users.filter(u => (u.status || 'active') === 'inactive').length
     };
   }, [users]);
 
@@ -643,18 +670,19 @@ const Users = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowKpiAnalytics(prev => !prev)}
-              className={`group flex items-center justify-center gap-2 px-6 py-3.5 rounded-full font-bold text-[12px] uppercase tracking-wider transition-all duration-300 shadow-md cursor-pointer ${showKpiAnalytics
-                  ? 'bg-indigo-600 text-white shadow-indigo-600/30 ring-2 ring-indigo-400'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
-            >
-              <BarChart3 size={16} className={showKpiAnalytics ? 'animate-bounce text-white' : 'text-indigo-500'} />
-              <span>{showKpiAnalytics ? 'Hide KPI Analytics' : 'KPI Analytics'}</span>
-            </button>
-
+            <ExcelExportButton
+              data={filteredUsers.map(u => ({
+                'Employee Name': u.name || '',
+                'Email': u.email || '',
+                'Phone': u.mobile || u.phone || '',
+                'Role': u.role || '',
+                'Designation': getDesignationName(u),
+                'Department': getDepartmentName(u),
+                'Status': u.status || 'active'
+              }))}
+              fileName="employees_list_export"
+              sheetName="Employees"
+            />
             <button
               onClick={() => setIsCreateOpen(true)}
               className="group relative flex items-center justify-center gap-2 px-8 py-4 bg-indigo-600 dark:bg-slate-900 text-white dark:text-slate-100 border border-transparent dark:border-slate-800 shadow-lg hover:shadow-indigo-500/20 dark:hover:shadow-none rounded-full font-bold text-[12px] uppercase tracking-wider transition-all duration-300 hover:scale-[1.03] active:scale-[0.98] overflow-hidden cursor-pointer"
@@ -666,26 +694,11 @@ const Users = () => {
           </div>
         </header>
 
-        {/* Collapsible KPI Analytics Dashboard */}
-        <AnimatePresence>
-          {showKpiAnalytics && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-              className="overflow-hidden bg-white/50 dark:bg-slate-900/40 p-4 md:p-6 rounded-3xl border border-indigo-100 dark:border-indigo-900/40 shadow-inner"
-            >
-              <PerformanceDashboard />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Filters and Search */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 py-1">
           {/* Tabs */}
           <div className="flex flex-wrap gap-2">
-            {['all', 'active', 'inactive', 'blocked'].map((tab) => (
+            {['all', 'active', 'inactive'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -741,12 +754,12 @@ const Users = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800/80">
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee Details</th>
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Contact</th>
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Role / Designation</th>
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Department / Manager</th>
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Status</th>
-                    <th className="py-4.5 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Actions</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Name</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Phone Number</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Role</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Position / Designation</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Status</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
@@ -759,103 +772,77 @@ const Users = () => {
                         className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-all duration-200 group"
                       >
                         {/* Profile & Name */}
-                        <td className="py-4.5 px-6">
-                          <div className="flex items-center gap-4">
+                        <td className="py-4 px-6 cursor-pointer" onClick={() => handleViewClick(user)}>
+                          <div className="flex items-center gap-3">
                             <div className="relative shrink-0">
                               {(user.avatar || user.profile_image || user.profileImage) && !imgErrors[user._id || user.id] ? (
                                 <img
                                   src={user.avatar || user.profile_image || user.profileImage}
                                   alt={user.name}
-                                  className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-800 shadow-sm"
+                                  className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-800 shadow-xs"
                                   onError={() => {
                                     setImgErrors(prev => ({ ...prev, [user._id || user.id]: true }));
                                   }}
                                 />
                               ) : (
-                                <div className="w-11 h-11 rounded-full bg-white-500/10 border border-indigo-500/20 text-indigo-500 flex items-center justify-center shadow-sm">
-                                  <User size={18} />
+                                <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shadow-xs">
+                                  {user.name ? user.name.charAt(0).toUpperCase() : <User size={16} />}
                                 </div>
                               )}
-                              <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${meta.dot}`} />
+                              <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${meta.dot}`} />
                             </div>
                             <div>
-                              <h4 className="font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                 {user.name}
                               </h4>
-                              <p className="text-[10px] text-slate-400 font-extrabold tracking-widest uppercase truncate max-w-[180px]">
-                                {user.employeeId || 'No ID'}
-                              </p>
                             </div>
                           </div>
                         </td>
 
-                        {/* Contact Info */}
-                        <td className="py-4.5 px-6 text-xs text-slate-500 dark:text-slate-400 font-medium space-y-1">
-                          <div className="flex items-center gap-1.5">
-                            <Mail size={12} className="text-slate-400" />
-                            <span className="truncate max-w-[160px]">{user.email}</span>
-                          </div>
-                          {user.phone && (
-                            <div className="flex items-center gap-1.5">
-                              <Phone size={12} className="text-slate-400" />
-                              <span>{user.phone}</span>
-                            </div>
-                          )}
+                        {/* Phone Number */}
+                        <td className="py-4 px-6 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                          {user.phone || '—'}
                         </td>
 
-                        {/* Designation / Role */}
-                        <td className="py-4.5 px-6 text-xs space-y-1">
-                          <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1">
-                            <Briefcase size={12} className="text-slate-400" />
-                            <span>
-                              {getDesignationName(user)}
-                            </span>
-                          </div>
-                          {user.isSuperAdmin || user.role === 'superadmin' ? (
-                            <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded inline-flex items-center gap-1">
+                        {/* Role */}
+                        <td className="py-4 px-6 text-xs">
+                          {user.isSuperAdmin || String(user.role).toLowerCase() === 'superadmin' || String(user.roleId || user.role_id) === '0' ? (
+                            <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md inline-flex items-center gap-1">
                               <Shield size={10} /> Super Admin
                             </span>
                           ) : (
-                            <span className="text-[10px] font-black uppercase text-indigo-500 tracking-widest bg-indigo-500/10 px-2 py-0.5 rounded inline-block">
-                              {ROLES.find(r => String(r.id) === String(user.roleId || user.role))?.name || user.role || 'employee'}
+                            <span className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-wider bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-500/20 px-2.5 py-1 rounded-md inline-block">
+                              {ROLES.find(r => String(r.id) === String(user.roleId || user.role) || r.name.toLowerCase() === String(user.role).toLowerCase())?.name || user.role || 'employee'}
                             </span>
                           )}
                         </td>
 
-                        {/* Department / Manager */}
-                        <td className="py-4.5 px-6 text-xs space-y-1">
-                          <div className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                            <Folder size={12} className="text-slate-400" />
-                            <span>{getDepartmentName(user)}</span>
-                          </div>
-                          {user.reportingManager && (
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                              Manager: {user.reportingManager}
-                            </p>
-                          )}
+                        {/* Position / Designation */}
+                        <td className="py-4 px-6 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {getDesignationName(user) || '—'}
                         </td>
 
                         {/* Status Badge */}
-                        <td className="py-4.5 px-6">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${meta.color}`}>
+                        <td className="py-4 px-6">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.color}`}>
                             <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
                             {statusKey}
                           </span>
                         </td>
 
                         {/* Actions */}
-                        <td className="py-4.5 px-6 text-center">
-                          <div className="flex items-center justify-center gap-2">
+                        <td className="py-4 px-6 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleViewClick(user)}
-                              className="p-2.5 bg-slate-100 hover:bg-indigo-500 hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl transition-all duration-300 cursor-pointer shadow-sm active:scale-90"
+                              className="p-2 bg-slate-100 hover:bg-indigo-600 hover:text-white dark:bg-slate-800 dark:hover:bg-indigo-600 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
                               title="View details"
                             >
                               <Eye size={14} />
                             </button>
                             <button
                               onClick={() => handleEditClick(user)}
-                              className="p-2.5 bg-slate-100 hover:bg-amber-500 hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl transition-all duration-300 cursor-pointer shadow-sm active:scale-90"
+                              className="p-2 bg-slate-100 hover:bg-indigo-600 hover:text-white dark:bg-slate-800 dark:hover:bg-indigo-600 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
                               title="Edit records"
                             >
                               <Edit3 size={14} />
@@ -863,16 +850,16 @@ const Users = () => {
                             {!isHr && (
                               <button
                                 onClick={() => handlePermissionClick(user)}
-                                className="p-2.5 bg-indigo-50 hover:bg-indigo-600 hover:text-white dark:bg-indigo-950/40 dark:hover:bg-indigo-600 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all duration-300 cursor-pointer shadow-sm active:scale-90"
-                                title="Manage Sidebar Access & Super Admin Permissions"
+                                className="p-2 bg-slate-100 hover:bg-indigo-600 hover:text-white dark:bg-slate-800 dark:hover:bg-indigo-600 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
+                                title="Manage Permissions"
                               >
                                 <ShieldCheck size={14} />
                               </button>
                             )}
                             <button
                               onClick={() => handleDeleteUser(user.id || user._id, user.name)}
-                              className="p-2.5 bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl transition-all duration-300 cursor-pointer shadow-sm active:scale-90"
-                              title="Delete file"
+                              className="p-2 bg-slate-100 hover:bg-rose-600 hover:text-white dark:bg-slate-800 dark:hover:bg-rose-600 text-slate-600 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
+                              title="Delete employee"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1016,6 +1003,8 @@ const ManageDesignationsModal = ({ onClose, designations, getAuthHeaders, onDesi
   const [deletingId, setDeletingId] = useState(null);
   const [deleteDesignationConfirm, setDeleteDesignationConfirm] = useState({ isOpen: false, id: null, name: '' });
 
+  useLockBodyScroll(true);
+
   const handleEditStart = (id, currentName) => {
     setEditingId(id);
     setEditName(currentName);
@@ -1081,13 +1070,13 @@ const ManageDesignationsModal = ({ onClose, designations, getAuthHeaders, onDesi
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-16 bg-slate-950/40 backdrop-blur-sm overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-xl max-h-[80vh] flex flex-col"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-xl max-h-[85vh] flex flex-col my-auto"
       >
         <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-slate-800">
           <h3 className="font-bold text-base text-slate-900 dark:text-white">Manage Designations</h3>
@@ -1097,61 +1086,64 @@ const ManageDesignationsModal = ({ onClose, designations, getAuthHeaders, onDesi
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-          {designations.map(d => (
-            <div key={d.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200/40 dark:border-slate-800/40 gap-2">
-              {editingId === d.id ? (
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  autoFocus
-                />
-              ) : (
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{d.name}</span>
-              )}
-
-              <div className="flex gap-1.5 shrink-0">
-                {editingId === d.id ? (
-                  <>
-                    <button
-                      onClick={() => handleEditSave(d.id)}
-                      disabled={savingId === d.id}
-                      className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold"
-                    >
-                      {savingId === d.id ? '...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="px-2 py-1 bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold"
-                    >
-                      Cancel
-                    </button>
-                  </>
+          {designations.map(d => {
+            const dId = d.id || d._id;
+            return (
+              <div key={dId} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200/40 dark:border-slate-800/40 gap-2">
+                {editingId === dId ? (
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                  />
                 ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleEditStart(d.id, d.name)}
-                      className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg"
-                      title="Edit Name"
-                    >
-                      <Edit3 size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(d.id, d.name)}
-                      disabled={deletingId === d.id}
-                      className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg"
-                      title="Delete"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </>
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{d.name}</span>
                 )}
+
+                <div className="flex gap-1.5 shrink-0">
+                  {editingId === dId ? (
+                    <>
+                      <button
+                        onClick={() => handleEditSave(dId)}
+                        disabled={savingId === dId}
+                        className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold"
+                      >
+                        {savingId === dId ? '...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="px-2 py-1 bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleEditStart(dId, d.name)}
+                        className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg"
+                        title="Edit Name"
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(dId, d.name)}
+                        disabled={deletingId === dId}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg"
+                        title="Delete"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {designations.length === 0 && (
             <p className="text-xs text-slate-400 text-center py-6">No designations available.</p>
           )}
@@ -1168,7 +1160,8 @@ const ManageDesignationsModal = ({ onClose, designations, getAuthHeaders, onDesi
           type="danger"
         />
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1222,7 +1215,7 @@ const DesignationSelect = ({
     <>
       <div className="flex gap-2 w-full items-center">
         <div className="flex-1">
-          <select required name="designation" className="w-full" value={value} onChange={(e) => onChange(e.target.value)}>
+          <select name="designation" className="w-full text-xs py-2 border rounded-xl px-3 outline-none focus:ring-1 border-slate-200 dark:border-slate-700 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white" value={value} onChange={(e) => onChange(e.target.value)}>
             <option value="">Select Designation</option>
             {designations.map(d => (
               <option key={d.id} value={d.id}>{d.name}</option>
@@ -1265,38 +1258,17 @@ const DesignationSelect = ({
 };
 
 // --- CREATE MODAL ---
-const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesignationCreated, onDesignationUpdated, onDesignationDeleted, departments, showToast }) => {
-  useEffect(() => {
-    window.scrollTo({ top: 0 });
-  }, []);
+const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesignationCreated, onDesignationUpdated, onDesignationDeleted, showToast }) => {
+  useLockBodyScroll(true);
 
   const [form, setForm] = useState({
-    employeeId: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
     name: '',
     phone: '',
-    email: '',
-    designation: '',
-    departmentId: '',
-    reportingManager: '',
-    status: 'active',
     role: 'employee',
-    avatar: null,
-    joining_date: new Date().toISOString().split('T')[0],
-    salary: '',
-    address: '',
-    identityType: 'aadhaar',
-    identityNumber: ''
+    designation: ''
   });
-  const [preview, setPreview] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setForm({ ...form, avatar: file });
-      setPreview(URL.createObjectURL(file));
-    }
-  };
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
@@ -1304,46 +1276,45 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    if (!form.name.trim()) {
+      showToast('Name is required.', 'warning');
+      return;
+    }
 
     // Phone number validation
     if (!/^\d{10}$/.test(form.phone || '')) {
       showToast('Phone number must be exactly 10 digits.', 'warning');
-      setIsSubmitting(false);
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const fd = new FormData();
 
-      // 1. Extract name and phone from the active form state
-      const employeeName = form.name || "";
-      const employeePhone = form.phone || "";
+      const employeeName = form.name.trim();
+      const employeePhone = form.phone.trim();
 
-      // 2. Generate custom formula: FIRST 3 LETTERS (UPPERCASE) + LAST 3 DIGITS
-      const namePart = employeeName.trim().slice(0, 3).toUpperCase();
-      const phonePart = employeePhone.trim().slice(-3) || "123"; // Fallback if phone is empty
+      const namePart = employeeName.slice(0, 3).toUpperCase();
+      const phonePart = employeePhone.slice(-3) || "123";
+      const dynamicPassword = `${namePart}${phonePart}`;
 
-      const dynamicPassword = `${namePart}${phonePart}`; // e.g., "ABC454"
+      // Auto-generate required backend fallback fields if not provided
+      const autoEmail = `${employeeName.toLowerCase().replace(/[^a-z0-9]/g, '')}${employeePhone.slice(-4)}@fabtec.com`;
+      const autoEmpId = `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      // 3. Append your standard state keys to FormData
-      Object.keys(form).forEach(key => {
-        if (key === 'avatar') {
-          if (form.avatar && form.avatar instanceof File) {
-            fd.append('profileImage', form.avatar);
-          } else if (typeof form.avatar === 'string' && form.avatar) {
-            fd.append('avatar', form.avatar);
-            fd.append('profile_image', form.avatar);
-          }
-        } else if (form[key] !== null && form[key] !== undefined) {
-          fd.append(key, form[key]);
-        }
-      });
-
-      // 4. Inject the dynamically calculated password instead of a static string
+      fd.append('name', employeeName);
+      fd.append('phone', employeePhone);
+      fd.append('role', form.role || 'employee');
+      if (form.designation) {
+        fd.append('designation', form.designation);
+      }
+      fd.append('email', autoEmail);
+      fd.append('employeeId', autoEmpId);
       fd.append('password', dynamicPassword);
+      fd.append('status', 'active');
+      fd.append('joining_date', new Date().toISOString().split('T')[0]);
 
-      // 5. Send payload to your backend API
       const res = await fetch(`${API_BASE}/v1/users/create`, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -1352,8 +1323,7 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
 
       const data = await res.json();
       if (res.ok || data.success) {
-        // 💡 Displaying the generated password in the success toast so HR can copy it instantly
-        showToast(`Employee created! Temp Password: ${dynamicPassword}`, 'success');
+        showToast(`Employee created successfully!`, 'success');
         await refresh();
         onClose();
       } else {
@@ -1367,44 +1337,53 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
     }
   };
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex justify-center items-start pt-6 overflow-y-auto p-4"
+      className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-md flex justify-center items-center p-4 overflow-hidden"
     >
       <motion.div
-        initial={{ y: -50, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: -50, scale: 0.95 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-5xl rounded-3xl p-6 md:p-8 shadow-2xl relative"
+        initial={{ y: 20, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: 20, scale: 0.95 }}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden my-auto"
       >
         <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
 
         <header className="mb-6">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">ADD <span className="text-indigo-600 dark:text-indigo-400">EMPLOYEE FILE</span></h2>
+          <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">ADD <span className="text-indigo-600 dark:text-indigo-400">EMPLOYEE</span></h2>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Input fields — 3-Column Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="space-y-4">
+            {/* Name - Required */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Employee ID</label>
-              <input required name="employeeId" className="w-full text-xs py-2" value={form.employeeId} onChange={handleInputChange} />
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                name="name"
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white"
+                placeholder="Enter full name"
+                value={form.name}
+                onChange={handleInputChange}
+              />
             </div>
+
+            {/* Phone Number - Required */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Full Name</label>
-              <input required name="name" className="w-full text-xs py-2" placeholder="NAME" value={form.name} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Phone Number</label>
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Phone Number <span className="text-red-500">*</span>
+              </label>
               <input
                 required
                 name="phone"
                 type="tel"
                 maxLength={10}
-                className={`w-full border rounded-xl px-3 py-2 text-xs outline-none transition focus:ring-1 ${form.phone && form.phone.length !== 10
+                className={`w-full border rounded-xl px-3 py-2 text-sm outline-none transition focus:ring-1 ${form.phone && form.phone.length !== 10
                     ? 'border-red-400 focus:ring-red-400'
                     : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white'
                   }`}
-                placeholder="10-digit number"
+                placeholder="10-digit phone number"
                 value={form.phone}
                 onChange={e => {
                   const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
@@ -1412,15 +1391,32 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
                 }}
               />
               {form.phone && form.phone.length !== 10 && (
-                <p className="text-[9px] text-red-500 ml-1">Must be 10 digits.</p>
+                <p className="text-[10px] text-red-500 ml-1">Must be 10 digits.</p>
               )}
             </div>
+
+            {/* Role - Optional */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Corporate Email</label>
-              <input required type="email" name="email" className="w-full text-xs py-2" placeholder="EMAIL" value={form.email} onChange={handleInputChange} />
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Role
+              </label>
+              <select
+                name="role"
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white"
+                value={form.role}
+                onChange={handleInputChange}
+              >
+                {ROLES.map(r => (
+                  <option key={r.id} value={r.name}>{r.name.toUpperCase()}</option>
+                ))}
+              </select>
             </div>
+
+            {/* Position / Designation - Optional */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Corporate Designation</label>
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Position / Designation
+              </label>
               <DesignationSelect
                 value={form.designation}
                 onChange={(designation) => setForm(prev => ({ ...prev, designation }))}
@@ -1432,150 +1428,47 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
                 showToast={showToast}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Department Assignment</label>
-              <select
-                required
-                name="departmentId"
-                value={form.departmentId}
-                onChange={handleInputChange}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 dark:focus:border-indigo-400 cursor-pointer"
-              >
-                <option value="" disabled>SELECT DEPARTMENT</option>
-                {departments.map((dept) => (
-                  <option key={dept._id || dept.id} value={dept._id || dept.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                    {dept.name.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Reporting Manager</label>
-              <input required name="reportingManager" className="w-full text-xs py-2" placeholder="MANAGER" value={form.reportingManager} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">System Status</label>
-              <select name="status" className="w-full text-xs py-2" value={form.status} onChange={handleInputChange}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="blocked">Blocked</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">System Role</label>
-              <select name="role" className="w-full text-xs py-2" value={form.role} onChange={handleInputChange}>
-                {ROLES.map(r => (
-                  <option key={r.id} value={r.name}>{r.name.toUpperCase()}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Monthly Salary</label>
-              <input name="salary" type="number" className="w-full text-xs py-2" placeholder="SALARY" value={form.salary} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Joining Date</label>
-              <input required name="joining_date" type="date" className="w-full text-xs py-2" value={form.joining_date} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Identity Type</label>
-              <select name="identityType" className="w-full text-xs py-2" value={form.identityType} onChange={handleInputChange}>
-                <option value="aadhaar">Aadhaar</option>
-                <option value="pan">PAN</option>
-                <option value="passport">Passport</option>
-                <option value="driving_license">Driving License</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">ID Number</label>
-              <input required name="identityNumber" className="w-full text-xs py-2" placeholder="ID NUMBER" value={form.identityNumber} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Profile Photo</label>
-              <div className="relative group flex items-center gap-2 w-full border border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 bg-slate-50 dark:bg-slate-900 hover:border-indigo-500 transition-all cursor-pointer">
-                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer w-full" onChange={handleAvatarChange} />
-                {preview ? (
-                  <img src={preview} className="w-7 h-7 rounded-lg object-cover shrink-0" alt="preview" />
-                ) : (
-                  <ImageIcon size={14} className="text-slate-400 group-hover:text-indigo-500 shrink-0" />
-                )}
-                <span className="text-[10px] text-slate-400 truncate">{preview ? 'Photo selected' : 'Click to upload · JPG/PNG'}</span>
-              </div>
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Residential Address</label>
-              <input name="address" className="w-full text-xs py-2" placeholder="Address" value={form.address} onChange={handleInputChange} />
-            </div>
           </div>
 
           <button
             disabled={isSubmitting}
-            className="w-full py-4 bg-indigo-600 dark:bg-indigo-500 text-white dark:text-slate-900 dark:font-black font-bold rounded-2xl uppercase text-[11px] tracking-[0.2em] transition-all duration-300 flex items-center justify-center gap-2 hover:scale-[1.005] active:scale-[0.99]"
+            className="w-full mt-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl uppercase text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
           >
             {isSubmitting ? (
-              <Loader2 size={15} className="animate-spin" />
+              <Loader2 size={16} className="animate-spin" />
             ) : (
-              <CheckCircle2 size={15} />
+              <CheckCircle2 size={16} />
             )}
             Add Employee
           </button>
         </form>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };
 
 // --- EDIT MODAL ---
-const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDesignationCreated, onDesignationUpdated, onDesignationDeleted, departments, showToast }) => {
-  useEffect(() => {
-    window.scrollTo({ top: 0 });
-  }, []);
+const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDesignationCreated, onDesignationUpdated, onDesignationDeleted, showToast }) => {
+  useLockBodyScroll(true);
 
   const [form, setForm] = useState({
-    employeeId: user.employeeId || '',
     name: user.name || '',
     phone: user.phone || '',
-    email: user.email || '',
-    designation: user.designationId || user.designation || '',
-    departmentId: user.departmentId?._id || user.departmentId || user.department || '',
-    reportingManager: user.reportingManager || '',
-    status: user.status || 'active',
     role: user.role || 'employee',
-    avatar: null,
-    joining_date: user.joining_date ? new Date(user.joining_date).toISOString().split('T')[0] : '',
-    salary: user.salary || '',
-    address: user.address || '',
-    identityType: user.identityType || 'aadhaar',
-    identityNumber: user.identityNumber || ''
+    designation: user.designationId || user.designation || '',
+    status: user.status || (user.isActive ? 'active' : 'inactive')
   });
-  const [preview, setPreview] = useState(user.avatar || user.profile_image || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!form.designation || designations.some(d => String(d.id) === String(form.designation))) return;
+    if (!form.designation || designations.some(d => String(d.id || d._id) === String(form.designation))) return;
 
     const matchingDesignation = designations.find(d => d.name.toLowerCase() === String(form.designation).toLowerCase());
     if (matchingDesignation) {
-      setForm(prev => ({ ...prev, designation: String(matchingDesignation.id) }));
+      setForm(prev => ({ ...prev, designation: String(matchingDesignation.id || matchingDesignation._id) }));
     }
   }, [designations, form.designation]);
-
-  useEffect(() => {
-    if (!form.departmentId || departments.some(d => String(d.id || d._id) === String(form.departmentId))) return;
-
-    const matchingDepartment = departments.find(d => d.name.toLowerCase() === String(form.departmentId).toLowerCase());
-    if (matchingDepartment) {
-      setForm(prev => ({ ...prev, departmentId: String(matchingDepartment.id || matchingDepartment._id) }));
-    }
-  }, [departments, form.departmentId]);
-
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setForm({ ...form, avatar: file });
-      setPreview(URL.createObjectURL(file));
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -1584,22 +1477,27 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.name.trim()) {
+      showToast('Name is required.', 'warning');
+      return;
+    }
+
+    if (!/^\d{10}$/.test(form.phone || '')) {
+      showToast('Phone number must be exactly 10 digits.', 'warning');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const fd = new FormData();
-      Object.keys(form).forEach(key => {
-        if (key === 'avatar') {
-          if (form.avatar && form.avatar instanceof File) {
-            fd.append('profileImage', form.avatar);
-          } else if (typeof form.avatar === 'string' && form.avatar) {
-            fd.append('avatar', form.avatar);
-            fd.append('profile_image', form.avatar);
-          }
-        } else if (form[key] !== null && form[key] !== undefined) {
-          fd.append(key, form[key]);
-        }
-      });
+      fd.append('name', form.name.trim());
+      fd.append('phone', form.phone.trim());
+      fd.append('role', form.role || 'employee');
+      fd.append('status', form.status || 'active');
+      if (form.designation) {
+        fd.append('designation', form.designation);
+      }
 
       const res = await fetch(`${API_BASE}/v1/users/update/${user.id || user._id}`, {
         method: 'PUT',
@@ -1609,49 +1507,57 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
 
       const data = await res.json();
       if (res.ok || data.success) {
-        showToast('Employee data synchronized successfully.', 'success');
+        showToast('Employee updated successfully.', 'success');
         await refresh();
         onClose();
       } else {
-        showToast(data.message || data.error || 'Synchronization failed.', 'error');
+        showToast(data.message || data.error || 'Update failed.', 'error');
       }
     } catch (e) {
       console.error(e);
-      showToast('Error reaching the synchronizer api.', 'error');
+      showToast('Error updating employee.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex justify-center items-start pt-6 overflow-y-auto p-4"
+      className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-md flex justify-center items-center p-4 overflow-hidden"
     >
       <motion.div
-        initial={{ y: -50, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: -50, scale: 0.95 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-5xl rounded-3xl p-8 md:p-10 shadow-2xl relative"
+        initial={{ y: 20, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: 20, scale: 0.95 }}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden my-auto"
       >
         <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
 
         <header className="mb-6">
-          <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">EDIT <span className="text-indigo-600 dark:text-indigo-400">EMPLOYEE FILE</span></h2>
-          {/* <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">Synchronizing Tactical Assets</p> */}
+          <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">EDIT <span className="text-indigo-600 dark:text-indigo-400">EMPLOYEE</span></h2>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Fields Grid — full width */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Employee ID</label>
-              <input required name="employeeId" className="w-full" value={form.employeeId} onChange={handleInputChange} />
+          <div className="space-y-4">
+            {/* Name - Required */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                name="name"
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white"
+                placeholder="Enter full name"
+                value={form.name}
+                onChange={handleInputChange}
+              />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Full Name</label>
-              <input required name="name" className="w-full" placeholder="NAME" value={form.name} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Phone Number</label>
+
+            {/* Phone Number - Required */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Phone Number <span className="text-red-500">*</span>
+              </label>
               <input
                 required
                 name="phone"
@@ -1659,9 +1565,9 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
                 maxLength={10}
                 className={`w-full border rounded-xl px-3 py-2 text-sm outline-none transition focus:ring-1 ${form.phone && form.phone.length !== 10
                     ? 'border-red-400 focus:ring-red-400'
-                    : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500'
+                    : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white'
                   }`}
-                placeholder="10-digit number"
+                placeholder="10-digit phone number"
                 value={form.phone}
                 onChange={e => {
                   const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
@@ -1669,15 +1575,32 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
                 }}
               />
               {form.phone && form.phone.length !== 10 && (
-                <p className="text-[10px] text-red-500 ml-1">Must be exactly 10 digits.</p>
+                <p className="text-[10px] text-red-500 ml-1">Must be 10 digits.</p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Corporate Email</label>
-              <input required type="email" name="email" className="w-full" placeholder="EMAIL" value={form.email} onChange={handleInputChange} disabled />
+
+            {/* Role - Optional */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Role
+              </label>
+              <select
+                name="role"
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 text-slate-850 dark:text-white"
+                value={form.role}
+                onChange={handleInputChange}
+              >
+                {ROLES.map(r => (
+                  <option key={r.id} value={r.name}>{r.name.toUpperCase()}</option>
+                ))}
+              </select>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Corporate Designation</label>
+
+            {/* Position / Designation - Optional */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Position / Designation
+              </label>
               <DesignationSelect
                 value={form.designation}
                 onChange={(designation) => setForm(prev => ({ ...prev, designation }))}
@@ -1689,240 +1612,183 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
                 showToast={showToast}
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Department Assignment</label>
-              <select
-                required
-                name="departmentId"
-                value={form.departmentId}
-                onChange={handleInputChange}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 dark:focus:border-indigo-400 cursor-pointer"
-              >
-                <option value="" disabled>SELECT DEPARTMENT</option>
-                {departments.map((dept) => (
-                  <option
-                    key={dept._id || dept.id}
-                    value={dept._id || dept.id}
-                    className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-                  >
-                    {dept.name.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Reporting Manager</label>
-              <input required name="reportingManager" className="w-full" placeholder="MANAGER" value={form.reportingManager} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">System Status</label>
-              <select name="status" className="w-full" value={form.status} onChange={handleInputChange}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="blocked">Blocked</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">System Role</label>
-              <select name="role" className="w-full" value={form.role} onChange={handleInputChange}>
-                {ROLES.map(r => (
-                  <option key={r.id} value={r.name}>{r.name.toUpperCase()}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Monthly Salary</label>
-              <input name="salary" type="number" className="w-full" placeholder="SALARY" value={form.salary} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Joining Date</label>
-              <input required name="joining_date" type="date" className="w-full" value={form.joining_date} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Identity Type</label>
-              <select name="identityType" className="w-full" value={form.identityType} onChange={handleInputChange}>
-                <option value="aadhaar">Aadhaar</option>
-                <option value="pan">PAN</option>
-                <option value="passport">Passport</option>
-                <option value="driving_license">Driving License</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">ID Number</label>
-              <input required name="identityNumber" className="w-full" placeholder="ID NUMBER" value={form.identityNumber} onChange={handleInputChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Profile Photo</label>
-              <div className="relative group flex items-center gap-2 w-full border border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 bg-slate-50 dark:bg-slate-900 hover:border-indigo-500 transition-all cursor-pointer">
-                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer w-full" onChange={handleAvatarChange} />
-                {preview ? (
-                  <img src={preview} className="w-7 h-7 rounded-lg object-cover shrink-0" alt="preview" />
-                ) : (
-                  <ImageIcon size={14} className="text-slate-400 group-hover:text-indigo-500 shrink-0" />
-                )}
-                <span className="text-[10px] text-slate-400 truncate">{preview ? 'Photo selected' : 'Click to upload · JPG/PNG'}</span>
+
+            {/* Status - Active / Inactive Buttons */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase text-slate-700 dark:text-slate-300 tracking-wider block">
+                Status
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, status: 'active' }))}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold uppercase transition cursor-pointer flex items-center justify-center gap-2 border ${
+                    form.status === 'active'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  Active
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, status: 'inactive' }))}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold uppercase transition cursor-pointer flex items-center justify-center gap-2 border ${
+                    form.status === 'inactive'
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 text-amber-600 dark:text-amber-400 shadow-xs'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                  Inactive
+                </button>
               </div>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-[10px] font-black uppercase text-indigo-500 dark:text-indigo-400 tracking-wider block ml-1">Residential Address</label>
-              <input name="address" className="w-full" placeholder="Address" value={form.address} onChange={handleInputChange} />
             </div>
           </div>
 
           <button
             disabled={isSubmitting}
-            className="w-full py-4 bg-indigo-600 dark:bg-indigo-500 text-white dark:text-slate-900 dark:font-black font-bold rounded-2xl uppercase text-[11px] tracking-[0.2em] transition-all duration-300 flex items-center justify-center gap-2 hover:scale-[1.005] active:scale-[0.99]"
+            className="w-full mt-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl uppercase text-xs tracking-wider transition-all duration-300 flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
           >
             {isSubmitting ? (
-              <Loader2 size={15} className="animate-spin" />
+              <Loader2 size={16} className="animate-spin" />
             ) : (
-              <CheckCircle2 size={15} />
+              <CheckCircle2 size={16} />
             )}
             Save Changes
           </button>
         </form>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };
 
-// --- VIEW DOSSIER MODAL ---
-const ViewModal = ({ user, getDesignationName, getDepartmentName, onClose }) => {
-  const [activeModalTab, setActiveModalTab] = useState('dossier'); // 'dossier' | 'performance'
+// --- VIEW MODAL ---
+const ViewModal = ({ user, onClose, getDesignationName }) => {
+  useLockBodyScroll(true);
+
+  const [activeTab, setActiveTab] = useState('dossier');
   const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    window.scrollTo({ top: 0 });
-  }, []);
-
-  // Determine status configurations dynamically
+  const avatarUrl = user.avatar || user.profile_image || user.profileImage;
   const statusKey = user.status || (user.isActive ? 'active' : 'inactive');
-  const STATUS_META = {
-    active: { color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
-    inactive: { color: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400', dot: 'bg-amber-500' },
-    blocked: { color: 'bg-rose-500/10 text-rose-500 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400', dot: 'bg-rose-500' }
-  };
   const meta = STATUS_META[statusKey] || STATUS_META.active;
 
-  // Mirror the dynamic format: FIRST 3 LETTERS (UPPERCASE) + LAST 3 DIGITS OF PHONE
-  const namePart = (user.name || "").trim().slice(0, 3).toUpperCase();
-  const phonePart = (user.phone || "").trim().slice(-3) || "123";
-  const implicitPassword = `${namePart}${phonePart}`;
-
-  return (
+  return createPortal(
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex justify-center items-start pt-6 overflow-y-auto p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-md flex justify-center items-center p-4 overflow-hidden"
     >
       <motion.div
-        initial={{ y: -30, scale: 0.97 }} animate={{ y: 0, scale: 1 }} exit={{ y: -30, scale: 0.97 }}
-        className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full ${activeModalTab === 'performance' ? 'max-w-6xl' : 'max-w-3xl'} rounded-3xl shadow-2xl transition-all duration-300`}
+        initial={{ y: 20, scale: 0.95 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 20, scale: 0.95 }}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden my-auto text-slate-800 dark:text-slate-100"
       >
-        {/* ── Modal Header ── */}
-        <div className="px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">Employee <span className="text-indigo-600 dark:text-indigo-400">File</span></h2>
-            </div>
-            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
-              <X size={18} />
-            </button>
+        <button
+          onClick={onClose}
+          className="absolute top-6 right-6 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 transition-colors z-10"
+        >
+          <X size={20} />
+        </button>
+
+        {/* Header */}
+        <div className="flex items-center gap-4 pb-6 border-b border-slate-100 dark:border-slate-800/80 pr-10">
+          <div className="relative shrink-0">
+            {avatarUrl && !imgError ? (
+              <img
+                src={avatarUrl}
+                alt={user.name}
+                onError={() => setImgError(true)}
+                className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-800 shadow-sm"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg shadow-sm">
+                {user.name ? user.name.charAt(0).toUpperCase() : <User size={24} />}
+              </div>
+            )}
+            <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900 ${meta.dot}`} />
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {(user.avatar || user.profile_image || user.profileImage) && !imgError ? (
-                <img
-                  src={user.avatar || user.profile_image || user.profileImage}
-                  alt={user.name}
-                  className="w-10 h-10 rounded-xl object-cover"
-                  onError={() => setImgError(true)}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center">
-                  <User size={18} className="text-white" />
-                </div>
-              )}
-              <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 leading-none">{user.name}</h3>
-                <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5 uppercase tracking-widest font-semibold">{getDesignationName(user)}</p>
-              </div>
-            </div>
-
-            {/* Sub-Tab Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl">
-              <button
-                onClick={() => setActiveModalTab('dossier')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${activeModalTab === 'dossier'
-                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-              >
-                Personnel Details
-              </button>
-              <button
-                onClick={() => setActiveModalTab('performance')}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${activeModalTab === 'performance'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-              >
-                Performance & KPI
-              </button>
-            </div>
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+              {user.name}
+            </h2>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.color}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+              {statusKey}
+            </span>
           </div>
         </div>
 
-        {activeModalTab === 'dossier' ? (
-          <>
-            {/* ── Contact Row ── */}
-            <div className="flex items-center gap-6 px-6 py-3 bg-slate-50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><Mail size={12} className="text-slate-400" />{user.email || 'N/A'}</span>
-              {user.phone && <span className="flex items-center gap-1.5"><Phone size={12} className="text-slate-400" />{user.phone}</span>}
-            </div>
+        {/* Modal Navigation Tabs */}
+        <div className="flex items-center gap-2 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800/80 mb-4">
+          <button
+            onClick={() => setActiveTab('dossier')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'dossier'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            }`}
+          >
+            Employee Details
+          </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'performance'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            }`}
+          >
+            Performance Metrics
+          </button>
+        </div>
 
-            {/* ── Details Grid ── */}
-            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
-              {[
-                { label: 'Employee ID', value: user.employeeId },
-                { label: 'System Role', value: user.role, upper: true },
-                { label: 'Department', value: getDepartmentName(user) },
-                { label: 'Rep. Manager', value: user.reportingManager || 'Unassigned' },
-                { label: 'Monthly Salary', value: `₹${user.salary || '0'}` },
-                { label: 'Joining Date', value: user.joining_date ? new Date(user.joining_date).toLocaleDateString() : 'N/A' },
-                { label: 'Identity Type', value: user.identityType, upper: true },
-                { label: 'ID Number', value: user.identityNumber },
-              ].map(({ label, value, upper }) => (
-                <div key={label}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{label}</p>
-                  <p className={`text-xs font-semibold text-slate-700 dark:text-slate-200 ${upper ? 'uppercase' : ''}`}>{value || 'N/A'}</p>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
+          {activeTab === 'dossier' ? (
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800/60 space-y-3">
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Name</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{user.name || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Phone Number</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{user.phone || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Role</span>
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase text-xs">{user.role || 'employee'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Position / Designation</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">{getDesignationName(user) || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Status</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.color}`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                      {statusKey}
+                    </span>
+                  </div>
                 </div>
-              ))}
-              <div className="col-span-2 sm:col-span-3 lg:col-span-4">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Residential Address</p>
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{user.address || 'N/A'}</p>
               </div>
             </div>
-
-            {/* ── Password Footer ── */}
-            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/40 rounded-b-2xl">
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-lime-400">Initial System Password</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">First 3 letters of name + last 3 digits of phone</p>
-              </div>
-              <div className="px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-sm font-bold tracking-wider text-slate-800 dark:text-slate-100 select-all shadow-sm">
-                {implicitPassword}
-              </div>
+          ) : (
+            <div className="pt-2">
+              <PerformanceTab employeeId={user.id || user._id} employeeName={user.name} />
             </div>
-          </>
-        ) : (
-          <div className="p-6">
-            <PerformanceTab user={user} />
-          </div>
-        )}
-
+          )}
+        </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };
 

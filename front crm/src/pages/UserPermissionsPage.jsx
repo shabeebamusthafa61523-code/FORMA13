@@ -40,7 +40,7 @@ const ALL_SIDEBAR_ITEMS = [
   { label: 'Clients', path: '/clients', category: 'Management', desc: 'Client directory & company profiles' },
   { label: 'Projects', path: '/projects', category: 'Management', desc: 'Project tracking & milestones' },
   { label: 'Content Calendar', path: '/calendar-work', category: 'Management', desc: 'Social media & marketing content scheduling calendar' },
-  { label: 'Users', path: '/users', category: 'Management', desc: 'Employee & user account management' },
+  { label: 'Employees', path: '/users', category: 'Management', desc: 'Employee & user account management' },
   { label: 'Departments', path: '/departments', category: 'Management', desc: 'Department hierarchy & manager assignments' },
   { label: 'Sidebar Permissions', path: '/sidebar-permissions', category: 'Management', desc: 'Custom user menu permission configuration' },
   { label: 'Task Assign', path: '/todo', category: 'Operations', desc: 'Task assignment & attachment view' },

@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   getSalaryPayments,
   deleteSalaryPayment,
-  approveOrRejectSalaryPayment,
-  approveAllSalaryPayments
+  updateSalaryPayment
 } from '../../services/accountsService';
 import { useToast } from '../ToastProvider';
+import ConfirmModal from '../ConfirmModal';
+import ExcelExportButton from '../ExcelExportButton';
 import PayslipModal from './PayslipModal';
 import CreatePayslipModal from './CreatePayslipModal';
-import DeletePayslipModal from './DeletePayslipModal';
+import StatusSelectPill from './StatusSelectPill';
+import PartialPaymentModal from './PartialPaymentModal';
+import EditWageModal from './EditWageModal';
 import {
   FileText,
   CheckCircle,
@@ -18,15 +22,14 @@ import {
   AlertCircle,
   Trash2,
   RefreshCw,
-  CheckSquare,
-  Check,
-  X,
-  Plus
+  Plus,
+  BookOpen,
+  ChevronDown,
+  Edit
 } from 'lucide-react';
-import { useUser } from '../../contexts/UserContext';
 
 const SalaryPaymentTab = () => {
-  const { user } = useUser();
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const [salaryPayments, setSalaryPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,18 +39,7 @@ const SalaryPaymentTab = () => {
   // Payslip Modal State
   const [selectedPayslipRecord, setSelectedPayslipRecord] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [selectedSalaryToDelete, setSelectedSalaryToDelete] = useState(null);
-
-  // Rejection Modal State
-  const [selectedSalaryToReject, setSelectedSalaryToReject] = useState(null);
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
-
-  // Role checks
-  const roleStr = String(user?.role || '').toLowerCase().trim();
-  const roleIdStr = String(user?.role_id || user?.roleId || '').trim();
-  const isMdOrAdmin = user?.isSuperAdmin === true || ['0', '1', '2', 'admin', 'superadmin', 'md', 'coo'].includes(roleStr) || ['0', '1', '2'].includes(roleIdStr);
+  const [editingRecord, setEditingRecord] = useState(null);
 
   const fetchSalaryPayments = async () => {
     setLoading(true);
@@ -67,116 +59,105 @@ const SalaryPaymentTab = () => {
     fetchSalaryPayments();
   }, []);
 
-  const handleDeleteSalary = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this salary payment? This will also remove the automatically created expense entry.')) return;
-    try {
-      const res = await deleteSalaryPayment(id);
-      if (res.success) {
-        setSuccessMsg('Salary payment and synced expense entry removed.');
-        fetchSalaryPayments();
-        setTimeout(() => setSuccessMsg(''), 3000);
-      }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Error deleting salary payment.', 'error');
-    }
-  };
+  const [confirmState, setConfirmState] = useState({ isOpen: false, title: '', message: '', confirmText: 'Confirm', type: 'danger', onConfirm: null });
+  const [partialModalRecord, setPartialModalRecord] = useState(null);
 
-  const handleApproveSalary = async (id) => {
-    setActionSubmitting(true);
-    try {
-      const res = await approveOrRejectSalaryPayment(id, { action: 'APPROVED' });
-      if (res.success) {
-        setSuccessMsg('Salary payment approved successfully!');
-        fetchSalaryPayments();
-        setTimeout(() => setSuccessMsg(''), 3000);
-      }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Error approving salary payment.', 'error');
-    } finally {
-      setActionSubmitting(false);
-    }
-  };
-
-  const handleRejectSalarySubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedSalaryToReject) return;
-    if (!rejectionReason.trim()) {
-      showToast('Please enter a rejection reason.', 'error');
+  const handleStatusChange = async (recordId, newStatus, recordObj) => {
+    if (newStatus === 'PARTIALLY_PAID') {
+      const target = recordObj || salaryPayments.find(p => p._id === recordId);
+      setPartialModalRecord(target);
       return;
     }
-
-    setActionSubmitting(true);
     try {
-      const res = await approveOrRejectSalaryPayment(selectedSalaryToReject._id, {
-        action: 'REJECTED',
-        rejectionReason: rejectionReason.trim()
+      const payload = { status: newStatus };
+      if (newStatus === 'COMPLETED') {
+        const target = recordObj || salaryPayments.find(p => p._id === recordId);
+        if (target) {
+          const tot = Number(target.basicSalary || target.totalEarnings || target.paidAmount || 0);
+          payload.paidAmount = tot;
+        }
+      }
+      const res = await updateSalaryPayment(recordId, payload);
+      if (res?.success !== false) {
+        showToast(`Status updated to ${newStatus === 'COMPLETED' ? 'Completed' : 'Pending'}!`, 'success');
+        fetchSalaryPayments();
+      }
+    } catch (err) {
+      showToast(err?.response?.data?.message || 'Error updating status.', 'error');
+    }
+  };
+
+  const handlePartialConfirm = async (partialPaid, totalWage) => {
+    if (!partialModalRecord) return;
+    try {
+      const res = await updateSalaryPayment(partialModalRecord._id, {
+        status: 'PARTIALLY_PAID',
+        paidAmount: partialPaid,
+        basicSalary: totalWage
       });
-      if (res.success) {
-        setSuccessMsg('Salary payment rejected with reason.');
-        setSelectedSalaryToReject(null);
-        setRejectionReason('');
+      if (res?.success !== false) {
+        showToast(`Status set to Partially Paid (₹${partialPaid.toLocaleString('en-IN')})`, 'success');
         fetchSalaryPayments();
-        setTimeout(() => setSuccessMsg(''), 3000);
       }
     } catch (err) {
-      showToast(err.response?.data?.message || 'Error rejecting salary payment.', 'error');
+      showToast(err?.response?.data?.message || 'Failed to update partial payment.', 'error');
     } finally {
-      setActionSubmitting(false);
+      setPartialModalRecord(null);
     }
   };
 
-  const handleApproveAllSalaries = async () => {
-    const pendingCount = salaryPayments.filter(p => (p.status || 'PENDING') === 'PENDING').length;
-    if (pendingCount === 0) return;
-
-    if (!window.confirm(`Are you sure you want to approve all ${pendingCount} pending salary payment(s)?`)) return;
-
-    setBulkSubmitting(true);
-    try {
-      const res = await approveAllSalaryPayments();
-      if (res.success) {
-        setSuccessMsg(`Approved all ${res.modifiedCount || pendingCount} pending salary payment(s)!`);
-        fetchSalaryPayments();
-        setTimeout(() => setSuccessMsg(''), 3000);
+  const handleDeleteSalary = (id) => {
+    setConfirmState({
+      isOpen: true,
+      title: 'Delete Wage Entry',
+      message: 'Are you sure you want to delete this wage entry? This will also remove the automatically created expense entry.',
+      confirmText: 'Delete Entry',
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+        try {
+          const res = await deleteSalaryPayment(id);
+          if (res.success) {
+            setSuccessMsg('Wage entry and synced expense entry removed.');
+            fetchSalaryPayments();
+            setTimeout(() => setSuccessMsg(''), 3000);
+          }
+        } catch (err) {
+          showToast(err.response?.data?.message || 'Error deleting wage entry.', 'error');
+        }
       }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Error approving all salary payments.', 'error');
-    } finally {
-      setBulkSubmitting(false);
-    }
+    });
   };
 
-  const renderStatusBadge = (status, rejectionReasonText) => {
+  const renderStatusBadge = (status) => {
     switch (status) {
+      case 'COMPLETED':
       case 'APPROVED':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 size={12} /> Approved
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 size={12} /> {status === 'COMPLETED' ? 'Completed' : 'Approved'}
+          </span>
+        );
+      case 'PARTIALLY_PAID':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+            <Clock size={12} /> Partially Paid
           </span>
         );
       case 'REJECTED':
         return (
-          <div className="space-y-0.5">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-              <XCircle size={12} /> Rejected
-            </span>
-            {rejectionReasonText && (
-              <p className="text-[10px] text-rose-600 italic font-normal line-clamp-2">
-                Reason: "{rejectionReasonText}"
-              </p>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle size={12} /> Rejected
+          </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-            <Clock size={12} /> Pending MD Approval
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            <Clock size={12} /> Pending
           </span>
         );
     }
   };
-
-  const pendingSalaryCount = salaryPayments.filter(p => (p.status || 'PENDING') === 'PENDING').length;
 
   return (
     <div className="space-y-6">
@@ -194,33 +175,43 @@ const SalaryPaymentTab = () => {
         </div>
       )}
 
-
       {/* Salary Payments History Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            Salary Payment History
+            Wage Payment History
           </h3>
 
           <div className="flex items-center gap-2">
+            <ExcelExportButton
+              data={salaryPayments.map(s => ({
+                'Payment Date': s.paymentDate ? new Date(s.paymentDate).toISOString().split('T')[0] : '',
+                'Employee Name': s.employeeName || s.employeeId?.name || '',
+                'Date Added': s.createdAt ? new Date(s.createdAt).toISOString().split('T')[0] : (s.paymentDate ? new Date(s.paymentDate).toISOString().split('T')[0] : ''),
+                'Net Payable (₹)': Number(s.customNetPay ?? s.paidAmount ?? 0),
+                'Payment Mode': s.paymentMode || '',
+                'Status': s.status || 'PENDING',
+                'Remarks': s.remarks || ''
+              }))}
+              fileName="Salary_Wage_Payments"
+              sheetName="SalaryPayments"
+              title="Export Excel"
+            />
+
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
             >
-              <Plus size={14} /> Create Payslip
+              <Plus size={14} /> Add Wage
             </button>
 
-            {isMdOrAdmin && pendingSalaryCount > 0 && (
-              <button
-                onClick={handleApproveAllSalaries}
-                disabled={bulkSubmitting}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                <CheckSquare size={14} />
-                <span>Approve All Pending ({pendingSalaryCount})</span>
-              </button>
-            )}
+            <button
+              onClick={() => navigate('/accounts/employee-ledger')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition shadow-xs cursor-pointer"
+            >
+              <BookOpen size={14} /> Employee Ledger
+            </button>
 
             <button
               onClick={fetchSalaryPayments}
@@ -238,10 +229,10 @@ const SalaryPaymentTab = () => {
               <tr>
                 <th className="py-3 px-3 font-semibold">Payment Date</th>
                 <th className="py-3 px-3 font-semibold">Employee</th>
-                <th className="py-3 px-3 font-semibold">Month</th>
+                <th className="py-3 px-3 font-semibold">Date Added</th>
                 <th className="py-3 px-3 font-semibold text-right">Net Paid Amount (₹)</th>
                 <th className="py-3 px-3 font-semibold">Mode</th>
-                <th className="py-3 px-3 font-semibold">Approval Status</th>
+                <th className="py-3 px-3 font-semibold">Status</th>
                 <th className="py-3 px-3 font-semibold text-right">Action</th>
               </tr>
             </thead>
@@ -273,19 +264,32 @@ const SalaryPaymentTab = () => {
                           <span className="block text-[10px] text-slate-400 font-normal">{p.employee.designation}</span>
                         )}
                       </td>
-                      <td className="py-3 px-3 font-medium">
-                        {p.month}
+                      <td className="py-3 px-3 font-medium text-slate-600 dark:text-slate-300">
+                        {p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (p.paymentDate ? new Date(p.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-')}
                       </td>
-                      <td className="py-3 px-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                        ₹{Number(netPaid).toLocaleString('en-IN')}
+                      <td className="py-3 px-3 text-right font-extrabold whitespace-nowrap">
+                        {status === 'PARTIALLY_PAID' ? (
+                          <div className="space-y-0.5 text-right">
+                            <div className="text-[10px] text-slate-500 font-bold uppercase">Total: ₹{Number(p.basicSalary || p.totalEarnings || netPaid).toLocaleString('en-IN')}</div>
+                            <div className="text-xs font-black text-emerald-600 dark:text-emerald-400">Paid: ₹{Number(netPaid).toLocaleString('en-IN')}</div>
+                            <div className="text-[11px] font-black text-rose-600 dark:text-rose-400">Bal: -₹{Math.max(0, Number(p.basicSalary || p.totalEarnings || netPaid) - Number(netPaid)).toLocaleString('en-IN')}</div>
+                          </div>
+                        ) : (
+                          <div className="text-emerald-600 dark:text-emerald-400">
+                            ₹{Number(netPaid).toLocaleString('en-IN')}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                          {p.paymentMode}
+                          {p.paymentMode || 'Cash'}
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        {renderStatusBadge(status, p.rejectionReason)}
+                        <StatusSelectPill
+                          value={status}
+                          onChange={(newStatus) => handleStatusChange(p._id, newStatus, p)}
+                        />
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
@@ -294,31 +298,18 @@ const SalaryPaymentTab = () => {
                             className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 rounded-lg text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
                             title="View / Download Official Payslip"
                           >
-                            <FileText size={12} /> Payslip
+                            <FileText size={12} /> Wage Slip
                           </button>
-                          {isMdOrAdmin && status === 'PENDING' && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setSelectedSalaryToReject(p);
-                                  setRejectionReason('');
-                                }}
-                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-semibold transition cursor-pointer"
-                              >
-                                Reject
-                              </button>
-                              <button
-                                onClick={() => handleApproveSalary(p._id)}
-                                disabled={actionSubmitting}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
-                              >
-                                <Check size={12} /> Approve
-                              </button>
-                            </>
-                          )}
                           <button
-                            onClick={() => setSelectedSalaryToDelete(p)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                            onClick={() => setEditingRecord(p)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                            title="Edit Wage Entry"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSalary(p._id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                             title="Delete Record"
                           >
                             <Trash2 size={14} />
@@ -334,62 +325,6 @@ const SalaryPaymentTab = () => {
         </div>
       </div>
 
-      {/* REJECTION REASON MODAL (Center-Intersected) */}
-      {selectedSalaryToReject && (
-        <div className="fixed inset-0 z-[110]">
-          <div className="fixed inset-0 bg-slate-950/60" onClick={() => setSelectedSalaryToReject(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[111] w-[90vw] max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4 text-slate-800 dark:text-slate-100">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <XCircle className="w-4 h-4 text-rose-600" /> Reject Salary Payment
-              </h2>
-              <button
-                onClick={() => setSelectedSalaryToReject(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-md transition-colors cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-              <p><strong>Employee:</strong> {selectedSalaryToReject.employeeName || selectedSalaryToReject.employee?.name}</p>
-              <p><strong>Month & Amount:</strong> {selectedSalaryToReject.month} — ₹{(selectedSalaryToReject.paidAmount || 0).toLocaleString('en-IN')}</p>
-            </div>
-
-            <form onSubmit={handleRejectSalarySubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Reason for Rejection *</label>
-                <textarea
-                  rows={3}
-                  required
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Type rejection reason here..."
-                  className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedSalaryToReject(null)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-medium transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionSubmitting}
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold transition cursor-pointer"
-                >
-                  Confirm Rejection
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* OFFICIAL PAYSLIP MODAL */}
       <PayslipModal
         isOpen={!!selectedPayslipRecord}
@@ -402,6 +337,33 @@ const SalaryPaymentTab = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={fetchSalaryPayments}
+      />
+
+      {/* EDIT WAGE MODAL */}
+      <EditWageModal
+        isOpen={!!editingRecord}
+        onClose={() => setEditingRecord(null)}
+        record={editingRecord}
+        onSuccess={fetchSalaryPayments}
+      />
+
+      {/* PARTIAL PAYMENT MODAL */}
+      <PartialPaymentModal
+        isOpen={!!partialModalRecord}
+        onClose={() => setPartialModalRecord(null)}
+        record={partialModalRecord}
+        onConfirm={handlePartialConfirm}
+      />
+
+      {/* Viewport Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={confirmState.confirmText}
+        type={confirmState.type}
       />
     </div>
   );

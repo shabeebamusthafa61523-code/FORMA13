@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable'; 
 import { useToast } from '../components/ToastProvider';
 import StudentProfileModal from '../components/StudentProfileModal';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 const STUDENT_ROLE_ID = "10"; 
@@ -570,6 +571,17 @@ const StudentAttendance = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+            <ExcelExportButton
+              data={filteredStudents.map(s => ({
+                'Student Name': s.name || '',
+                'Email': s.email || '',
+                'Phone': s.mobile || s.phone || '',
+                'Date': selectedDate,
+                'Attendance Status': attendanceData[s._id || s.id]?.status || 'UNMARKED'
+              }))}
+              fileName={`student_attendance_${selectedDate}_export`}
+              sheetName="Attendance"
+            />
             {/* Course Selector */}
             <select
               value={selectedCourseId}

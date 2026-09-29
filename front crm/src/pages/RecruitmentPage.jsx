@@ -23,6 +23,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
+import ExcelExportButton from '../components/ExcelExportButton';
 import ConfirmModal from '../components/ConfirmModal';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
@@ -486,16 +487,31 @@ export default function RecruitmentPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            resetForm();
-            setIsAddModalOpen(true);
-          }}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer shrink-0"
-        >
-          <UserPlus size={16} />
-          <span>+ Add Candidate</span>
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          <ExcelExportButton
+            data={filteredCandidates.map(c => ({
+              'Candidate Name': c.name || '',
+              'Phone': c.phone || '',
+              'Address': c.address || '',
+              'Status': c.status || '',
+              'Selected': c.selected || 'No',
+              'Approval Status': c.approval_status || 'Pending',
+              'Offer Letter': c.offer_letter || 'Pending'
+            }))}
+            fileName="recruitment_candidates_export"
+            sheetName="Candidates"
+          />
+          <button
+            onClick={() => {
+              resetForm();
+              setIsAddModalOpen(true);
+            }}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer shrink-0"
+          >
+            <UserPlus size={16} />
+            <span>+ Add Candidate</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary Metrics */}

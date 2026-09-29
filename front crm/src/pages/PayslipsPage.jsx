@@ -10,6 +10,7 @@ import PayslipModal from '../components/accounts/PayslipModal';
 import CreatePayslipModal from '../components/accounts/CreatePayslipModal';
 import DeletePayslipModal from '../components/accounts/DeletePayslipModal';
 import { useUser } from '../contexts/UserContext';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const PayslipsPage = () => {
   const { user } = useUser();
@@ -178,6 +179,18 @@ const PayslipsPage = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <ExcelExportButton
+            data={filteredRecords.map(r => ({
+              'Employee Name': r.employeeName || r.employee_id?.name || '',
+              'Month / Year': r.monthYear || r.month_year || '',
+              'Basic Pay': r.basicSalary || r.basic_salary || 0,
+              'Paid Amount': r.paidAmount || r.paid_amount || 0,
+              'Payment Date': r.paymentDate ? new Date(r.paymentDate).toLocaleDateString() : '',
+              'Status': r.status || 'PENDING'
+            }))}
+            fileName="payslips_export"
+            sheetName="Payslips"
+          />
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold transition shadow-md shadow-indigo-500/20 cursor-pointer"

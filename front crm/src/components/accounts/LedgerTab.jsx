@@ -23,6 +23,7 @@ import {
 import { getClients } from '../../services/clientService';
 import { useToast } from '../ToastProvider';
 import IncomeInvoiceModal from './IncomeInvoiceModal';
+import ExcelExportButton from '../ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 const getApiEndpoint = (path) => {
@@ -133,7 +134,7 @@ const LedgerTab = () => {
 
         // Fetch Users (Students)
         try {
-          const resUsers = await fetch(getApiEndpoint('/users?limit=1000'), {
+          const resUsers = await fetch(getApiEndpoint('/users?role=student&limit=500'), {
             headers: getAuthHeaders()
           });
           if (resUsers.ok) {
@@ -495,6 +496,20 @@ const LedgerTab = () => {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 shrink-0">
+            <ExcelExportButton
+              data={ledgerEntries.map(e => ({
+                'Date': e.date ? new Date(e.date).toISOString().split('T')[0] : '',
+                'Voucher / Ref No': e.voucherNo || e.referenceNo || '',
+                'Particulars': e.particulars || e.title || '',
+                'Transaction Type': e.type || '',
+                'Debit (₹)': Number(e.debit || 0),
+                'Credit (₹)': Number(e.credit || 0),
+                'Running Balance (₹)': Number(e.runningBalance || 0)
+              }))}
+              fileName={`General_Ledger_${partyType}_Statement`}
+              sheetName="Ledger"
+              title="Export Excel"
+            />
             <button
               type="button"
               onClick={handlePrintLedger}

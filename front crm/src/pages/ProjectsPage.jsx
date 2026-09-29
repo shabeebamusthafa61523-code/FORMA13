@@ -8,6 +8,7 @@ import {
 import { getProjects, deleteProject } from '../services/projectService';
 import ConfirmModal from '../components/ConfirmModal';
 import EditProjectModal from '../components/EditProjectModal';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const STAGES = [
   'Planning', 'Requirement Gathering', 'UI Design', 'Development', 
@@ -92,6 +93,20 @@ const ProjectsPage = () => {
 
         {/* ALWAYS VISIBLE Header Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <ExcelExportButton
+            data={projects.map(p => ({
+              'Project Code': p.projectCode || '',
+              'Project Name': p.projectName || '',
+              'Client': p.client?.companyName || p.clientName || '',
+              'Manager': p.projectManager?.name || '',
+              'Stage': p.currentStage || '',
+              'Status': p.status || '',
+              'Deadline': p.deadline ? new Date(p.deadline).toLocaleDateString() : ''
+            }))}
+            fileName="projects_export"
+            sheetName="Projects"
+          />
+
           <Link
             to="/projects/reports"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 text-xs font-bold transition-all border border-slate-200/80 dark:border-slate-700"

@@ -250,3 +250,25 @@ export const deletePaymentSettlement = async (incomeId, paymentId) => {
   const response = await safeDelete(`/income/${incomeId}/payments/${paymentId}`);
   return response.data;
 };
+
+// ── Vendor Service ──
+export const getVendors = async () => {
+  const response = await safeGet('/vendors');
+  return response.data;
+};
+
+export const createVendor = async (data) => {
+  const response = await safePost('/vendors', data);
+  return response.data;
+};
+
+export const updateVendor = async (id, data) => {
+  const response = await safePut(`/vendors/${id}`, data);
+  return response.data;
+};
+
+export const deleteVendor = async (id) => {
+  const response = await safeDelete(`/vendors/${id}`);
+  return response.data;
+};
+

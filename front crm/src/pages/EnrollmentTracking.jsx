@@ -7,6 +7,7 @@ import {
   BarChart3, UserCheck, Clock, Percent, AlertCircle, Sparkles
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
+import ExcelExportButton from '../components/ExcelExportButton';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -260,6 +261,19 @@ const EnrollmentTracking = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <ExcelExportButton
+            data={filteredEnrollments.map(e => ({
+              'Student Name': e.studentName || e.studentId?.name || '',
+              'Course': e.courseName || e.courseId?.courseName || '',
+              'Batch': e.batchName || e.batchId?.batchName || '',
+              'Progress (%)': e.progressPercentage || e.progress || 0,
+              'Attendance (%)': e.attendancePercentage || e.attendanceRate || 0,
+              'Status': e.status || 'active'
+            }))}
+            fileName="enrollments_export"
+            sheetName="Enrollments"
+          />
+
           <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <button 
               onClick={() => setViewMode('table')} 

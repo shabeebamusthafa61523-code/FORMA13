@@ -5,7 +5,7 @@ import Task from './src/models/task.model.js';
 
 const run = async () => {
   try {
-    await mongoose.connect('mongodb+srv://shabeeba:9995982324@cluster0.i23tzbf.mongodb.net/crm?appName=Cluster0');
+    await mongoose.connect('mongodb+srv://shabeeba:9995982324@cluster0.i23tzbf.mongodb.net/fab?appName=Cluster0');
     
     const depts = await Department.find({});
     console.log(`Found ${depts.length} departments.`);

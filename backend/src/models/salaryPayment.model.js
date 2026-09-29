@@ -190,7 +190,7 @@ const salaryPaymentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    enum: ['PENDING', 'PARTIALLY_PAID', 'COMPLETED', 'APPROVED', 'REJECTED'],
     default: 'PENDING'
   },
   actionBy: {

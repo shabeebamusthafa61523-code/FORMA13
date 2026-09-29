@@ -36,6 +36,7 @@ import { getClients } from '../../services/clientService';
 import { getOpeningBalance, setOpeningBalance as saveOpeningBalanceApi } from '../../services/accountsService';
 import ConfirmModal from '../ConfirmModal';
 import IncomeInvoiceModal from './IncomeInvoiceModal';
+import ExcelExportButton from '../ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -298,6 +299,16 @@ const IncomeTab = ({ mode = 'sales' }) => {
     }
   }, [activeIncomeTab, selectedDeptFilter, selectedMethodFilter, searchQuery, startDate, endDate, getAuthHeaders, showToast]);
 
+  const userObj = React.useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch (e) {
+      return {};
+    }
+  }, []);
+  const userRole = String(userObj.role || localStorage.getItem('role') || '').toLowerCase();
+  const isSuperadmin = userRole.includes('superadmin') || userRole.includes('admin') || userRole.includes('owner');
+
   const getNetPayableAmount = useCallback((inc) => {
     if (!inc) return 0;
     
@@ -334,6 +345,12 @@ const IncomeTab = ({ mode = 'sales' }) => {
   const sortedAndFilteredIncomes = React.useMemo(() => {
     let result = incomes.filter((inc) => {
       const st = String(inc.status || '').trim().toLowerCase();
+
+      // Exclude Pending/Unpaid status invoices from Income
+      if (st === 'pending' || st === 'unpaid' || st === 'draft') {
+        return false;
+      }
+
       if (mode === 'proforma') {
         return st === 'proforma';
       }
@@ -343,7 +360,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
       if (mode === 'sales') {
         const refNo = String(inc.referenceNo || '').trim();
         const hasInvoiceNo = Boolean(refNo && refNo !== '-' && !inc.isDirectReceipt);
-        return st !== 'proforma' && hasInvoiceNo;
+        return st !== 'proforma' && st !== 'pending' && st !== 'unpaid' && hasInvoiceNo;
       }
       return true;
     });
@@ -1009,28 +1026,25 @@ const IncomeTab = ({ mode = 'sales' }) => {
             )}
           </button>
 
-          {/* Create Proforma / Invoice Button */}
-          {mode === 'proforma' && (
-            <button
-              type="button"
-              onClick={() => navigate('/accounts/create-invoice?type=proforma')}
-              className="py-1.5 px-3.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer active:scale-98 shrink-0"
-            >
-              <FileText size={14} />
-              + Create Proforma Invoice
-            </button>
-          )}
+          {/* Export Excel Button */}
+          <ExcelExportButton
+            data={sortedAndFilteredIncomes.map(inc => ({
+              'Date': inc.date ? new Date(inc.date).toISOString().split('T')[0] : '',
+              'Title / Source': inc.title || inc.source || '',
+              'Client / Company': (typeof inc.client === 'object' && inc.client?.companyName) || inc.clientName || 'N/A',
+              'Ref / Invoice No': inc.referenceNo || '',
+              'Department': inc.department || '',
+              'Payment Mode': inc.paymentMethod || inc.paymentMode || '',
+              'Status': inc.status || '',
+              'Total Amount (₹)': Number(inc.totalAmount || inc.amount || 0),
+              'Notes': inc.notes || inc.description || ''
+            }))}
+            fileName={mode === 'proforma' ? 'Proforma_Invoices' : 'Income_Invoices_List'}
+            sheetName="Incomes"
+            title="Export Excel"
+          />
 
-          {mode === 'sales' && (
-            <button
-              type="button"
-              onClick={() => navigate('/accounts/create-invoice')}
-              className="py-1.5 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer active:scale-98 shrink-0"
-            >
-              <FileText size={14} />
-              + Create Invoice
-            </button>
-          )}
+
 
           {mode === 'income' && (
             <button
@@ -1058,7 +1072,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
             <p className="font-semibold text-slate-600 dark:text-slate-300">
               {mode === 'proforma' ? 'No Proforma Invoices Found' : 'No Income Records Found'}
             </p>
-            <p>{mode === 'proforma' ? 'Click "+ Create Proforma Invoice" to add your first proforma invoice.' : 'Click "+ Create Invoice" to add your first revenue stream.'}</p>
+            <p>No income records found.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1360,11 +1374,20 @@ const IncomeTab = ({ mode = 'sales' }) => {
                             </button>
                             <button
                               onClick={() => handleDeleteIncome(inc._id, inc.title)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                              title="Move Invoice to Inactive Tab"
+                              className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                              title="Move Invoice to Inactive Tab (Soft Delete)"
                             >
-                              <Trash2 size={14} />
+                              <Archive size={14} />
                             </button>
+                            {isSuperadmin && (
+                              <button
+                                onClick={() => handlePermanentDeleteIncome(inc._id, inc.title)}
+                                className="p-1 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition cursor-pointer font-bold"
+                                title="Superadmin Permanent Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
@@ -1377,26 +1400,24 @@ const IncomeTab = ({ mode = 'sales' }) => {
         )}
       </div>
 
-      {/* Wide Add Income Modal (Responsive Scrollable Flexbox - Portal to document.body) */}
-      {isAddModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
-          <div className="fixed inset-0 bg-slate-950/60" onClick={() => setIsAddModalOpen(false)} />
-          <div className="relative z-10 w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden my-auto">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60 shrink-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <TrendingUp size={16} className="text-emerald-500" />
-                Record New Receipt
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
+      {/* Inline Add Income / Invoice Form (In Page Itself) */}
+      {isAddModalOpen && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs p-5 mb-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <TrendingUp size={18} className="text-emerald-500" />
+              Record New Income / Invoice Entry
+            </h3>
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(false)}
+              className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold transition cursor-pointer"
+            >
+              Cancel & Back to List
+            </button>
+          </div>
 
-            <form onSubmit={handleCreateIncome} className="p-5 overflow-y-auto space-y-4 text-xs">
+          <form onSubmit={handleCreateIncome} className="space-y-4 text-xs">
               {/* Source Type Selector (Academy vs Client vs General) */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
@@ -1709,9 +1730,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {/* Wide Edit Income Modal (Responsive Scrollable Flexbox - Portal to document.body) */}
