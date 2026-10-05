@@ -26,7 +26,12 @@ import {
   FileText,
   BarChart2,
   FolderKanban,
-  Briefcase
+  Briefcase,
+  GraduationCap,
+  BookOpen,
+  UserCheck,
+  Calendar,
+  Layers
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AiAnalyzeButton, AiAnalyzeModal } from '../components/AiAnalyzeModal';
@@ -51,6 +56,13 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
   const [clientsData, setClientsData] = useState({ clients: [], stats: {} });
   const [projectsData, setProjectsData] = useState({ projects: [], stats: {} });
   const [clientLeadsData, setClientLeadsData] = useState([]);
+  const [deptsData, setDeptsData] = useState([]);
+  const [coursesData, setCoursesData] = useState([]);
+  const [batchesData, setBatchesData] = useState([]);
+  const [enrollmentsData, setEnrollmentsData] = useState([]);
+  const [leavesData, setLeavesData] = useState([]);
+  const [dailyOpsData, setDailyOpsData] = useState([]);
+  const [calendarWorkData, setCalendarWorkData] = useState([]);
 
   // Filters & Search
   const [userSearch, setUserSearch] = useState("");
@@ -126,7 +138,11 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
       if (privilegedMode) {
         const deptParam = globalDepartment !== 'all' ? `?department=${encodeURIComponent(globalDepartment)}` : '';
         // Fetch Admin specific stats in parallel safely
-        const [taskRes, userRes, summaryRes, funnelRes, sourceRes, staffRes, followupRes, clientsRes, projectsRes, clientLeadsRes] = await Promise.all([
+        const [
+          taskRes, userRes, summaryRes, funnelRes, sourceRes, staffRes, followupRes, 
+          clientsRes, projectsRes, clientLeadsRes, deptsRes, coursesRes, batchesRes, 
+          enrollmentsRes, leavesRes, dailyOpsRes, calendarRes
+        ] = await Promise.all([
           fetchSafe(`${API_BASE}/tasks/all`),
           fetchSafe(`${API_BASE}/v1/users`),
           fetchSafe(`${API_BASE}/v1/analytics/summary${deptParam}`),
@@ -136,7 +152,14 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           fetchSafe(`${API_BASE}/v1/analytics/followup-metrics${deptParam}`),
           fetchSafe(`${API_BASE}/v1/clients?limit=10&sortBy=createdAt&sortOrder=desc`),
           fetchSafe(`${API_BASE}/v1/projects?limit=10`),
-          fetchSafe(`${API_BASE}/v1/client-leads?limit=10`)
+          fetchSafe(`${API_BASE}/v1/client-leads?limit=10`),
+          fetchSafe(`${API_BASE}/v1/departments`),
+          fetchSafe(`${API_BASE}/v1/academy/courses`),
+          fetchSafe(`${API_BASE}/v1/academy/batches`),
+          fetchSafe(`${API_BASE}/v1/academy/enrollments`),
+          fetchSafe(`${API_BASE}/v1/leaves`),
+          fetchSafe(`${API_BASE}/v1/daily-operations`),
+          fetchSafe(`${API_BASE}/v1/calendar-work`)
         ]);
 
         // TASKS
@@ -221,6 +244,48 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           if (cld && cld.success) {
             setClientLeadsData(Array.isArray(cld.data) ? cld.data : []);
           }
+        }
+
+        // DEPARTMENTS
+        if (deptsRes.ok) {
+          const dd = await deptsRes.json().catch(() => null);
+          setDeptsData(Array.isArray(dd) ? dd : dd?.data || []);
+        }
+
+        // COURSES
+        if (coursesRes.ok) {
+          const cd = await coursesRes.json().catch(() => null);
+          setCoursesData(Array.isArray(cd) ? cd : cd?.data || []);
+        }
+
+        // BATCHES
+        if (batchesRes.ok) {
+          const bd = await batchesRes.json().catch(() => null);
+          setBatchesData(Array.isArray(bd) ? bd : bd?.data || []);
+        }
+
+        // ENROLLMENTS
+        if (enrollmentsRes.ok) {
+          const ed = await enrollmentsRes.json().catch(() => null);
+          setEnrollmentsData(Array.isArray(ed) ? ed : ed?.data || []);
+        }
+
+        // LEAVES
+        if (leavesRes.ok) {
+          const ld = await leavesRes.json().catch(() => null);
+          setLeavesData(Array.isArray(ld) ? ld : ld?.data || []);
+        }
+
+        // DAILY OPERATIONS
+        if (dailyOpsRes.ok) {
+          const dod = await dailyOpsRes.json().catch(() => null);
+          setDailyOpsData(Array.isArray(dod) ? dod : dod?.data || []);
+        }
+
+        // CALENDAR WORK
+        if (calendarRes.ok) {
+          const cwd = await calendarRes.json().catch(() => null);
+          setCalendarWorkData(Array.isArray(cwd) ? cwd : cwd?.data || []);
         }
 
       } else {
@@ -1233,10 +1298,20 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             ))}
         </div>
 
-        {/* METRICS GRID */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${showLeadsArea ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-5`}>
-          {showLeadsArea && (
-            <>
+        {/* METRICS GRID - COMPREHENSIVE ALL SYSTEM COUNTS */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <Layers size={14} className="text-indigo-500" />
+              All System Counts & Module Overview
+            </h2>
+            <span className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
+              Live Real-Time Counts
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {showLeadsArea && (
               <StatCard
                 label="Leads Pipeline"
                 value={stats.totalLeads?.value || 0}
@@ -1247,44 +1322,116 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
                 trend={stats.totalLeads?.trend}
                 subtext="Total Registered Leads"
               />
-            </>
-          )}
-          <StatCard
-            label="Total Clients"
-            value={clientsData.stats?.total || clientsData.clients?.length || 0}
-            icon={Building}
-            color="text-blue-600 dark:text-blue-400"
-            borderColor="bg-blue-600"
-            bgColor="bg-blue-50 dark:bg-blue-950/20"
-            subtext={`${clientsData.stats?.active || 0} Active Accounts`}
-          />
-          <StatCard
-            label="Total Projects"
-            value={projectsData.stats?.total || projectsData.projects?.length || 0}
-            icon={FolderKanban}
-            color="text-purple-600 dark:text-purple-400"
-            borderColor="bg-purple-600"
-            bgColor="bg-purple-50 dark:bg-purple-950/20"
-            subtext={`${projectsData.stats?.completed || 0} Completed`}
-          />
-          <StatCard
-            label="Active Staff"
-            value={activeStaffCount}
-            icon={Users}
-            color="text-lime-600 dark:text-lime-400"
-            borderColor="bg-lime-500"
-            bgColor="bg-lime-50 dark:bg-lime-950/20"
-            subtext={`${filteredUsersCount.length} Operators Enrolled`}
-          />
-          <StatCard
-            label="Tasks Completed"
-            value={`${taskCompletionRate}%`}
-            icon={ListChecks}
-            color="text-amber-600 dark:text-amber-400"
-            borderColor="bg-amber-500"
-            bgColor="bg-amber-50 dark:bg-amber-950/20"
-            subtext={`${doneTasksCount}/${totalTasksCount} Missions Closed`}
-          />
+            )}
+            <StatCard
+              label="Total Clients"
+              value={clientsData.stats?.total || clientsData.clients?.length || 0}
+              icon={Building}
+              color="text-blue-600 dark:text-blue-400"
+              borderColor="bg-blue-600"
+              bgColor="bg-blue-50 dark:bg-blue-950/20"
+              subtext={`${clientsData.stats?.active || 0} Active Accounts`}
+            />
+            <StatCard
+              label="Total Projects"
+              value={projectsData.stats?.total || projectsData.projects?.length || 0}
+              icon={FolderKanban}
+              color="text-purple-600 dark:text-purple-400"
+              borderColor="bg-purple-600"
+              bgColor="bg-purple-50 dark:bg-purple-950/20"
+              subtext={`${projectsData.stats?.completed || 0} Completed`}
+            />
+            <StatCard
+              label="Active Staff"
+              value={activeStaffCount}
+              icon={Users}
+              color="text-lime-600 dark:text-lime-400"
+              borderColor="bg-lime-500"
+              bgColor="bg-lime-50 dark:bg-lime-950/20"
+              subtext={`${filteredUsersCount.length} Operators Enrolled`}
+            />
+            <StatCard
+              label="Tasks Completed"
+              value={`${taskCompletionRate}%`}
+              icon={ListChecks}
+              color="text-amber-600 dark:text-amber-400"
+              borderColor="bg-amber-500"
+              bgColor="bg-amber-50 dark:bg-amber-950/20"
+              subtext={`${doneTasksCount}/${totalTasksCount} Missions Closed`}
+            />
+            <StatCard
+              label="Departments"
+              value={deptsData.length || uniqueDepartments.length || 0}
+              icon={Briefcase}
+              color="text-teal-600 dark:text-teal-400"
+              borderColor="bg-teal-500"
+              bgColor="bg-teal-50 dark:bg-teal-950/20"
+              subtext="Active Operational Units"
+            />
+            <StatCard
+              label="Client Leads"
+              value={clientLeadsData.length}
+              icon={FileText}
+              color="text-cyan-600 dark:text-cyan-400"
+              borderColor="bg-cyan-500"
+              bgColor="bg-cyan-50 dark:bg-cyan-950/20"
+              subtext="Prospect Inquiries"
+            />
+            <StatCard
+              label="Academy Courses"
+              value={coursesData.length}
+              icon={BookOpen}
+              color="text-emerald-600 dark:text-emerald-400"
+              borderColor="bg-emerald-500"
+              bgColor="bg-emerald-50 dark:bg-emerald-950/20"
+              subtext="Curriculum Modules"
+            />
+            <StatCard
+              label="Academy Batches"
+              value={batchesData.length}
+              icon={GraduationCap}
+              color="text-violet-600 dark:text-violet-400"
+              borderColor="bg-violet-500"
+              bgColor="bg-violet-50 dark:bg-violet-950/20"
+              subtext="Active Student Batches"
+            />
+            <StatCard
+              label="Student Enrollments"
+              value={enrollmentsData.length}
+              icon={UserCheck}
+              color="text-fuchsia-600 dark:text-fuchsia-400"
+              borderColor="bg-fuchsia-500"
+              bgColor="bg-fuchsia-50 dark:bg-fuchsia-950/20"
+              subtext="Registered Students"
+            />
+            <StatCard
+              label="Leave Applications"
+              value={leavesData.length}
+              icon={Calendar}
+              color="text-rose-600 dark:text-rose-400"
+              borderColor="bg-rose-500"
+              bgColor="bg-rose-50 dark:bg-rose-950/20"
+              subtext={`${leavesData.filter(l => (l.status || '').toLowerCase() === 'pending').length} Pending Review`}
+            />
+            <StatCard
+              label="Daily Operations"
+              value={dailyOpsData.length}
+              icon={Activity}
+              color="text-sky-600 dark:text-sky-400"
+              borderColor="bg-sky-500"
+              bgColor="bg-sky-50 dark:bg-sky-950/20"
+              subtext="Log Tracker Records"
+            />
+            <StatCard
+              label="Calendar Work"
+              value={calendarWorkData.length}
+              icon={Clock}
+              color="text-orange-600 dark:text-orange-400"
+              borderColor="bg-orange-500"
+              bgColor="bg-orange-50 dark:bg-orange-950/20"
+              subtext="Scheduled Items"
+            />
+          </div>
         </div>
 
         {/* CHARTS SECTION 1 - SVG TIMELINE & LEAD STAGE FUNNEL */}
