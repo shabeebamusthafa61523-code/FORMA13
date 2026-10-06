@@ -63,6 +63,18 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
   const [leavesData, setLeavesData] = useState([]);
   const [dailyOpsData, setDailyOpsData] = useState([]);
   const [calendarWorkData, setCalendarWorkData] = useState([]);
+  const [accountsCounts, setAccountsCounts] = useState({
+    capital: 0,
+    sales: 0,
+    income: 0,
+    purchase: 0,
+    categories: 0,
+    expenses: 0,
+    salary: 0,
+    ledger: 0,
+    cashBook: 0,
+    reports: 0
+  });
 
   // Filters & Search
   const [userSearch, setUserSearch] = useState("");
@@ -139,27 +151,19 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
         const deptParam = globalDepartment !== 'all' ? `?department=${encodeURIComponent(globalDepartment)}` : '';
         // Fetch Admin specific stats in parallel safely
         const [
-          taskRes, userRes, summaryRes, funnelRes, sourceRes, staffRes, followupRes, 
-          clientsRes, projectsRes, clientLeadsRes, deptsRes, coursesRes, batchesRes, 
-          enrollmentsRes, leavesRes, dailyOpsRes, calendarRes
+          taskRes, userRes, summaryRes, clientsRes,
+          capRes, incRes, expRes, catRes, salRes, cbRes
         ] = await Promise.all([
           fetchSafe(`${API_BASE}/tasks/all`),
           fetchSafe(`${API_BASE}/v1/users`),
           fetchSafe(`${API_BASE}/v1/analytics/summary${deptParam}`),
-          fetchSafe(`${API_BASE}/v1/analytics/conversion-rate${deptParam}`),
-          fetchSafe(`${API_BASE}/v1/analytics/source-performance${deptParam}`),
-          fetchSafe(`${API_BASE}/v1/analytics/staff-performance${deptParam}`),
-          fetchSafe(`${API_BASE}/v1/analytics/followup-metrics${deptParam}`),
           fetchSafe(`${API_BASE}/v1/clients?limit=10&sortBy=createdAt&sortOrder=desc`),
-          fetchSafe(`${API_BASE}/v1/projects?limit=10`),
-          fetchSafe(`${API_BASE}/v1/client-leads?limit=10`),
-          fetchSafe(`${API_BASE}/v1/departments`),
-          fetchSafe(`${API_BASE}/v1/academy/courses`),
-          fetchSafe(`${API_BASE}/v1/academy/batches`),
-          fetchSafe(`${API_BASE}/v1/academy/enrollments`),
-          fetchSafe(`${API_BASE}/v1/leaves`),
-          fetchSafe(`${API_BASE}/v1/daily-operations`),
-          fetchSafe(`${API_BASE}/v1/calendar-work`)
+          fetchSafe(`${API_BASE}/v1/accounts/capitals`),
+          fetchSafe(`${API_BASE}/v1/accounts/incomes`),
+          fetchSafe(`${API_BASE}/v1/accounts/expenses`),
+          fetchSafe(`${API_BASE}/v1/accounts/categories`),
+          fetchSafe(`${API_BASE}/v1/accounts/salary-payments`),
+          fetchSafe(`${API_BASE}/v1/accounts/cash-book`)
         ]);
 
         // TASKS
@@ -190,38 +194,6 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           }
         }
 
-        // FUNNEL
-        if (funnelRes.ok) {
-          const funnelData = await funnelRes.json().catch(() => null);
-          if (funnelData && funnelData.success) {
-            setFunnelData(funnelData.data);
-          }
-        }
-
-        // SOURCE PERFORMANCE
-        if (sourceRes.ok) {
-          const sourceData = await sourceRes.json().catch(() => null);
-          if (sourceData && sourceData.success) {
-            setSourcePerformance(sourceData.data || []);
-          }
-        }
-
-        // STAFF PERFORMANCE
-        if (staffRes.ok) {
-          const staffData = await staffRes.json().catch(() => null);
-          if (staffData && staffData.success) {
-            setStaffPerformance(staffData.data || []);
-          }
-        }
-
-        // WEEKLY TIMELINE
-        if (followupRes.ok) {
-          const followupData = await followupRes.json().catch(() => null);
-          if (followupData && followupData.success) {
-            setFollowupMetrics(followupData.data || null);
-          }
-        }
-
         // CLIENTS
         if (clientsRes.ok) {
           const cd = await clientsRes.json().catch(() => null);
@@ -230,63 +202,27 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           }
         }
 
-        // PROJECTS
-        if (projectsRes.ok) {
-          const pd = await projectsRes.json().catch(() => null);
-          if (pd && pd.success) {
-            setProjectsData({ projects: pd.data?.projects || [], stats: pd.data?.stats || {} });
-          }
-        }
+        // ACCOUNTS NUMERIC METRICS
+        let cCap = 0, cInc = 0, cExp = 0, cCat = 0, cSal = 0, cCb = 0;
+        if (capRes.ok) { const d = await capRes.json().catch(() => null); cCap = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
+        if (incRes.ok) { const d = await incRes.json().catch(() => null); cInc = Array.isArray(d) ? d.length : (d?.data?.length || d?.incomes?.length || 0); }
+        if (expRes.ok) { const d = await expRes.json().catch(() => null); cExp = Array.isArray(d) ? d.length : (d?.data?.length || d?.expenses?.length || 0); }
+        if (catRes.ok) { const d = await catRes.json().catch(() => null); cCat = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
+        if (salRes.ok) { const d = await salRes.json().catch(() => null); cSal = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
+        if (cbRes.ok) { const d = await cbRes.json().catch(() => null); cCb = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
 
-        // CLIENT LEADS
-        if (clientLeadsRes.ok) {
-          const cld = await clientLeadsRes.json().catch(() => null);
-          if (cld && cld.success) {
-            setClientLeadsData(Array.isArray(cld.data) ? cld.data : []);
-          }
-        }
-
-        // DEPARTMENTS
-        if (deptsRes.ok) {
-          const dd = await deptsRes.json().catch(() => null);
-          setDeptsData(Array.isArray(dd) ? dd : dd?.data || []);
-        }
-
-        // COURSES
-        if (coursesRes.ok) {
-          const cd = await coursesRes.json().catch(() => null);
-          setCoursesData(Array.isArray(cd) ? cd : cd?.data || []);
-        }
-
-        // BATCHES
-        if (batchesRes.ok) {
-          const bd = await batchesRes.json().catch(() => null);
-          setBatchesData(Array.isArray(bd) ? bd : bd?.data || []);
-        }
-
-        // ENROLLMENTS
-        if (enrollmentsRes.ok) {
-          const ed = await enrollmentsRes.json().catch(() => null);
-          setEnrollmentsData(Array.isArray(ed) ? ed : ed?.data || []);
-        }
-
-        // LEAVES
-        if (leavesRes.ok) {
-          const ld = await leavesRes.json().catch(() => null);
-          setLeavesData(Array.isArray(ld) ? ld : ld?.data || []);
-        }
-
-        // DAILY OPERATIONS
-        if (dailyOpsRes.ok) {
-          const dod = await dailyOpsRes.json().catch(() => null);
-          setDailyOpsData(Array.isArray(dod) ? dod : dod?.data || []);
-        }
-
-        // CALENDAR WORK
-        if (calendarRes.ok) {
-          const cwd = await calendarRes.json().catch(() => null);
-          setCalendarWorkData(Array.isArray(cwd) ? cwd : cwd?.data || []);
-        }
+        setAccountsCounts({
+          capital: cCap,
+          sales: cInc,
+          income: cInc,
+          purchase: cExp,
+          categories: cCat,
+          expenses: cExp,
+          salary: cSal,
+          ledger: cInc + cExp,
+          cashBook: cCb,
+          reports: cInc + cExp
+        });
 
       } else {
         // Standard User fetching
@@ -345,20 +281,10 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
         parsedUser.user_id = resolvedUserId;
         setUser(parsedUser);
 
-        const currentUserRole = String(parsedUser.role_id || parsedUser.roleId || parsedUser.role || '').toLowerCase().trim();
-        const currentUserDesignation = String(parsedUser.designation || '').toLowerCase().trim();
-        const currentUserDeptName = String(parsedUser.department || parsedUser.departmentId?.name || '').toLowerCase().trim();
-        const isSuperAdminUser = parsedUser.isSuperAdmin === true || parsedUser.is_super_admin === true || ['0', 'superadmin'].includes(currentUserRole);
-
-        const privileged = isEmbedded ||
-                           isSuperAdminUser ||
-                           ['1', '2', 'admin'].includes(currentUserRole) || 
-                           currentUserDeptName.includes('hr') || 
-                           currentUserDeptName.includes('admin');
-        setIsAdmin(privileged);
+        setIsAdmin(true);
 
         if (resolvedUserId) {
-          fetchData(resolvedUserId, privileged);
+          fetchData(resolvedUserId, true);
         } else {
           setLoading(false);
         }
@@ -1188,14 +1114,14 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
         {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
-            {/* <div className="flex items-center gap-2 mb-1">
-              <Shield size={14} className="text-indigo-500" />
-              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em]">
-                System Control Console
-              </p>
-            </div> */}
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Industrial Fabrication & Accounts HQ
+              </span>
+            </div>
             <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">
-               <span className="text-indigo-650 dark:text-indigo-400">Dashboard</span>
+              Fabtec <span className="text-indigo-650 dark:text-indigo-400">Operations</span>
             </h1>
           </div>
 
@@ -1203,9 +1129,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             <AiAnalyzeButton
               onClick={() => {
                 setAiModalContext({
-                  employeeName: user?.name || 'Dashboard User',
-                  department: user?.department || 'CRM HQ',
-                  designation: user?.designation || 'Staff',
+                  employeeName: user?.name || user?.username || '',
+                  department: user?.department?.name || user?.department || '',
+                  designation: user?.designation?.title || user?.designation?.name || user?.designation || user?.role?.name || user?.role || '',
                   actualReportContentText: JSON.stringify({ adminStats, funnelData, sourcePerformance, staffPerformance, followupMetrics })
                 });
                 setIsAiModalOpen(true);
@@ -1228,7 +1154,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           isOpen={isAiModalOpen}
           onClose={() => setIsAiModalOpen(false)}
           contextData={aiModalContext}
-          title="Dashboard Executive AI Analysis"
+          title="Fabtec Industrial AI Operations Analysis"
         />
 
         {/* DEPARTMENT & EXECUTIVE VIEW FILTER PILLS */}
@@ -1298,533 +1224,163 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             ))}
         </div>
 
-        {/* METRICS GRID - COMPREHENSIVE ALL SYSTEM COUNTS */}
+        {/* METRICS GRID - EXCLUSIVELY SIDEBAR PAGES */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-              <Layers size={14} className="text-indigo-500" />
-              All System Counts & Module Overview
+              <Shield size={14} className="text-indigo-500" />
+              Fabrication & Accounts Operations Console
             </h2>
             <span className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
-              Live Real-Time Counts
+              12 Active Modules
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {showLeadsArea && (
-              <StatCard
-                label="Leads Pipeline"
-                value={stats.totalLeads?.value || 0}
-                icon={TrendingUp}
-                color="text-indigo-600 dark:text-indigo-400"
-                borderColor="bg-indigo-600 dark:bg-indigo-500"
-                bgColor="bg-indigo-50 dark:bg-indigo-950/20"
-                trend={stats.totalLeads?.trend}
-                subtext="Total Registered Leads"
-              />
-            )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {/* 1. EMPLOYEES (/users) */}
             <StatCard
-              label="Total Clients"
+              label="Employees"
+              value={allUsers.length}
+              icon={Users}
+              color="text-indigo-600 dark:text-indigo-400"
+              borderColor="bg-indigo-600"
+              bgColor="bg-indigo-50 dark:bg-indigo-950/20"
+              subtext={`${activeStaffCount} Active Industrial & Shop Staff`}
+              onClick={() => navigate('/users')}
+            />
+
+            {/* 2. CLIENTS (/clients) */}
+            <StatCard
+              label="Clients"
               value={clientsData.stats?.total || clientsData.clients?.length || 0}
               icon={Building}
               color="text-blue-600 dark:text-blue-400"
               borderColor="bg-blue-600"
               bgColor="bg-blue-50 dark:bg-blue-950/20"
-              subtext={`${clientsData.stats?.active || 0} Active Accounts`}
+              subtext={`${clientsData.stats?.active || 0} Industrial Accounts`}
+              onClick={() => navigate('/clients')}
             />
+
+            {/* 3. CAPITAL (/accounts/capital) */}
             <StatCard
-              label="Total Projects"
-              value={projectsData.stats?.total || projectsData.projects?.length || 0}
-              icon={FolderKanban}
-              color="text-purple-600 dark:text-purple-400"
-              borderColor="bg-purple-600"
-              bgColor="bg-purple-50 dark:bg-purple-950/20"
-              subtext={`${projectsData.stats?.completed || 0} Completed`}
-            />
-            <StatCard
-              label="Active Staff"
-              value={activeStaffCount}
-              icon={Users}
-              color="text-lime-600 dark:text-lime-400"
-              borderColor="bg-lime-500"
-              bgColor="bg-lime-50 dark:bg-lime-950/20"
-              subtext={`${filteredUsersCount.length} Operators Enrolled`}
-            />
-            <StatCard
-              label="Tasks Completed"
-              value={`${taskCompletionRate}%`}
-              icon={ListChecks}
-              color="text-amber-600 dark:text-amber-400"
-              borderColor="bg-amber-500"
-              bgColor="bg-amber-50 dark:bg-amber-950/20"
-              subtext={`${doneTasksCount}/${totalTasksCount} Missions Closed`}
-            />
-            <StatCard
-              label="Departments"
-              value={deptsData.length || uniqueDepartments.length || 0}
+              label="Capital"
+              value={accountsCounts.capital}
               icon={Briefcase}
+              color="text-emerald-600 dark:text-emerald-400"
+              borderColor="bg-emerald-500"
+              bgColor="bg-emerald-50 dark:bg-emerald-950/20"
+              subtext="Equipment & Capital Assets"
+              onClick={() => navigate('/accounts/capital')}
+            />
+
+            {/* 4. SALES (/accounts/sales) */}
+            <StatCard
+              label="Sales"
+              value={accountsCounts.sales}
+              icon={TrendingUp}
               color="text-teal-600 dark:text-teal-400"
               borderColor="bg-teal-500"
               bgColor="bg-teal-50 dark:bg-teal-950/20"
-              subtext="Active Operational Units"
+              subtext="Fabrication Sales Orders"
+              onClick={() => navigate('/accounts/sales')}
             />
+
+            {/* 5. INCOME (/accounts/income) */}
             <StatCard
-              label="Client Leads"
-              value={clientLeadsData.length}
+              label="Income"
+              value={accountsCounts.income}
               icon={FileText}
               color="text-cyan-600 dark:text-cyan-400"
               borderColor="bg-cyan-500"
               bgColor="bg-cyan-50 dark:bg-cyan-950/20"
-              subtext="Prospect Inquiries"
+              subtext="Commercial Invoices & Receipts"
+              onClick={() => navigate('/accounts/income')}
             />
+
+            {/* 6. PURCHASE (/accounts/purchase) */}
             <StatCard
-              label="Academy Courses"
-              value={coursesData.length}
-              icon={BookOpen}
-              color="text-emerald-600 dark:text-emerald-400"
-              borderColor="bg-emerald-500"
-              bgColor="bg-emerald-50 dark:bg-emerald-950/20"
-              subtext="Curriculum Modules"
-            />
-            <StatCard
-              label="Academy Batches"
-              value={batchesData.length}
-              icon={GraduationCap}
-              color="text-violet-600 dark:text-violet-400"
-              borderColor="bg-violet-500"
-              bgColor="bg-violet-50 dark:bg-violet-950/20"
-              subtext="Active Student Batches"
-            />
-            <StatCard
-              label="Student Enrollments"
-              value={enrollmentsData.length}
-              icon={UserCheck}
-              color="text-fuchsia-600 dark:text-fuchsia-400"
-              borderColor="bg-fuchsia-500"
-              bgColor="bg-fuchsia-50 dark:bg-fuchsia-950/20"
-              subtext="Registered Students"
-            />
-            <StatCard
-              label="Leave Applications"
-              value={leavesData.length}
-              icon={Calendar}
-              color="text-rose-600 dark:text-rose-400"
-              borderColor="bg-rose-500"
-              bgColor="bg-rose-50 dark:bg-rose-950/20"
-              subtext={`${leavesData.filter(l => (l.status || '').toLowerCase() === 'pending').length} Pending Review`}
-            />
-            <StatCard
-              label="Daily Operations"
-              value={dailyOpsData.length}
-              icon={Activity}
+              label="Purchase"
+              value={accountsCounts.purchase}
+              icon={Building}
               color="text-sky-600 dark:text-sky-400"
               borderColor="bg-sky-500"
               bgColor="bg-sky-50 dark:bg-sky-950/20"
-              subtext="Log Tracker Records"
+              subtext="Raw Material Purchases"
+              onClick={() => navigate('/accounts/purchase')}
             />
+
+            {/* 7. EXPENSE CATEGORIES (/accounts/categories) */}
             <StatCard
-              label="Calendar Work"
-              value={calendarWorkData.length}
-              icon={Clock}
+              label="Expense Categories"
+              value={accountsCounts.categories}
+              icon={Layers}
+              color="text-purple-600 dark:text-purple-400"
+              borderColor="bg-purple-600"
+              bgColor="bg-purple-50 dark:bg-purple-950/20"
+              subtext="Category Rules & Allocation"
+              onClick={() => navigate('/accounts/categories')}
+            />
+
+            {/* 8. EXPENSE (/accounts/expenses) */}
+            <StatCard
+              label="Expense"
+              value={accountsCounts.expenses}
+              icon={Activity}
+              color="text-fuchsia-600 dark:text-fuchsia-400"
+              borderColor="bg-fuchsia-500"
+              bgColor="bg-fuchsia-50 dark:bg-fuchsia-950/20"
+              subtext="Operational Expenses"
+              onClick={() => navigate('/accounts/expenses')}
+            />
+
+            {/* 9. WAGE (/accounts/salary) */}
+            <StatCard
+              label="Wage"
+              value={accountsCounts.salary}
+              icon={ListChecks}
+              color="text-amber-600 dark:text-amber-400"
+              borderColor="bg-amber-500"
+              bgColor="bg-amber-50 dark:bg-amber-950/20"
+              subtext="Staff Wages & Salaries"
+              onClick={() => navigate('/accounts/salary')}
+            />
+
+            {/* 10. LEDGER (/accounts/ledger) */}
+            <StatCard
+              label="Ledger"
+              value={accountsCounts.ledger}
+              icon={BookOpen}
               color="text-orange-600 dark:text-orange-400"
               borderColor="bg-orange-500"
               bgColor="bg-orange-50 dark:bg-orange-950/20"
-              subtext="Scheduled Items"
+              subtext="General Ledger Transactions"
+              onClick={() => navigate('/accounts/ledger')}
+            />
+
+            {/* 11. DAY BOOK (/accounts/cash-book) */}
+            <StatCard
+              label="Day Book"
+              value={accountsCounts.cashBook}
+              icon={Clock}
+              color="text-rose-600 dark:text-rose-400"
+              borderColor="bg-rose-500"
+              bgColor="bg-rose-50 dark:bg-rose-950/20"
+              subtext="Daily Cash Book Records"
+              onClick={() => navigate('/accounts/cash-book')}
+            />
+
+            {/* 12. PROFIT AND LOSS (/accounts/reports) */}
+            <StatCard
+              label="Profit and Loss"
+              value={accountsCounts.reports}
+              icon={BarChart2}
+              color="text-lime-600 dark:text-lime-400"
+              borderColor="bg-lime-500"
+              bgColor="bg-lime-50 dark:bg-lime-950/20"
+              subtext="P&L Statements & Reports"
+              onClick={() => navigate('/accounts/reports')}
             />
           </div>
-        </div>
-
-        {/* CHARTS SECTION 1 - SVG TIMELINE & LEAD STAGE FUNNEL */}
-        {!["academy", "hr analytics", "hr/admin", "daily task tracker"].includes(globalDepartment.toLowerCase()) && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* UNIFIED DEPARTMENT & USER TODO ANALYTICS CONSOLE (Full-Width Premium Dashboard Card) */}
-          <div className="lg:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-slate-50 dark:border-slate-850 pb-4">
-              <div>
-                <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  Operational Task Analytics
-                </h3>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                  Select a department to view individual user completion rates and task trends
-                </p>
-              </div>
-              
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* Sort Users Selector */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black uppercase text-slate-455 dark:text-slate-500">Sort Users:</span>
-                  <select
-                    value={userPerformanceSort}
-                    onChange={(e) => setUserPerformanceSort(e.target.value)}
-                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-750 dark:text-slate-350 focus:outline-none cursor-pointer hover:border-indigo-500/50 transition-colors"
-                  >
-                    <option value="completion">Completion Rate</option>
-                    <option value="workload">Total Workload</option>
-                    <option value="name">Name</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* CHARTS CONTAINER (GRID 1:2) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
-              {/* USER COMPLETION BAR CHART */}
-              <div className="flex flex-col">
-                <p className="text-[10px] font-black text-slate-455 dark:text-slate-500 uppercase tracking-widest mb-4 pb-1.5 border-b border-slate-50 dark:border-slate-850">
-                  User Task Completions
-                </p>
-                <div className="flex-1 overflow-y-auto max-h-[250px] scrollbar-thin">
-                  {renderUserTodoPerformanceChart()}
-                </div>
-              </div>
-
-              {/* ACTIVITY TREND LINE CHART */}
-              <div className="flex flex-col">
-                <p className="text-[10px] font-black text-slate-455 dark:text-slate-500 uppercase tracking-widest mb-4 pb-1.5 border-b border-slate-50 dark:border-slate-850">
-                  Department Activity Trend (Last 7 Days)
-                </p>
-                <div className="flex-1">
-                  {renderTasksTrendLineChart()}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-
-
-        {/* CHARTS SECTION 2 - LEADS FUNNEL, MARKETING SOURCES, AND OPERATOR PERFORMANCE */}
-        {showLeadsArea && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* LEAD PIPELINE FUNNEL CHART */}
-            <div className="lg:col-span-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h2 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                    Leads Funnel
-                  </h2>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                    Lead stage distribution summary
-                  </p>
-                </div>
-                <span className="text-[9px] font-black uppercase text-indigo-500 bg-indigo-500/5 border border-indigo-500/10 px-2.5 py-0.5 rounded">
-                  Funnel Stages
-                </span>
-              </div>
-
-              {funnelList && funnelList.length > 0 ? (
-                <div className="space-y-4">
-                  {funnelList.map((item, index) => {
-                    const colors = {
-                      'New': 'from-blue-500 to-indigo-500 bg-blue-500',
-                      'Contacted': 'from-indigo-500 to-violet-500 bg-indigo-500',
-                      'Follow Up': 'from-violet-500 to-purple-500 bg-violet-500',
-                      'Interested': 'from-amber-500 to-orange-500 bg-amber-500',
-                      'Converted': 'from-emerald-500 to-lime-500 bg-emerald-500',
-                      'Lost': 'from-rose-500 to-red-500 bg-rose-500'
-                    };
-                    const barColor = colors[item.stage] || 'from-slate-400 to-slate-500 bg-slate-400';
-
-                    return (
-                      <div key={item.stage} className="space-y-1">
-                        <div className="flex justify-between text-[11px] font-bold text-slate-700 dark:text-slate-355">
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                            {item.stage}
-                          </span>
-                          <span>{item.count} ({item.percentage}%)</span>
-                        </div>
-                        <div className="h-2.5 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${item.percentage}%` }}
-                            transition={{ duration: 0.8, delay: index * 0.05 }}
-                            className={`h-full rounded-full bg-gradient-to-r ${barColor}`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex flex-col justify-center items-center py-12 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40 h-full">
-                  <BarChart2 className="mx-auto text-slate-350 dark:text-slate-655 mb-2" size={24} />
-                  <p className="text-[10px] font-bold text-slate-550 dark:text-slate-455 uppercase tracking-widest">
-                    No Funnel Data Registered
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* LEAD SOURCE ATTRIBUTION */}
-            <div className="lg:col-span-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                    Lead Sources Attribution
-                  </h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                    Marketing channels comparison metrics and attribution
-                  </p>
-                </div>
-                <span className="text-[9px] font-black text-lime-500 bg-lime-500/5 px-2 py-0.5 border border-lime-500/10 rounded uppercase">
-                  Channels
-                </span>
-              </div>
-
-              {sourcePerformance && sourcePerformance.length > 0 ? (() => {
-                const totalLeads = leadSourceData.reduce((acc, curr) => acc + curr.value, 0);
-                let accumulatedLeads = 0;
-                return (
-                  <div className="flex flex-col sm:flex-row items-center gap-6 py-2 flex-1">
-                    <div className="relative w-36 h-36 shrink-0">
-                      <svg viewBox="0 0 120 120" className="w-full h-full transform -rotate-90">
-                        {leadSourceData.map((slice, i) => {
-                          const percent = totalLeads > 0 ? slice.value / totalLeads : 0;
-                          const strokeDasharray = `${percent * 314.159} ${314.159 - (percent * 314.159)}`;
-                          const strokeDashoffset = -((accumulatedLeads / totalLeads) * 314.159);
-                          accumulatedLeads += slice.value;
-                          return (
-                            <circle
-                              key={i}
-                              cx="60"
-                              cy="60"
-                              r="50"
-                              fill="transparent"
-                              stroke={slice.color}
-                              strokeWidth="12"
-                              strokeDasharray={strokeDasharray}
-                              strokeDashoffset={strokeDashoffset}
-                              className="transition-all duration-300 hover:stroke-[14px] cursor-pointer"
-                              title={`${slice.label}: ${slice.value} leads`}
-                            />
-                          );
-                        })}
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">Leads</span>
-                        <span className="text-xl font-black text-slate-800 dark:text-white">{totalLeads}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 min-w-0 w-full space-y-2">
-                      {leadSourceData.map((slice, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: slice.color }} />
-                            <span className="truncate uppercase text-[9px] tracking-wide">{slice.label}</span>
-                          </div>
-                          <div className="flex items-center gap-2 font-mono text-[10px] text-slate-500">
-                            <span>{slice.value}</span>
-                            <span className="text-indigo-500">({slice.rate.toFixed(2)}%)</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })() : (
-                <div className="flex flex-col justify-center items-center py-12 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40 h-full">
-                  <TrendingUp className="mx-auto text-slate-350 dark:text-slate-655 mb-2" size={24} />
-                  <p className="text-[10px] font-bold text-slate-550 dark:text-slate-455 uppercase tracking-widest">
-                    No Lead Sources Registered
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* MIDDLE SECTION - QUICK ACTIONS & OPERATORS */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* QUICK ADMINISTRATIVE ACTIONS */}
-          {/* QUICK ADMINISTRATIVE ACTIONS */}
-          <div className="lg:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
-            <h2 className="text-xs font-black text-slate-800 dark:text-slate-255 uppercase tracking-wider mb-6">
-              Console Navigation
-            </h2>
-            <div className={`grid grid-cols-2 ${showLeadsArea ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-4`}>
-              <ActionCard
-                title="Users Hub"
-                desc="Enrolled staff list"
-                icon={Users}
-                onClick={() => navigate("/users")}
-              />
-              {showLeadsArea && (
-                <ActionCard
-                  title="Leads Hub"
-                  desc="Directories index"
-                  icon={TrendingUp}
-                  onClick={() => navigate("/leads")}
-                />
-              )}
-              <ActionCard
-                title="Departments"
-                desc="Corporate hierarchy"
-                icon={Building}
-                onClick={() => navigate("/departments")}
-              />
-              <ActionCard
-                title="Tasks Console"
-                desc="Operator mission logs"
-                icon={ListTodo}
-                onClick={() => navigate("/todo")}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* TASKS SYSTEM MONITOR */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tight">
-                System Task Monitor
-              </h2>
-              <p className="text-xs text-slate-550 dark:text-slate-450 font-medium">
-                Track assigned missions and operational workloads
-              </p>
-            </div>
-
-            {/* FILTERS & SEARCH */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-              <div className="relative flex-1 sm:flex-initial sm:w-60">
-                <input
-                  type="text"
-                  placeholder="Search tasks..."
-                  value={taskSearch}
-                  onChange={(e) => setTaskSearch(e.target.value)}
-                  className="w-full pl-4 pr-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-850 dark:text-slate-250 focus:outline-none focus:border-indigo-500/50 transition-all placeholder:text-slate-400"
-                />
-              </div>
-
-              <div className="flex bg-slate-500 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-1 rounded-xl">
-                {["all", "pending", "done"].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setTaskFilter(filter)}
-                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-  taskFilter === filter
-    ? "bg-emerald-600 text-white shadow-sm shadow-emerald-500/20"
-    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-}`}
-                  >
-                    {filter}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {filteredTasks.length === 0 ? (
-              <div className="py-12 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40">
-                <ListTodo className="mx-auto text-slate-350 dark:text-slate-750 mb-2" size={28} />
-                <p className="text-[10px] font-bold text-slate-455 uppercase tracking-widest">
-                  No system tasks registered for current filters
-                </p>
-              </div>
-            ) : (
-              paginatedTasks.map((task) => {
-                const isDone = String(task.status).toLowerCase() === "done";
-                return (
-                  <div
-                    key={task.id || task._id}
-                    className="p-5 bg-slate-50 dark:bg-slate-950/30 border border-slate-100 dark:border-slate-850/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-indigo-500/30 dark:hover:border-indigo-500/30 transition-all"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={`mt-0.5 p-2 rounded-xl shrink-0 border ${
-                        isDone 
-                          ? "bg-emerald-500/5 text-emerald-500 border-emerald-500/10" 
-                          : "bg-amber-500/5 text-amber-500 border-amber-500/10"
-                      }`}>
-                        {isDone ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-850 dark:text-slate-250 leading-tight">
-                          {task.title}
-                        </h4>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-550">
-                          <span>Assigned To: <span className="text-indigo-500 dark:text-indigo-400 font-black">{getOperatorName(task.assigned_to)}</span></span>
-                          <span className="hidden sm:inline">•</span>
-                          <span>ID: {String(task.id || task._id || "").slice(0, 8)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
-                      <span className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-tight ${
-                        isDone
-                          ? "text-emerald-550 bg-emerald-550/5 border border-emerald-550/10"
-                          : "text-amber-550 bg-amber-550/5 border border-amber-550/10"
-                      }`}>
-                        {task.status || "Pending"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Pagination Controls */}
-          {totalTaskPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/50">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Showing <span className="text-slate-800 dark:text-slate-300">{(Math.min(taskCurrentPage, totalTaskPages || 1) - 1) * tasksPerPage + 1}</span> to{" "}
-                <span className="text-slate-800 dark:text-slate-300">
-                  {Math.min(Math.min(taskCurrentPage, totalTaskPages || 1) * tasksPerPage, filteredTasks.length)}
-                </span>{" "}
-                of <span className="text-slate-800 dark:text-slate-300">{filteredTasks.length}</span> tasks
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setTaskCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={Math.min(taskCurrentPage, totalTaskPages || 1) === 1}
-                  className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-200 dark:disabled:hover:border-slate-800 transition cursor-pointer"
-                >
-                  Prev
-                </button>
-                <div className="flex items-center gap-1">
-                  {taskPaginationItems.map((item, idx) => {
-                    if (item.type === 'ellipsis') {
-                      return <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 text-[10px] font-bold">...</span>;
-                    }
-                    const activePage = Math.min(taskCurrentPage, totalTaskPages || 1);
-                    return (
-                      <button
-                        key={`page-${item.value}`}
-                        onClick={() => setTaskCurrentPage(item.value)}
-                        className={`w-8 h-8 rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
-                          activePage === item.value
-                            ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
-                            : "bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-indigo-500/50"
-                        }`}
-                      >
-                        {item.value}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  onClick={() => setTaskCurrentPage(prev => Math.min(prev + 1, totalTaskPages))}
-                  disabled={Math.min(taskCurrentPage, totalTaskPages || 1) === totalTaskPages}
-                  className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-200 dark:disabled:hover:border-slate-800 transition cursor-pointer"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-
-          {tasks.length > 0 && (
-            <button
-              onClick={() => navigate("/todo")}
-              className="mt-4 text-center w-full py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/40 dark:hover:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-2xl text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider transition-all"
-            >
-              Configure and Manage System Tasks ({tasks.length})
-            </button>
-          )}
         </div>
 
         {/* CLIENTS SECTION */}
@@ -1909,166 +1465,6 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           )}
         </div>
 
-        {/* PROJECTS SECTION */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tight flex items-center gap-2">
-                <FolderKanban size={20} className="text-purple-500" />
-                Projects
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-450 font-medium mt-0.5">Ongoing and completed project tracker</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex gap-4 text-[11px] font-black uppercase tracking-wider">
-                <span className="px-3 py-1.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-500/20">
-                  Total: {projectsData.stats?.total || projectsData.projects?.length || 0}
-                </span>
-                <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
-                  Completed: {projectsData.stats?.completed || 0}
-                </span>
-              </div>
-              <button
-                onClick={() => navigate("/projects")}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-purple-500/20 active:scale-95 flex items-center gap-1.5"
-              >
-                View All <ChevronRight size={12} />
-              </button>
-            </div>
-          </div>
-
-          {projectsData.projects && projectsData.projects.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">#</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Project Name</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Stage</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Status</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Priority</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3">Client</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {projectsData.projects.slice(0, 8).map((p, i) => (
-                    <tr key={p._id || i} className="hover:bg-slate-50 dark:hover:bg-slate-950/30 transition-colors">
-                      <td className="py-3 pr-4 font-black text-slate-400">{i + 1}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-800 dark:text-slate-200">{p.name || p.projectName || '—'}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-500">{p.stage || p.currentStage || '—'}</td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
-                          String(p.status || '').toLowerCase() === 'completed'
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                            : String(p.status || '').toLowerCase() === 'on-hold'
-                            ? 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                            : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-                        }`}>
-                          {p.status || '—'}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
-                          String(p.priority || '').toLowerCase() === 'high'
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                            : String(p.priority || '').toLowerCase() === 'medium'
-                            ? 'bg-amber-500/10 text-amber-600'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        }`}>
-                          {p.priority || '—'}
-                        </span>
-                      </td>
-                      <td className="py-3 font-medium text-slate-500">{p.clientId?.name || p.client?.name || p.clientName || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="py-10 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No projects registered yet</p>
-            </div>
-          )}
-        </div>
-
-        {/* CLIENT LEADS SECTION */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tight flex items-center gap-2">
-                <Briefcase size={20} className="text-amber-500" />
-                Client Leads
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-450 font-medium mt-0.5">Latest incoming client lead pipeline</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="px-3 py-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/20 text-[11px] font-black uppercase tracking-wider">
-                Showing: {Math.min(clientLeadsData.length, 10)} leads
-              </span>
-              <button
-                onClick={() => navigate("/client-leads")}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-1.5"
-              >
-                View All <ChevronRight size={12} />
-              </button>
-            </div>
-          </div>
-
-          {clientLeadsData && clientLeadsData.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">#</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Lead Name</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Company</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Status</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Priority</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3">Contact</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {clientLeadsData.slice(0, 10).map((l, i) => (
-                    <tr key={l._id || i} className="hover:bg-slate-50 dark:hover:bg-slate-950/30 transition-colors">
-                      <td className="py-3 pr-4 font-black text-slate-400">{i + 1}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-800 dark:text-slate-200">{l.leadName || l.name || '—'}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-500">{l.companyName || '—'}</td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
-                          String(l.status || '').toLowerCase() === 'converted'
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                            : String(l.status || '').toLowerCase() === 'lost'
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                            : String(l.status || '').toLowerCase() === 'new'
-                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                            : 'bg-amber-500/10 text-amber-600'
-                        }`}>
-                          {l.status || '—'}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
-                          String(l.priority || '').toLowerCase() === 'high'
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                            : String(l.priority || '').toLowerCase() === 'medium'
-                            ? 'bg-amber-500/10 text-amber-600'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        }`}>
-                          {l.priority || '—'}
-                        </span>
-                      </td>
-                      <td className="py-3 font-medium text-slate-500">{l.phone || l.email || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="py-10 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No client leads registered yet</p>
-            </div>
-          )}
-        </div>
 
       </motion.div>
     );
@@ -2201,11 +1597,16 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     </div>
   );
 
-  return isAdmin ? renderAdminView() : renderOperatorView();
+  return renderAdminView();
 };
 
-const StatCard = ({ label, value, icon: Icon, color, borderColor, bgColor, trend, subtext }) => (
-  <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/50 p-6 rounded-[2rem] relative overflow-hidden group shadow-sm hover:shadow-md transition-all hover:border-slate-350 dark:hover:border-slate-700">
+const StatCard = ({ label, value, icon: Icon, color, borderColor, bgColor, trend, subtext, onClick }) => (
+  <div 
+    onClick={onClick}
+    className={`bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/50 p-6 rounded-[2rem] relative overflow-hidden group shadow-sm hover:shadow-md transition-all hover:border-slate-350 dark:hover:border-slate-700 ${
+      onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]' : ''
+    }`}
+  >
     <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${borderColor}`} />
 
     <div className="flex justify-between items-start">

@@ -49,77 +49,27 @@ const ROLES = [
 ];
 
 const ALL_SIDEBAR_ITEMS = [
-  // --- OVERVIEW & GENERAL ---
-  { label: 'Admin Dashboard', path: '/dashboard', category: 'Overview' },
-  { label: 'Approvals', path: '/approvals', category: 'Overview' },
-  { label: 'Leave Requests', path: '/leaves', category: 'Overview' },
-  { label: 'Notifications', path: '/notifications', category: 'Overview' },
-
-  // --- DASHBOARDS ---
-  { label: 'MD Dashboard', path: '/md-dashboard', category: 'Dashboards' },
-  { label: 'HR Dashboard', path: '/hr-dashboard', category: 'Dashboards' },
-  { label: 'Lead Dashboard', path: '/lead-dashboard', category: 'Dashboards' },
-  { label: 'Marketing Dashboard', path: '/marketing-dashboard', category: 'Dashboards' },
-  { label: 'Dev Dashboard', path: '/developer-dashboard', category: 'Dashboards' },
-  { label: 'GD Dashboard', path: '/graphic-designer-dashboard', category: 'Dashboards' },
-  { label: 'Video Dashboard', path: '/videographer-dashboard', category: 'Dashboards' },
-  { label: 'Counselor Dashboard', path: '/counselor-dashboard', category: 'Dashboards' },
+  // --- OVERVIEW ---
+  { label: 'Dashboard', path: '/dashboard', category: 'Overview' },
 
   // --- PEOPLE & HR ---
-  { label: 'Users', path: '/users', category: 'People & HR' },
-  { label: 'Departments', path: '/departments', category: 'People & HR' },
-  { label: 'Recruitment', path: '/recruitment', category: 'People & HR' },
-  { label: 'Attendance', path: '/attendance', category: 'People & HR' },
+  { label: 'Employees', path: '/users', category: 'People & HR' },
   { label: 'Sidebar Permissions', path: '/sidebar-permissions', category: 'People & HR' },
 
   // --- SALES & CRM ---
   { label: 'Clients', path: '/clients', category: 'Sales & CRM' },
-  { label: 'Client Leads', path: '/client-leads', category: 'Sales & CRM' },
-  { label: 'Student Leads', path: '/leads-telecaller', category: 'Sales & CRM' },
 
-  // --- MARKETING & WORK ---
-  { label: 'Projects', path: '/projects', category: 'Marketing & Work' },
-  { label: 'Task Assign', path: '/todo', category: 'Marketing & Work' },
-  { label: 'Content Calendar', path: '/calendar-work', category: 'Marketing & Work' },
-
-  // --- FINANCE & PAYROLL ---
-  { label: 'Accounts', path: '/accounts', category: 'Finance & Payroll' },
-  { label: 'Sales', path: '/accounts/income', category: 'Finance & Payroll' },
-  { label: 'Income', path: '/accounts/sales', category: 'Finance & Payroll' },
-  { label: 'Purchase', path: '/accounts/purchase', category: 'Finance & Payroll' },
-  { label: 'Create Invoice', path: '/accounts/create-invoice', category: 'Finance & Payroll' },
-  { label: 'Expense Categories', path: '/accounts/categories', category: 'Finance & Payroll' },
-  { label: 'Expense', path: '/accounts/expenses', category: 'Finance & Payroll' },
-  { label: 'Salary Payment', path: '/accounts/salary', category: 'Finance & Payroll' },
-  { label: 'Cash & Bank', path: '/accounts/cash-book', category: 'Finance & Payroll' },
-  { label: 'Operation', path: '/accounts/operation', category: 'Finance & Payroll' },
-  { label: 'Financial Report', path: '/accounts/reports', category: 'Finance & Payroll' },
-  { label: 'Payslips', path: '/payslips', category: 'Finance & Payroll' },
-  { label: 'Personal Payslip', path: '/my-payslip', category: 'Finance & Payroll' },
-
-  // --- ACADEMY & LMS ---
-  { label: 'Course Management', path: '/academy/courses', category: 'Academy & LMS' },
-  { label: 'Batches', path: '/academy/batches', category: 'Academy & LMS' },
-  { label: 'Enrollment Tracking', path: '/academy/enrollments', category: 'Academy & LMS' },
-  { label: 'Student Attendance', path: '/student-attendance', category: 'Academy & LMS' },
-  { label: 'My LMS Learning', path: '/academy/learning', category: 'Academy & LMS' },
-
-  // --- REPORTS & ANALYTICS ---
-  { label: 'KPI Analytics', path: '/performance-dashboard', category: 'Reports' },
-  { label: 'AI Reports', path: '/ai-report', category: 'Reports' },
-  { label: 'Employee Reports', path: '/employee-reports', category: 'Reports' },
-  { label: 'Daily Report', path: '/basic-report', category: 'Reports' },
-  { label: 'Team Reports', path: '/team-reports', category: 'Reports' },
-  { label: 'HR Shift Report', path: '/hr-report', category: 'Reports' },
-  { label: 'Ops Shift Report', path: '/ops-report', category: 'Reports' },
-  { label: 'Accountant Shift Report', path: '/accountant-report', category: 'Reports' },
-  { label: 'Marketing Shift Report', path: '/marketing-report', category: 'Reports' },
-  { label: 'Developer Report', path: '/developer-report', category: 'Reports' },
-  { label: 'Graphic Designer Report', path: '/graphic-designer-report', category: 'Reports' },
-  { label: 'Videographer Report', path: '/videographer-report', category: 'Reports' },
-  { label: 'Academic Counselor Report', path: '/academic-counselor-report', category: 'Reports' },
-  { label: 'HOD R&D Report', path: '/hod-rd-report', category: 'Reports' },
-  { label: 'HOD Marketing Report', path: '/hod-marketing-report', category: 'Reports' }
+  // --- FINANCE & ACCOUNTS ---
+  { label: 'Capital', path: '/accounts/capital', category: 'Finance & Accounts' },
+  { label: 'Sales', path: '/accounts/sales', category: 'Finance & Accounts' },
+  { label: 'Income', path: '/accounts/income', category: 'Finance & Accounts' },
+  { label: 'Purchase', path: '/accounts/purchase', category: 'Finance & Accounts' },
+  { label: 'Expense Categories', path: '/accounts/categories', category: 'Finance & Accounts' },
+  { label: 'Expense', path: '/accounts/expenses', category: 'Finance & Accounts' },
+  { label: 'Wage', path: '/accounts/salary', category: 'Finance & Accounts' },
+  { label: 'Ledger', path: '/accounts/ledger', category: 'Finance & Accounts' },
+  { label: 'Day Book', path: '/accounts/cash-book', category: 'Finance & Accounts' },
+  { label: 'Profit and Loss', path: '/accounts/reports', category: 'Finance & Accounts' }
 ];
 
 const STATUS_META = {

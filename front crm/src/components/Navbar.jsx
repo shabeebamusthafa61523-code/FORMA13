@@ -87,8 +87,8 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
       try {
         const parsedUser = JSON.parse(savedUser);
         setCurrentUser({
-          name: parsedUser.name || 'User',
-          role: parsedUser.role?.name || 'Staff'
+          name: parsedUser.name || parsedUser.username || '',
+          role: parsedUser.designation?.title || parsedUser.designation?.name || parsedUser.designation || parsedUser.role?.name || parsedUser.role || ''
         });
       } catch (err) {
         console.error("Failed to parse user data", err);
