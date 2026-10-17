@@ -11,6 +11,7 @@ router.use(protectRoute);
 // Read Client Endpoints (Accessible to all authenticated users with permission)
 router.get('/', clientController.getClients);
 router.get('/export', clientController.exportClients);
+router.get('/:id/transactions', clientController.getClientTransactions);
 router.get('/:id', clientController.getClientById);
 
 // Create Client Endpoint

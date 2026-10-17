@@ -3,67 +3,69 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Steel & Industrial Amber Palette */
-  --color-indigo-50: #eff6ff;
-  --color-indigo-100: #dbeafe;
-  --color-indigo-200: #bfdbfe;
-  --color-indigo-300: #93c5fd;
-  --color-indigo-400: #60a5fa;
-  --color-indigo-500: #2563eb; /* Primary Steel Blue */
-  --color-indigo-600: #1d4ed8; /* Industrial Steel Blue */
-  --color-indigo-700: #1e40af; /* Deep Steel Blue */
-  --color-indigo-800: #1e293b;
-  --color-indigo-900: #0f172a;
-  --color-indigo-950: #090d16;
+  /* FORMA13 Signature Deep Forest Pine Palette (Primary) */
+  --color-indigo-50: #f2f7f3;
+  --color-indigo-100: #e0ece2;
+  --color-indigo-200: #c4d8c6;
+  --color-indigo-300: #9ebea1;
+  --color-indigo-400: #6f9c73;
+  --color-indigo-500: #2d5a37; /* Forest Pine */
+  --color-indigo-600: #1b3d27; /* Signature Deep Pine Green */
+  --color-indigo-700: #142f1e; /* Deep Pine Noir */
+  --color-indigo-800: #0f2417;
+  --color-indigo-900: #0a180f;
+  --color-indigo-950: #050d08;
 
-  --color-lime-50: #fffbeb;
-  --color-lime-100: #fef3c7;
-  --color-lime-200: #fde68a;
-  --color-lime-300: #fcd34d;
-  --color-lime-400: #f59e0b; /* Safety Industrial Amber */
-  --color-lime-500: #d97706; /* Deep Industrial Amber */
-  --color-lime-600: #b45309; 
-  --color-lime-700: #92400e;
-  --color-lime-800: #78350f;
-  --color-lime-900: #451a03;
+  /* FORMA13 Antique Champagne Gold & Warm Brass Palette (Accents) */
+  --color-lime-50: #faf7f2;
+  --color-lime-100: #f4ecdf;
+  --color-lime-200: #e7dac1;
+  --color-lime-300: #d6c19b;
+  --color-lime-400: #c5a878; /* Warm Champagne Gold */
+  --color-lime-500: #b59562; /* Signature Antique Brass Gold */
+  --color-lime-600: #9e7f4d; /* Burnished Brass */
+  --color-lime-700: #81663b;
+  --color-lime-800: #664f2e;
+  --color-lime-900: #46351e;
 
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
+  /* Warm Blush Terracotta / Rose Gold */
+  --color-rose-500: #c8836d;
+  --color-rose-600: #b56e58;
+  --color-rose-700: #995542;
 
-  --color-cyan-400: #38bdf8;
-  --color-cyan-500: #0284c7;
-  --color-cyan-600: #0369a1;
+  --color-emerald-500: #2d5a37;
+  --color-emerald-600: #1b3d27;
 
-  --color-rose-500: #f43f5e;
-  --color-rose-600: #e11d48;
-  --color-rose-700: #be123c;
-  
-  --color-red-500: #ef4444;
-  --color-red-600: #dc2626;
+  --color-cyan-400: #c5a878;
+  --color-cyan-500: #b59562;
+  --color-cyan-600: #9e7f4d;
 
-  --color-orange-500: #f97316;
-  --color-orange-600: #ea580c;
+  --color-red-500: #c86358;
+  --color-red-600: #b54f44;
+
+  --color-orange-500: #d48b59;
+  --color-orange-600: #bd7342;
 }
 
 /* 1. Global Core Reset */
 body {
-  background-color: #f1f5f9 !important; /* Steel Slate Gray */
+  background-color: #f8f7f4 !important; /* Luxury Warm Alabaster Stone */
   background-image: none !important;
   animation: none !important;
-  color: #0f172a !important;
+  color: #142217 !important; /* Deep Pine Charcoal */
   font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
   min-height: 100vh;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .dark body {
-  background-color: #0f172a !important; /* Metallic Dark Charcoal */
+  background-color: #0c1810 !important; /* Deep Forest Pine Noir */
   background-image: none !important;
   animation: none !important;
-  color: #e2e8f0 !important;
+  color: #f3efe6 !important; /* Soft Cream / Champagne */
 }
 
-/* Strip cyberpunk ambient mesh blobs and schematic backdrops completely */
+/* Strip ambient mesh blobs and schematic backdrops completely */
 div[class*="-z-10"], 
 div[class*="-z-20"], 
 svg[class*="stroke-slate-300"] {
@@ -76,41 +78,41 @@ div[class*="h-[2px]"][class*="bg-gradient-to-r"] {
 /* 2. Flat panel utility replacing glassmorphism */
 @utility glass-card {
   background-color: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+  border: 1px solid #e5e0d4 !important; /* Warm linen border */
+  box-shadow: 0 1px 4px rgba(20, 34, 23, 0.04) !important;
   backdrop-filter: none !important;
   transform: none !important;
   transition: border-color 0.2s, box-shadow 0.2s !important;
 
   &:hover {
-    border-color: #2563eb !important;
+    border-color: #1b3d27 !important; /* Deep Pine Green */
     background-color: #ffffff !important;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12) !important;
+    box-shadow: 0 4px 16px rgba(27, 61, 39, 0.08) !important;
     transform: none !important;
   }
 
   .dark & {
-    background-color: #1e293b !important;
-    border: 1px solid #334155 !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+    background-color: #132419 !important; /* Deep Pine Panel */
+    border: 1px solid #203a27 !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 
     &:hover {
-      border-color: #f59e0b !important;
-      background-color: #1e293b !important;
-      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.15) !important;
+      border-color: #c5a878 !important; /* Champagne Gold Hover */
+      background-color: #132419 !important;
+      box-shadow: 0 4px 16px rgba(197, 168, 120, 0.12) !important;
     }
   }
 }
 
 @utility glass-dock {
   background-color: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  border: 1px solid #e5e0d4 !important;
+  box-shadow: 0 4px 12px rgba(20, 34, 23, 0.05) !important;
   backdrop-filter: none !important;
 
   .dark & {
-    background-color: #1e293b !important;
-    border: 1px solid #334155 !important;
+    background-color: #132419 !important;
+    border: 1px solid #203a27 !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   }
 }
@@ -128,7 +130,7 @@ div[class*="h-[2px]"][class*="bg-gradient-to-r"] {
 .dark *[class*="bg-slate-900/"],
 .dark *[class*="bg-slate-950/"],
 .dark *[class*="bg-indigo-950/"] {
-  background-color: #1e293b !important;
+  background-color: #132419 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -139,20 +141,20 @@ div[class*="h-[2px]"][class*="bg-gradient-to-r"] {
   background-color: #ffffff !important;
 }
 .dark *[class*="bg-slate-950/30"] {
-  background-color: #1e293b !important;
+  background-color: #132419 !important;
 }
 
-/* High contrast crisp borders */
+/* High contrast warm stone borders */
 *[class*="border-slate-200/"],
 *[class*="border-white/"] {
-  border-color: #cbd5e1 !important;
+  border-color: #e5e0d4 !important;
 }
 .dark *[class*="border-slate-800/"],
 .dark *[class*="border-slate-900/"] {
-  border-color: #334155 !important;
+  border-color: #203a27 !important;
 }
 
-/* 3. Tame extreme rounded corners to professional industrial standard */
+/* 3. Tame extreme rounded corners to professional architectural standard */
 *[class*="rounded-[2.5rem]"],
 *[class*="rounded-[3.5rem]"],
 *[class*="rounded-[3rem]"],
@@ -175,46 +177,54 @@ div[class*="h-[2px]"][class*="bg-gradient-to-r"] {
   border-radius: 9999px !important;
 }
 
-/* 4. Sleek Steel Sidebar & Header Overrides */
+/* 4. Sleek Forest & Gold Sidebar & Header Overrides */
 aside[class*="fixed"] {
   background-color: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
+  border: 1px solid #e5e0d4 !important;
   border-radius: 10px !important;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: 0 4px 16px rgba(20, 34, 23, 0.04) !important;
 }
 
 .dark aside[class*="fixed"] {
-  background-color: #1e293b !important;
-  border: 1px solid #334155 !important;
+  background-color: #132419 !important;
+  border: 1px solid #203a27 !important;
 }
 
-/* Active sidebar item styling matching Steel Blue */
-div[class*="bg-indigo-600"][class*="shadow-xl"] {
-  background-color: #1d4ed8 !important;
+/* Active sidebar item styling matching Deep Pine & Gold */
+div[class*="bg-indigo-600"][class*="shadow-xl"],
+a[class*="bg-indigo-600"] {
+  background-color: #1b3d27 !important;
   color: #ffffff !important;
-  box-shadow: none !important;
-  border: 1px solid #1d4ed8 !important;
+  box-shadow: 0 2px 8px rgba(27, 61, 39, 0.25) !important;
+  border: 1px solid #1b3d27 !important;
 }
 
-/* Indicator dots - map to Safety Amber #f59e0b */
+.dark a[class*="bg-indigo-600"],
+.dark div[class*="bg-indigo-600"] {
+  background-color: #1b3d27 !important;
+  color: #f3efe6 !important;
+  border: 1px solid #c5a878 !important;
+}
+
+/* Indicator dots - map to Warm Champagne Gold #c5a878 */
 div[class*="bg-lime-400"][class*="rounded-full"] {
-  background-color: #f59e0b !important;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6) !important;
+  background-color: #c5a878 !important;
+  box-shadow: 0 0 8px rgba(197, 168, 120, 0.6) !important;
 }
 
 header[class*="fixed"] > div {
   background-color: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  box-shadow: 0 2px 12px rgba(68, 45, 130, 0.04) !important;
+  border: 1px solid #e5e0d4 !important;
+  box-shadow: 0 2px 12px rgba(20, 34, 23, 0.04) !important;
 }
 
 .dark header[class*="fixed"] > div {
-  background-color: #1e293b !important;
-  border: 1px solid #334155 !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
+  background-color: #132419 !important;
+  border: 1px solid #203a27 !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
 }
 
-/* 5. Typography Normalization to Upright Zoho Aesthetics */
+/* 5. Typography Normalization */
 h1, h2, h3, h4, h5, h6 {
   font-style: normal !important;
   font-family: 'Inter', system-ui, sans-serif !important;
@@ -231,30 +241,30 @@ span[class*="italic"] {
 /* 6. Strict Custom Accent Colors Override for Badges, Dials and Icons */
 span[class*="bg-amber-500"],
 span[class*="text-amber-500"] {
-  background-color: rgba(245, 158, 11, 0.12) !important;
-  color: #d97706 !important;
-  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+  background-color: rgba(197, 168, 120, 0.15) !important;
+  color: #b59562 !important;
+  border: 1px solid rgba(197, 168, 120, 0.3) !important;
 }
 
 div[class*="bg-indigo-500"] {
-  background-color: #2563eb !important;
+  background-color: #2d5a37 !important;
 }
 
 div[class*="bg-emerald-500"] {
-  background-color: #10b981 !important;
+  background-color: #2d5a37 !important;
   color: #ffffff !important;
 }
 
 /* Standardize shadows */
 *[class*="shadow-"] {
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+  box-shadow: 0 1px 3px rgba(20, 34, 23, 0.05) !important;
 }
 
 /* 7. Flat minimal forms and inputs */
 input, select, textarea {
   background-color: #ffffff !important;
-  color: #0f172a !important;
-  border: 1px solid #cbd5e1 !important;
+  color: #142217 !important;
+  border: 1px solid #e5e0d4 !important;
   border-radius: 8px !important;
   padding: 12px 16px !important;
   font-size: 0.875rem !important;
@@ -263,15 +273,20 @@ input, select, textarea {
 }
 
 .dark input, .dark select, .dark textarea {
-  background-color: #0f172a !important;
-  color: #e2e8f0 !important;
-  border: 1px solid #334155 !important;
+  background-color: #0c1810 !important;
+  color: #f3efe6 !important;
+  border: 1px solid #203a27 !important;
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: #2563eb !important;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18) !important;
+  border-color: #1b3d27 !important;
+  box-shadow: 0 0 0 2px rgba(27, 61, 39, 0.2) !important;
   outline: none !important;
+}
+
+.dark input:focus, .dark select:focus, .dark textarea:focus {
+  border-color: #c5a878 !important;
+  box-shadow: 0 0 0 2px rgba(197, 168, 120, 0.25) !important;
 }
 
 /* 8. Sleek Minimal Scrollbar */
@@ -280,23 +295,23 @@ input:focus, select:focus, textarea:focus {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f8f7f4;
 }
 .dark ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #0c1810;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #d4cec0;
   border-radius: 4px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #203a27;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #b5ad9b;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #2f5238;
 }
 
 /* ==========================================
@@ -312,7 +327,7 @@ input:focus, select:focus, textarea:focus {
 .dark .bg-zinc-50,
 .dark .bg-zinc-100,
 .dark .bg-zinc-200 {
-  background-color: #1e293b !important;
+  background-color: #132419 !important;
 }
 
 /* Opacity-based light backgrounds override */
@@ -324,7 +339,7 @@ input:focus, select:focus, textarea:focus {
 .dark *[class*="bg-slate-950/"],
 .dark *[class*="bg-indigo-50/"],
 .dark *[class*="bg-indigo-950/"] {
-  background-color: #1e293b !important;
+  background-color: #132419 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -336,7 +351,7 @@ input:focus, select:focus, textarea:focus {
 .dark .hover\:bg-gray-100:hover,
 .dark .hover\:bg-slate-100\/50:hover,
 .dark .hover\:bg-slate-800\/50:hover {
-  background-color: #334155 !important;
+  background-color: #1d3625 !important;
 }
 
 .dark .text-slate-950,
@@ -354,7 +369,7 @@ input:focus, select:focus, textarea:focus {
 .dark .text-indigo-900,
 .dark .text-indigo-800,
 .dark .text-black {
-  color: #ffffff !important;
+  color: #f3efe6 !important;
 }
 
 .dark .text-slate-600,
@@ -366,7 +381,7 @@ input:focus, select:focus, textarea:focus {
 .dark .text-zinc-600,
 .dark .text-zinc-500,
 .dark .text-zinc-400 {
-  color: #ffffff !important;
+  color: #c8ded0 !important;
 }
 
 .dark .text-slate-300,
@@ -375,7 +390,7 @@ input:focus, select:focus, textarea:focus {
 .dark .text-gray-300,
 .dark .text-gray-200,
 .dark .text-gray-100 {
-  color: #ffffff !important;
+  color: #f3efe6 !important;
 }
 
 .dark .border-slate-100,
@@ -390,22 +405,54 @@ input:focus, select:focus, textarea:focus {
 .dark .border-zinc-200,
 .dark .border-zinc-300,
 .dark .border-zinc-400 {
-  border-color: #334155 !important;
+  border-color: #203a27 !important;
 }
 
 .dark table,
 .dark tr,
 .dark th,
 .dark td {
-  border-color: #334155 !important;
-  color: #ffffff !important;
+  border-color: #203a27 !important;
+  color: #f3efe6 !important;
 }
 
 .dark th {
-  background-color: #0f172a !important;
-  color: #ffffff !important;
+  background-color: #0c1810 !important;
+  color: #c5a878 !important;
 }
 
 .dark td {
-  color: #ffffff !important;
+  color: #f3efe6 !important;
+}
+
+/* ==========================================
+   MOBILE & PWA OPTIMIZATIONS
+   ========================================== */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Ensure smooth touch scrolling on iOS */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent iOS Safari from auto-zooming in on input focus */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe area insets for modern edge-to-edge mobile devices */
+@supports (padding: max(0px)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
 }

@@ -1117,11 +1117,11 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             <div className="flex items-center gap-2 mb-1.5">
               <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                Industrial Fabrication & Accounts HQ
+                Interiors Architecture & Operations HQ
               </span>
             </div>
-            <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tighter">
-              Fabtec <span className="text-indigo-650 dark:text-indigo-400">Operations</span>
+            <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+              FORMA13 <span className="text-indigo-600 dark:text-lime-400">Operations</span>
             </h1>
           </div>
 
@@ -1144,7 +1144,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
               <RefreshCw size={14} />
               <span>Sync System</span>
             </button>
-            <div className="px-5 py-3 bg-indigo-600/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-xs font-black text-white uppercase tracking-wider">
+            <div className="px-5 py-3 bg-indigo-600/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">
               {currentTime.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}
             </div>
           </div>
@@ -1154,7 +1154,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           isOpen={isAiModalOpen}
           onClose={() => setIsAiModalOpen(false)}
           contextData={aiModalContext}
-          title="Fabtec Industrial AI Operations Analysis"
+          title="FORMA13 AI Space Operations Analysis"
         />
 
         {/* DEPARTMENT & EXECUTIVE VIEW FILTER PILLS */}

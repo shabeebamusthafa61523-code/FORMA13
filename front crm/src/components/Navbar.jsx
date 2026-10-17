@@ -231,12 +231,12 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
 
   return (
     <>
-      <header className={`fixed top-0 right-0 z-30 h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50 transition-all duration-300 transform ${
+      <header className={`fixed top-0 right-0 z-30 h-16 flex items-center justify-between px-3.5 sm:px-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50 transition-all duration-300 transform ${
         isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
       } ${isSidebarCollapsed ? 'lg:left-20' : 'lg:left-64'} left-0`}>
         
-        {/* Left Side: Mobile Hamburger */}
-        <div className="flex items-center gap-3">
+        {/* Left Side: Mobile Hamburger & Brand */}
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={toggleMobileSidebar}
             className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors lg:hidden cursor-pointer"
@@ -244,15 +244,19 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
           >
             <Menu size={20} />
           </button>
+          
+          <div className="flex items-center lg:hidden">
+            <img src="/sidebar_logo.png" alt="FORMA13" className="h-10 w-auto max-w-[170px] object-contain transition-all" />
+          </div>
         </div>
 
         {/* Right Section Container */}
-        <section className="flex items-center gap-3 relative">
+        <section className="flex items-center gap-2 sm:gap-3 relative">
           {/* Night mode / Light mode toggle button */}
           <button
             type="button"
             onClick={() => setIsDark(prev => !prev)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs"
+            className="flex items-center gap-2 px-2.5 sm:px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs"
             title={isDark ? "Switch to Light Mode" : "Switch to Night Mode"}
           >
             {isDark ? (
@@ -279,7 +283,7 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
               <div className="relative w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-200 group-hover:border-indigo-500 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/40 transition-all shadow-sm overflow-hidden">
                 <User size={16} />
               </div>
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 pr-2">
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 pr-1 sm:pr-2 max-w-[80px] sm:max-w-none truncate hidden min-[440px]:inline">
                 {currentUser.name}
               </span>
             </div>

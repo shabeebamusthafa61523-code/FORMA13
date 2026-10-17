@@ -14,6 +14,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
+import { InstallAppSidebarItem } from './PwaInstallPrompt';
 
 const accountsSubItems = [
   { label: 'Capital', path: '/accounts/capital' },
@@ -138,21 +139,51 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
         }`}
       >
         {/* Logo header with arrow toggle */}
-        <div className="h-16 flex items-center justify-between px-5 shrink-0 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            {!isCollapsed ? (
-              <span className="text-xl font-black text-indigo-600 tracking-tight">FABTEC</span>
-            ) : (
-              <span className="text-xl font-black text-indigo-600">F</span>
-            )}
-          </div>
-          <button
-            onClick={toggleCollapse}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-          </button>
+        <div className={`h-20 flex items-center shrink-0 border-b border-slate-200 dark:border-slate-800 transition-all relative ${
+          isCollapsed ? 'justify-center px-1' : 'justify-between px-4'
+        }`}>
+          {!isCollapsed ? (
+            <>
+              <div className="flex items-center flex-1 min-w-0 pr-2">
+                <img 
+                  src="/sidebar_logo.png" 
+                  alt="FORMA13 Logo" 
+                  className="h-14 w-auto max-w-[195px] object-contain transition-all" 
+                />
+              </div>
+              <button
+                onClick={toggleCollapse}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer shrink-0"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={toggleCollapse}
+                className="group flex items-center justify-center p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                title="Open sidebar"
+              >
+                <img 
+                  src="/sidebar_collapsed_logo.png" 
+                  alt="FORMA13 Monogram" 
+                  className="h-14 w-auto max-w-[48px] object-contain transition-transform group-hover:scale-105 drop-shadow-xs" 
+                />
+              </button>
+
+              {/* Open Sidebar Arrow Button */}
+              <button
+                onClick={toggleCollapse}
+                className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white dark:bg-[#131e06] border border-slate-300 dark:border-[#c5a878]/40 text-slate-700 dark:text-[#c5a878] shadow-md flex items-center justify-center hover:bg-slate-50 dark:hover:bg-[#1b3d27] hover:scale-110 active:scale-95 transition-all cursor-pointer z-50"
+                title="Open sidebar"
+                aria-label="Open sidebar"
+              >
+                <ChevronRight size={16} className="stroke-[2.5]" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Navigation list */}
@@ -314,13 +345,15 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200 shrink-0">
-          <span className="text-xl font-black text-indigo-600">FABTEC</span>
+        <div className="h-20 flex items-center justify-between px-5 border-b border-slate-200 shrink-0">
+          <div className="flex items-center">
+            <img src="/sidebar_logo.png" alt="FORMA13 Logo" className="h-14 w-auto max-w-[210px] object-contain transition-all" />
+          </div>
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100"
+            className="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer"
           >
-            <X size={20} />
+            <X size={22} />
           </button>
         </div>
 
@@ -436,7 +469,9 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 space-y-1">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 space-y-2">
+          <InstallAppSidebarItem onActionDone={() => setIsMobileOpen(false)} />
+
           <button
             onClick={() => setIsDark(!isDark)}
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
