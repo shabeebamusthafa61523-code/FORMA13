@@ -5,6 +5,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import ClientTableView from '../components/clients/ClientTableView';
 import CreateClientModal from '../components/clients/CreateClientModal';
 import EditClientModal from '../components/clients/EditClientModal';
+import ClientTransactionsModal from '../components/clients/ClientTransactionsModal';
 import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
 import ExcelExportButton from '../components/ExcelExportButton';
@@ -19,6 +20,10 @@ const ClientsPage = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
+
+  // Transactions / Ledger modal
+  const [transactionClient, setTransactionClient] = useState(null);
+  const [isTransactionOpen, setIsTransactionOpen] = useState(false);
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
@@ -135,8 +140,22 @@ const ClientsPage = () => {
           clients={clients}
           onEdit={handleEditClient}
           onDelete={promptDeleteClient}
+          onViewTransactions={(client) => {
+            setTransactionClient(client);
+            setIsTransactionOpen(true);
+          }}
         />
       )}
+
+      {/* Client Transactions / Ledger Modal */}
+      <ClientTransactionsModal
+        isOpen={isTransactionOpen}
+        onClose={() => {
+          setIsTransactionOpen(false);
+          setTransactionClient(null);
+        }}
+        client={transactionClient}
+      />
 
       {/* Create Client Modal */}
       <CreateClientModal

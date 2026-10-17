@@ -4,6 +4,8 @@ import ClientFollowup from '../models/clientFollowup.model.js';
 import Project from '../models/project.model.js';
 import ProjectDocument from '../models/projectDocument.model.js';
 import ProjectActivity from '../models/projectActivity.model.js';
+import Income from '../models/income.model.js';
+import Expense from '../models/expense.model.js';
 import User from '../models/user.model.js';
 import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
@@ -585,6 +587,160 @@ export const deleteClientFollowup = async (req, res) => {
     return sendSuccess(res, 'Follow-up deleted successfully', { id: followupId });
   } catch (error) {
     console.error('deleteClientFollowup Error:', error);
+    return sendError(res, error.message, 500);
+  }
+};
+
+/**
+ * Retrieves comprehensive activity & financial ledger for a client
+ * including Sales (invoices/proformas), Income (payments received),
+ * Purchases (project orders/expenses), Projects, Meetings & Follow-ups.
+ */
+export const getClientTransactions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const client = await resolveClientDoc(id);
+    if (!client) {
+      return sendError(res, 'Client not found', 404);
+    }
+
+    const clientNames = [client.clientName, client.companyName].filter(Boolean);
+    const escapeRegex = (str) => str.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const exactRegexes = clientNames.map(n => new RegExp('^' + escapeRegex(n) + '$', 'i'));
+    const fuzzyRegexes = clientNames.map(n => new RegExp(escapeRegex(n), 'i'));
+
+    // 1. Fetch Incomes & Sales associated with this client
+    const incomeQuery = {
+      isDeleted: { $ne: true },
+      $or: [
+        { client: client._id },
+        { clientName: { $in: exactRegexes } },
+        { clientName: { $in: fuzzyRegexes } },
+        { title: { $in: fuzzyRegexes } }
+      ]
+    };
+    const incomesData = await Income.find(incomeQuery).sort({ date: -1, createdAt: -1 });
+
+    // Process Sales (Invoices, Proformas, Bills)
+    const sales = incomesData.map(inc => ({
+      _id: inc._id,
+      invoiceNumber: inc.orderNumber || inc.referenceNo || `INV-${String(inc._id).slice(-6).toUpperCase()}`,
+      title: inc.title || 'Client Invoice',
+      date: inc.date || inc.createdAt,
+      dueDate: inc.dueDate,
+      amount: inc.amount,
+      totalAmount: inc.totalAmount || inc.amount,
+      status: inc.status || 'Pending',
+      taxOption: inc.taxOption,
+      gstAmount: inc.gstAmount || 0,
+      lineItems: inc.lineItems || [],
+      payments: inc.payments || [],
+      type: 'Sale'
+    }));
+
+    // Process Incomes (Settled payments, receipts)
+    const incomes = [];
+    incomesData.forEach(inc => {
+      if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+        inc.payments.forEach(p => {
+          incomes.push({
+            _id: p._id || `${inc._id}-${p.receiptNo}`,
+            invoiceId: inc._id,
+            invoiceNumber: inc.orderNumber || inc.referenceNo || `INV-${String(inc._id).slice(-6).toUpperCase()}`,
+            receiptNo: p.receiptNo || 'REC',
+            amount: p.amount,
+            date: p.receiptDate || p.createdAt || inc.date,
+            paymentMethod: p.paymentMethod || inc.paymentMethod || 'Bank Transfer',
+            notes: p.notes || inc.title,
+            type: 'Income'
+          });
+        });
+      } else if (inc.status === 'Paid') {
+        incomes.push({
+          _id: inc._id,
+          invoiceId: inc._id,
+          invoiceNumber: inc.orderNumber || inc.referenceNo || `INV-${String(inc._id).slice(-6).toUpperCase()}`,
+          receiptNo: inc.receiptNo || inc.referenceNo || 'PAID',
+          amount: inc.totalAmount || inc.amount,
+          date: inc.date || inc.createdAt,
+          paymentMethod: inc.paymentMethod || 'Bank Transfer',
+          notes: inc.description || inc.title,
+          type: 'Income'
+        });
+      }
+    });
+
+    // 2. Fetch Purchases & Expenses
+    const expenseQuery = {
+      $or: [
+        { paidTo: { $in: fuzzyRegexes } },
+        { description: { $in: fuzzyRegexes } },
+        { isPurchase: true, paidTo: { $in: exactRegexes } }
+      ]
+    };
+    const expensesData = await Expense.find(expenseQuery).sort({ date: -1, createdAt: -1 });
+
+    const purchases = expensesData.map(exp => ({
+      _id: exp._id,
+      title: exp.description || exp.categoryName || 'Purchase / Expense',
+      paidTo: exp.paidTo,
+      category: exp.categoryName,
+      amount: exp.totalAmount || exp.amount,
+      date: exp.date,
+      paymentMode: exp.paymentMode,
+      status: exp.status || 'APPROVED',
+      isPurchase: exp.isPurchase || exp.type === 'Purchase',
+      type: 'Purchase'
+    }));
+
+    // 3. Projects
+    const projects = await Project.find({ client: client._id })
+      .populate('projectManager', 'name email avatar')
+      .populate('assignedTeamLead', 'name email avatar')
+      .sort({ createdAt: -1 });
+
+    // 4. Meetings & Follow-ups
+    const meetings = await ClientMeeting.find({ client: client._id }).sort({ date: -1 });
+    const followups = await ClientFollowup.find({ client: client._id }).sort({ dueDate: -1 });
+
+    // Financial Summaries
+    const totalSales = sales.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0);
+    const totalIncome = incomes.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const totalPurchases = purchases.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const balanceDue = totalSales - totalIncome;
+
+    return sendSuccess(res, 'Client activity & ledger retrieved successfully', {
+      client: {
+        _id: client._id,
+        clientId: client.clientId,
+        clientName: client.clientName,
+        companyName: client.companyName,
+        phone: client.phone,
+        email: client.email,
+        address: client.address,
+        city: client.city,
+        state: client.state,
+        status: client.status,
+        companyLogo: client.companyLogo
+      },
+      summary: {
+        totalSales,
+        totalIncome,
+        totalPurchases,
+        balanceDue,
+        totalProjects: projects.length,
+        totalMeetings: meetings.length,
+        totalFollowups: followups.length
+      },
+      sales,
+      incomes,
+      purchases,
+      projects,
+      meetings,
+      followups
+    });
+  } catch (error) {
+    console.error('getClientTransactions Error:', error);
     return sendError(res, error.message, 500);
   }
 };

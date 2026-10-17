@@ -96,3 +96,12 @@ export const deleteClientFollowup = async (clientId, followupId) => {
   const response = await axios.delete(`${getBaseUrl()}/${clientId}/followups/${followupId}`, getAuthHeaders());
   return response.data;
 };
+
+// Client Financial Transactions & Activity Ledger API
+export const getClientTransactions = async (clientId) => {
+  if (!clientId || clientId === 'undefined' || clientId === 'null') {
+    return { success: false, message: 'Client ID is missing or invalid' };
+  }
+  const response = await axios.get(`${getBaseUrl()}/${clientId}/transactions`, getAuthHeaders());
+  return response.data;
+};

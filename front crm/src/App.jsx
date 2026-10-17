@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
+import SplashScreen from './components/SplashScreen';
 
 // Page Imports
 import { UserProvider } from './contexts/UserContext'; 
@@ -175,8 +176,10 @@ const LandingRoute = () => {
 
 function App() {
   return (
-    <UserProvider><Router>
-      <Routes>
+    <UserProvider>
+      <SplashScreen duration={3000} />
+      <Router>
+        <Routes>
         {/* Auth Routes - No Sidebar */}
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />

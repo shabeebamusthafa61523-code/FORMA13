@@ -570,6 +570,7 @@ export const createSalaryPayment = async (req, res) => {
     } else { // PENDING
       finalPaidAmount = Number(paidAmount || 0);
     }
+    let resolvedDepartment = department ? String(department).trim() : '';
     if (!resolvedDepartment && employeeObj) {
       if (employeeObj.departmentId && typeof employeeObj.departmentId === 'object' && employeeObj.departmentId.name) {
         resolvedDepartment = employeeObj.departmentId.name;

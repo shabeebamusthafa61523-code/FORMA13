@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
+  LayoutDashboard,
   Users, 
   Building2, 
   Wallet, 
@@ -13,6 +14,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
+import { InstallAppSidebarItem } from './PwaInstallPrompt';
 
 const accountsSubItems = [
   { label: 'Capital', path: '/accounts/capital' },
@@ -55,6 +57,64 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
     }
   }, [isAccountsActive]);
 
+  // Current logged in user permission check
+  const currentUser = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  }, []);
+
+  const isSuper = useMemo(() => {
+    if (!currentUser) return false;
+    const role = String(currentUser.role_id || currentUser.roleId || currentUser.role?.name || currentUser.role || '').toLowerCase().trim();
+    return Boolean(
+      currentUser.isSuperAdmin === true ||
+      role === 'superadmin' ||
+      role === '0' ||
+      currentUser.isSuper === true
+    );
+  }, [currentUser]);
+
+  const userPermissions = useMemo(() => {
+    if (!currentUser) return [];
+    const perms = currentUser.permissions || currentUser.allowedRoutes || [];
+    return Array.isArray(perms) ? perms.map(p => String(p).toLowerCase().trim()) : [];
+  }, [currentUser]);
+
+  const hasPerm = useCallback((label, path) => {
+    if (isSuper) return true;
+    if (!currentUser) return false;
+
+    // If user has no custom permissions array configured yet:
+    // Regular user default allows Dashboard
+    if (!userPermissions || userPermissions.length === 0) {
+      return path === '/dashboard' || String(label).toLowerCase() === 'dashboard';
+    }
+
+    const cleanLabel = String(label).toLowerCase().trim();
+    const cleanPath = String(path).toLowerCase().trim();
+
+    return userPermissions.some(p => 
+      p === cleanLabel || 
+      p === cleanPath || 
+      cleanPath.includes(p) ||
+      cleanLabel.includes(p)
+    );
+  }, [isSuper, currentUser, userPermissions]);
+
+  const visibleAccountsSubItems = useMemo(() => {
+    return accountsSubItems.filter(sub => hasPerm(sub.label, sub.path));
+  }, [hasPerm]);
+
+  const showDashboard = hasPerm('Dashboard', '/dashboard') || hasPerm('Admin Dashboard', '/dashboard');
+  const showEmployees = hasPerm('Employees', '/users') || hasPerm('Users', '/users');
+  const showClients = hasPerm('Clients', '/clients');
+  const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
+  const showPermissions = isSuper || hasPerm('Sidebar Permissions', '/sidebar-permissions');
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -79,112 +139,166 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
         }`}
       >
         {/* Logo header with arrow toggle */}
-        <div className="h-16 flex items-center justify-between px-5 shrink-0 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            {!isCollapsed ? (
-              <span className="text-xl font-black text-indigo-600 tracking-tight">StaffHQ</span>
-            ) : (
-              <span className="text-xl font-black text-indigo-600">S</span>
-            )}
-          </div>
-          <button
-            onClick={toggleCollapse}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-          </button>
+        <div className={`h-20 flex items-center shrink-0 border-b border-slate-200 dark:border-slate-800 transition-all relative ${
+          isCollapsed ? 'justify-center px-1' : 'justify-between px-4'
+        }`}>
+          {!isCollapsed ? (
+            <>
+              <div className="flex items-center flex-1 min-w-0 pr-2">
+                <img 
+                  src="/sidebar_logo.png" 
+                  alt="FORMA13 Logo" 
+                  className="h-14 w-auto max-w-[195px] object-contain transition-all" 
+                />
+              </div>
+              <button
+                onClick={toggleCollapse}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer shrink-0"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={toggleCollapse}
+                className="group flex items-center justify-center p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                title="Open sidebar"
+              >
+                <img 
+                  src="/sidebar_collapsed_logo.png" 
+                  alt="FORMA13 Monogram" 
+                  className="h-14 w-auto max-w-[48px] object-contain transition-transform group-hover:scale-105 drop-shadow-xs" 
+                />
+              </button>
+
+              {/* Open Sidebar Arrow Button */}
+              <button
+                onClick={toggleCollapse}
+                className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white dark:bg-[#131e06] border border-slate-300 dark:border-[#c5a878]/40 text-slate-700 dark:text-[#c5a878] shadow-md flex items-center justify-center hover:bg-slate-50 dark:hover:bg-[#1b3d27] hover:scale-110 active:scale-95 transition-all cursor-pointer z-50"
+                title="Open sidebar"
+                aria-label="Open sidebar"
+              >
+                <ChevronRight size={16} className="stroke-[2.5]" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Navigation list */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {/* Employees */}
-          <Link
-            to="/users"
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/users'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Employees' : undefined}
-          >
-            <Users size={20} className="shrink-0" />
-            {!isCollapsed && <span className="truncate">Employees</span>}
-          </Link>
-
-          {/* Clients */}
-          <Link
-            to="/clients"
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/clients'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Clients' : undefined}
-          >
-            <Building2 size={20} className="shrink-0" />
-            {!isCollapsed && <span className="truncate">Clients</span>}
-          </Link>
-
-          {/* Accounts Dropdown Item */}
-          <div>
-            <button
-              onClick={() => setIsAccountsOpen(!isAccountsOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-base font-semibold transition-all cursor-pointer ${
-                isAccountsActive
-                  ? 'bg-indigo-50 text-indigo-600'
+          {/* Dashboard */}
+          {showDashboard && (
+            <Link
+              to="/dashboard"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/dashboard'
+                  ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
               }`}
-              title={isCollapsed ? 'Accounts' : undefined}
+              title={isCollapsed ? 'Dashboard' : undefined}
             >
-              <div className="flex items-center gap-3.5">
-                <Wallet size={20} className="shrink-0" />
-                {!isCollapsed && <span className="truncate">Accounts</span>}
-              </div>
-              {!isCollapsed && (
-                <ChevronDown
-                  size={18}
-                  className={`transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`}
-                />
-              )}
-            </button>
+              <LayoutDashboard size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Dashboard</span>}
+            </Link>
+          )}
 
-            {/* Sub-items */}
-            {isAccountsOpen && !isCollapsed && (
-              <div className="mt-1.5 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
-                {accountsSubItems.map((sub) => {
-                  const isSubActive = activePath === sub.path;
-                  return (
-                    <Link
-                      key={sub.path}
-                      to={sub.path}
-                      className={`block px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                        isSubActive
-                          ? 'bg-indigo-600 text-white font-bold'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                      }`}
-                    >
-                      {sub.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Employees */}
+          {showEmployees && (
+            <Link
+              to="/users"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/users'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Employees' : undefined}
+            >
+              <Users size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Employees</span>}
+            </Link>
+          )}
+
+          {/* Clients */}
+          {showClients && (
+            <Link
+              to="/clients"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/clients'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Clients' : undefined}
+            >
+              <Building2 size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Clients</span>}
+            </Link>
+          )}
+
+          {/* Accounts Dropdown Item */}
+          {showAccounts && (
+            <div>
+              <button
+                onClick={() => setIsAccountsOpen(!isAccountsOpen)}
+                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-base font-semibold transition-all cursor-pointer ${
+                  isAccountsActive
+                    ? 'bg-indigo-50 text-indigo-600'
+                    : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+                title={isCollapsed ? 'Accounts' : undefined}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Wallet size={20} className="shrink-0" />
+                  {!isCollapsed && <span className="truncate">Accounts</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown
+                    size={18}
+                    className={`transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`}
+                  />
+                )}
+              </button>
+
+              {/* Sub-items */}
+              {isAccountsOpen && !isCollapsed && visibleAccountsSubItems.length > 0 && (
+                <div className="mt-1.5 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
+                  {visibleAccountsSubItems.map((sub) => {
+                    const isSubActive = activePath === sub.path;
+                    return (
+                      <Link
+                        key={sub.path}
+                        to={sub.path}
+                        className={`block px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          isSubActive
+                            ? 'bg-indigo-600 text-white font-bold'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sidebar Permissions */}
-          <Link
-            to="/sidebar-permissions"
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/sidebar-permissions'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Sidebar Permissions' : undefined}
-          >
-            <ShieldCheck size={20} className="shrink-0" />
-            {!isCollapsed && <span className="truncate">Sidebar Permissions</span>}
-          </Link>
+          {showPermissions && (
+            <Link
+              to="/sidebar-permissions"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/sidebar-permissions'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Sidebar Permissions' : undefined}
+            >
+              <ShieldCheck size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Sidebar Permissions</span>}
+            </Link>
+          )}
         </div>
 
         {/* Footer theme & logout */}
@@ -231,105 +345,133 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200 shrink-0">
-          <span className="text-xl font-black text-indigo-600">StaffHQ</span>
+        <div className="h-20 flex items-center justify-between px-5 border-b border-slate-200 shrink-0">
+          <div className="flex items-center">
+            <img src="/sidebar_logo.png" alt="FORMA13 Logo" className="h-14 w-auto max-w-[210px] object-contain transition-all" />
+          </div>
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100"
+            className="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 cursor-pointer"
           >
-            <X size={20} />
+            <X size={22} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {/* Employees */}
-          <Link
-            to="/users"
-            onClick={() => setIsMobileOpen(false)}
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/users'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Users size={20} className="shrink-0" />
-            <span>Employees</span>
-          </Link>
-
-          {/* Clients */}
-          <Link
-            to="/clients"
-            onClick={() => setIsMobileOpen(false)}
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/clients'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Building2 size={20} className="shrink-0" />
-            <span>Clients</span>
-          </Link>
-
-          {/* Accounts Dropdown Item */}
-          <div>
-            <button
-              onClick={() => setIsAccountsOpen(!isAccountsOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-                isAccountsActive
-                  ? 'bg-indigo-50 text-indigo-600'
+          {/* Dashboard */}
+          {showDashboard && (
+            <Link
+              to="/dashboard"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/dashboard'
+                  ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <div className="flex items-center gap-3.5">
-                <Wallet size={20} className="shrink-0" />
-                <span>Accounts</span>
-              </div>
-              <ChevronDown
-                size={18}
-                className={`transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
+              <LayoutDashboard size={20} className="shrink-0" />
+              <span>Dashboard</span>
+            </Link>
+          )}
 
-            {/* Sub-items */}
-            {isAccountsOpen && (
-              <div className="mt-1.5 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
-                {accountsSubItems.map((sub) => {
-                  const isSubActive = activePath === sub.path;
-                  return (
-                    <Link
-                      key={sub.path}
-                      to={sub.path}
-                      onClick={() => setIsMobileOpen(false)}
-                      className={`block px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                        isSubActive
-                          ? 'bg-indigo-600 text-white font-bold'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {sub.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Employees */}
+          {showEmployees && (
+            <Link
+              to="/users"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/users'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Users size={20} className="shrink-0" />
+              <span>Employees</span>
+            </Link>
+          )}
+
+          {/* Clients */}
+          {showClients && (
+            <Link
+              to="/clients"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/clients'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Building2 size={20} className="shrink-0" />
+              <span>Clients</span>
+            </Link>
+          )}
+
+          {/* Accounts Dropdown Item */}
+          {showAccounts && (
+            <div>
+              <button
+                onClick={() => setIsAccountsOpen(!isAccountsOpen)}
+                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                  isAccountsActive
+                    ? 'bg-indigo-50 text-indigo-600'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Wallet size={20} className="shrink-0" />
+                  <span>Accounts</span>
+                </div>
+                <ChevronDown
+                  size={18}
+                  className={`transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {/* Sub-items */}
+              {isAccountsOpen && visibleAccountsSubItems.length > 0 && (
+                <div className="mt-1.5 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
+                  {visibleAccountsSubItems.map((sub) => {
+                    const isSubActive = activePath === sub.path;
+                    return (
+                      <Link
+                        key={sub.path}
+                        to={sub.path}
+                        onClick={() => setIsMobileOpen(false)}
+                        className={`block px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          isSubActive
+                            ? 'bg-indigo-600 text-white font-bold'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sidebar Permissions */}
-          <Link
-            to="/sidebar-permissions"
-            onClick={() => setIsMobileOpen(false)}
-            className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
-              activePath === '/sidebar-permissions'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <ShieldCheck size={20} className="shrink-0" />
-            <span>Sidebar Permissions</span>
-          </Link>
+          {showPermissions && (
+            <Link
+              to="/sidebar-permissions"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/sidebar-permissions'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <ShieldCheck size={20} className="shrink-0" />
+              <span>Sidebar Permissions</span>
+            </Link>
+          )}
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 space-y-1">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 space-y-2">
+          <InstallAppSidebarItem onActionDone={() => setIsMobileOpen(false)} />
+
           <button
             onClick={() => setIsDark(!isDark)}
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"

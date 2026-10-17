@@ -6,7 +6,7 @@ import {
   Plus, Search, Edit3, Trash2, Eye, X, Mail, Phone,
   Briefcase, Folder, UserCheck, ShieldAlert, Image as ImageIcon,
   Loader2, User, ChevronRight, CheckCircle2, AlertTriangle, Shield, BarChart3,
-  ShieldCheck, KeyRound, Lock, Calendar, DollarSign, MapPin
+  ShieldCheck, KeyRound, Lock, Calendar, DollarSign, MapPin, Copy, Key
 } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
 import ConfirmModal from '../components/ConfirmModal';
@@ -49,77 +49,27 @@ const ROLES = [
 ];
 
 const ALL_SIDEBAR_ITEMS = [
-  // --- OVERVIEW & GENERAL ---
-  { label: 'Admin Dashboard', path: '/dashboard', category: 'Overview' },
-  { label: 'Approvals', path: '/approvals', category: 'Overview' },
-  { label: 'Leave Requests', path: '/leaves', category: 'Overview' },
-  { label: 'Notifications', path: '/notifications', category: 'Overview' },
-
-  // --- DASHBOARDS ---
-  { label: 'MD Dashboard', path: '/md-dashboard', category: 'Dashboards' },
-  { label: 'HR Dashboard', path: '/hr-dashboard', category: 'Dashboards' },
-  { label: 'Lead Dashboard', path: '/lead-dashboard', category: 'Dashboards' },
-  { label: 'Marketing Dashboard', path: '/marketing-dashboard', category: 'Dashboards' },
-  { label: 'Dev Dashboard', path: '/developer-dashboard', category: 'Dashboards' },
-  { label: 'GD Dashboard', path: '/graphic-designer-dashboard', category: 'Dashboards' },
-  { label: 'Video Dashboard', path: '/videographer-dashboard', category: 'Dashboards' },
-  { label: 'Counselor Dashboard', path: '/counselor-dashboard', category: 'Dashboards' },
+  // --- OVERVIEW ---
+  { label: 'Dashboard', path: '/dashboard', category: 'Overview' },
 
   // --- PEOPLE & HR ---
-  { label: 'Users', path: '/users', category: 'People & HR' },
-  { label: 'Departments', path: '/departments', category: 'People & HR' },
-  { label: 'Recruitment', path: '/recruitment', category: 'People & HR' },
-  { label: 'Attendance', path: '/attendance', category: 'People & HR' },
+  { label: 'Employees', path: '/users', category: 'People & HR' },
   { label: 'Sidebar Permissions', path: '/sidebar-permissions', category: 'People & HR' },
 
   // --- SALES & CRM ---
   { label: 'Clients', path: '/clients', category: 'Sales & CRM' },
-  { label: 'Client Leads', path: '/client-leads', category: 'Sales & CRM' },
-  { label: 'Student Leads', path: '/leads-telecaller', category: 'Sales & CRM' },
 
-  // --- MARKETING & WORK ---
-  { label: 'Projects', path: '/projects', category: 'Marketing & Work' },
-  { label: 'Task Assign', path: '/todo', category: 'Marketing & Work' },
-  { label: 'Content Calendar', path: '/calendar-work', category: 'Marketing & Work' },
-
-  // --- FINANCE & PAYROLL ---
-  { label: 'Accounts', path: '/accounts', category: 'Finance & Payroll' },
-  { label: 'Sales', path: '/accounts/income', category: 'Finance & Payroll' },
-  { label: 'Income', path: '/accounts/sales', category: 'Finance & Payroll' },
-  { label: 'Purchase', path: '/accounts/purchase', category: 'Finance & Payroll' },
-  { label: 'Create Invoice', path: '/accounts/create-invoice', category: 'Finance & Payroll' },
-  { label: 'Expense Categories', path: '/accounts/categories', category: 'Finance & Payroll' },
-  { label: 'Expense', path: '/accounts/expenses', category: 'Finance & Payroll' },
-  { label: 'Salary Payment', path: '/accounts/salary', category: 'Finance & Payroll' },
-  { label: 'Cash & Bank', path: '/accounts/cash-book', category: 'Finance & Payroll' },
-  { label: 'Operation', path: '/accounts/operation', category: 'Finance & Payroll' },
-  { label: 'Financial Report', path: '/accounts/reports', category: 'Finance & Payroll' },
-  { label: 'Payslips', path: '/payslips', category: 'Finance & Payroll' },
-  { label: 'Personal Payslip', path: '/my-payslip', category: 'Finance & Payroll' },
-
-  // --- ACADEMY & LMS ---
-  { label: 'Course Management', path: '/academy/courses', category: 'Academy & LMS' },
-  { label: 'Batches', path: '/academy/batches', category: 'Academy & LMS' },
-  { label: 'Enrollment Tracking', path: '/academy/enrollments', category: 'Academy & LMS' },
-  { label: 'Student Attendance', path: '/student-attendance', category: 'Academy & LMS' },
-  { label: 'My LMS Learning', path: '/academy/learning', category: 'Academy & LMS' },
-
-  // --- REPORTS & ANALYTICS ---
-  { label: 'KPI Analytics', path: '/performance-dashboard', category: 'Reports' },
-  { label: 'AI Reports', path: '/ai-report', category: 'Reports' },
-  { label: 'Employee Reports', path: '/employee-reports', category: 'Reports' },
-  { label: 'Daily Report', path: '/basic-report', category: 'Reports' },
-  { label: 'Team Reports', path: '/team-reports', category: 'Reports' },
-  { label: 'HR Shift Report', path: '/hr-report', category: 'Reports' },
-  { label: 'Ops Shift Report', path: '/ops-report', category: 'Reports' },
-  { label: 'Accountant Shift Report', path: '/accountant-report', category: 'Reports' },
-  { label: 'Marketing Shift Report', path: '/marketing-report', category: 'Reports' },
-  { label: 'Developer Report', path: '/developer-report', category: 'Reports' },
-  { label: 'Graphic Designer Report', path: '/graphic-designer-report', category: 'Reports' },
-  { label: 'Videographer Report', path: '/videographer-report', category: 'Reports' },
-  { label: 'Academic Counselor Report', path: '/academic-counselor-report', category: 'Reports' },
-  { label: 'HOD R&D Report', path: '/hod-rd-report', category: 'Reports' },
-  { label: 'HOD Marketing Report', path: '/hod-marketing-report', category: 'Reports' }
+  // --- FINANCE & ACCOUNTS ---
+  { label: 'Capital', path: '/accounts/capital', category: 'Finance & Accounts' },
+  { label: 'Sales', path: '/accounts/sales', category: 'Finance & Accounts' },
+  { label: 'Income', path: '/accounts/income', category: 'Finance & Accounts' },
+  { label: 'Purchase', path: '/accounts/purchase', category: 'Finance & Accounts' },
+  { label: 'Expense Categories', path: '/accounts/categories', category: 'Finance & Accounts' },
+  { label: 'Expense', path: '/accounts/expenses', category: 'Finance & Accounts' },
+  { label: 'Wage', path: '/accounts/salary', category: 'Finance & Accounts' },
+  { label: 'Ledger', path: '/accounts/ledger', category: 'Finance & Accounts' },
+  { label: 'Day Book', path: '/accounts/cash-book', category: 'Finance & Accounts' },
+  { label: 'Profit and Loss', path: '/accounts/reports', category: 'Finance & Accounts' }
 ];
 
 const STATUS_META = {
@@ -755,6 +705,7 @@ const Users = () => {
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800/80">
                     <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Name</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Login Credentials</th>
                     <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Phone Number</th>
                     <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Role</th>
                     <th className="py-4 px-6 text-[10px] font-black uppercase tracking-wider text-slate-400">Position / Designation</th>
@@ -766,6 +717,13 @@ const Users = () => {
                   {pagedUsers.map((user) => {
                     const statusKey = user.status || (user.isActive ? 'active' : 'inactive');
                     const meta = STATUS_META[statusKey] || STATUS_META.active;
+                    const employeeEmail = user.email || (
+                      user.name ? `${user.name.toLowerCase().replace(/[^a-z0-9]/g, '')}${user.phone ? String(user.phone).slice(-2) : '00'}@forma.com` : '—'
+                    );
+                    const namePart = (user.name || '').slice(0, 3).toUpperCase();
+                    const phonePart = user.phone ? String(user.phone).slice(-3) : '123';
+                    const employeePassword = `${namePart}${phonePart}`;
+
                     return (
                       <tr
                         key={user.id || user._id}
@@ -795,6 +753,46 @@ const Users = () => {
                               <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                 {user.name}
                               </h4>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Login Credentials */}
+                        <td className="py-4 px-6">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                              <Mail size={13} className="text-slate-400 shrink-0" />
+                              <span className="font-mono text-xs select-all text-slate-900 dark:text-slate-100">{employeeEmail}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(employeeEmail);
+                                  showToast('Email copied to clipboard!', 'success');
+                                }}
+                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                title="Copy login email"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                              <Key size={12} className="text-[#c5a878] shrink-0" />
+                              <span className="font-mono bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/80 text-[#b8955e] dark:text-[#c5a878] font-bold select-all">
+                                {employeePassword}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(employeePassword);
+                                  showToast('Default password copied to clipboard!', 'success');
+                                }}
+                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                title="Copy default password"
+                              >
+                                <Copy size={12} />
+                              </button>
                             </div>
                           </div>
                         </td>
@@ -962,6 +960,7 @@ const Users = () => {
             user={selectedUser}
             getDesignationName={getDesignationName}
             getDepartmentName={getDepartmentName}
+            showToast={showToast}
             onClose={() => {
               setIsViewOpen(false);
               setSelectedUser(null);
@@ -1300,7 +1299,7 @@ const CreateModal = ({ onClose, refresh, getAuthHeaders, designations, onDesigna
       const dynamicPassword = `${namePart}${phonePart}`;
 
       // Auto-generate required backend fallback fields if not provided
-      const autoEmail = `${employeeName.toLowerCase().replace(/[^a-z0-9]/g, '')}${employeePhone.slice(-4)}@fabtec.com`;
+      const autoEmail = `${employeeName.toLowerCase().replace(/[^a-z0-9]/g, '')}${employeePhone.slice(-2)}@forma.com`;
       const autoEmpId = `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
       fd.append('name', employeeName);
@@ -1666,7 +1665,7 @@ const EditModal = ({ user, onClose, refresh, getAuthHeaders, designations, onDes
 };
 
 // --- VIEW MODAL ---
-const ViewModal = ({ user, onClose, getDesignationName }) => {
+const ViewModal = ({ user, onClose, getDesignationName, showToast }) => {
   useLockBodyScroll(true);
 
   const [activeTab, setActiveTab] = useState('dossier');
@@ -1674,6 +1673,13 @@ const ViewModal = ({ user, onClose, getDesignationName }) => {
   const avatarUrl = user.avatar || user.profile_image || user.profileImage;
   const statusKey = user.status || (user.isActive ? 'active' : 'inactive');
   const meta = STATUS_META[statusKey] || STATUS_META.active;
+
+  const employeeEmail = user.email || (
+    user.name ? `${user.name.toLowerCase().replace(/[^a-z0-9]/g, '')}${user.phone ? String(user.phone).slice(-2) : '00'}@forma.com` : '—'
+  );
+  const namePart = (user.name || '').slice(0, 3).toUpperCase();
+  const phonePart = user.phone ? String(user.phone).slice(-3) : '123';
+  const employeePassword = `${namePart}${phonePart}`;
 
   return createPortal(
     <motion.div
@@ -1749,9 +1755,63 @@ const ViewModal = ({ user, onClose, getDesignationName }) => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin space-y-3">
           {activeTab === 'dossier' ? (
             <div className="space-y-3">
+              {/* Login Credentials Card */}
+              <div className="p-4 rounded-2xl bg-amber-500/5 dark:bg-amber-400/5 border border-amber-500/20 dark:border-amber-400/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Key size={15} className="text-[#b8955e] dark:text-[#c5a878]" />
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                      Portal Login Credentials
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+                    Active Access
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Login Email</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate select-all">{employeeEmail}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(employeeEmail);
+                          if (typeof showToast === 'function') showToast('Email copied to clipboard!', 'success');
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+                        title="Copy email"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Default Password</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-[#b8955e] dark:text-[#c5a878] select-all">{employeePassword}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(employeePassword);
+                          if (typeof showToast === 'function') showToast('Password copied to clipboard!', 'success');
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+                        title="Copy default password"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* General Employee Information */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800/60 space-y-3">
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div>

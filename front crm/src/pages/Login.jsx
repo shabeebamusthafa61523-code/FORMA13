@@ -154,38 +154,36 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0b0c10] relative overflow-hidden transition-colors duration-500">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#f8f7f4] dark:bg-[#0c1810] relative overflow-hidden transition-colors duration-500">
       {/* Floating Theme Toggle */}
       <div className="absolute top-6 right-6 z-50">
         <button
           type="button"
           onClick={() => setIsDark(!isDark)}
-          className="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-slate-200/50 dark:border-slate-800/50 text-slate-500 dark:text-slate-400 hover:text-indigo-650 dark:hover:text-lime-400 shadow-lg cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
+          className="p-3 rounded-2xl bg-white/80 dark:bg-[#131e06]/80 backdrop-blur-md border border-slate-200/80 dark:border-[#c5a878]/20 text-slate-500 dark:text-[#c5a878] hover:text-[#1b3d27] dark:hover:text-amber-200 shadow-lg cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
           title="Toggle theme"
         >
           {isDark ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
         </button>
       </div>
-      {/* Glow Effects */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600/10 blur-[120px] rounded-full" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-lime-500/10 dark:bg-lime-500/5 blur-[120px] rounded-full" />
+      {/* Brand Glow Effects */}
+      <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-[#1b3d27]/20 blur-[130px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#c5a878]/15 blur-[130px] rounded-full pointer-events-none" />
       
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md z-10">
 
         <div className="text-center mb-10">
-         <div className="flex justify-center items-center mb-10">
+         <div className="flex justify-center items-center mb-6">
           <img 
             src="/logo2.png" 
-            alt="KODBRAND Logo" 
-            className="h-22 w-auto object-contain" 
+            alt="FORMA13 INTERIORS Logo" 
+            className="h-28 w-auto object-contain filter drop-shadow-sm transition-transform hover:scale-105" 
           />
         </div>
-
-
         </div>
 
         {/* Card Form */}
-        <div className="glass-card p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl shadow-xl">
+        <div className="glass-card p-8 rounded-[2.5rem] border border-slate-200/90 dark:border-[#c5a878]/20 bg-white/80 dark:bg-[#142217]/70 backdrop-blur-2xl shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             
             {/* Email Field */}
@@ -194,11 +192,6 @@ const Login = () => {
                 Email
               </label>
               <div className="relative">
-                {/* <Mail
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 text-slate-500
-                  ${loginData.email ? "opacity-0" : "opacity-100"}`}
-                  size={18}
-                /> */}
                 <input
                   required
                   name="email"
@@ -206,7 +199,8 @@ const Login = () => {
                   autoComplete="username"
                   value={loginData.email}
                   onChange={handleChange}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl py-4 pl-11 pr-4 text-slate-900 dark:text-slate-100 focus:border-indigo-500/50 outline-none transition-all"
+                  className="w-full bg-slate-50 dark:bg-[#0c1810]/70 border border-slate-200 dark:border-slate-800 rounded-2xl py-4 pl-5 pr-4 text-slate-900 dark:text-slate-100 focus:border-[#c5a878] focus:ring-1 focus:ring-[#c5a878]/30 outline-none transition-all"
+                  placeholder="name@forma.com"
                 />
               </div>
             </div>
@@ -220,17 +214,12 @@ const Login = () => {
                 <button
                   type="button"
                   onClick={() => setIsForgotOpen(true)}
-                  className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest hover:underline cursor-pointer transition-all"
+                  className="text-[10px] font-bold text-[#b8955e] dark:text-[#c5a878] uppercase tracking-widest hover:underline cursor-pointer transition-all"
                 >
                   Forgot Password?
                 </button>
               </div>
               <div className="relative">
-                {/* <Lock
-                  className={`absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 text-slate-500
-                  ${loginData.password ? "opacity-0" : "opacity-100"}`}
-                  size={18}
-                /> */}
                 <input
                   required
                   name="password"
@@ -238,7 +227,8 @@ const Login = () => {
                   value={loginData.password}
                   onChange={handleChange}
                   type={showPassword ? "text" : "password"}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl py-4 pl-11 pr-12 text-slate-900 dark:text-slate-100 focus:border-indigo-500/50 outline-none transition-all"
+                  className="w-full bg-slate-50 dark:bg-[#0c1810]/70 border border-slate-200 dark:border-slate-800 rounded-2xl py-4 pl-5 pr-12 text-slate-900 dark:text-slate-100 focus:border-[#c5a878] focus:ring-1 focus:ring-[#c5a878]/30 outline-none transition-all"
+                  placeholder="••••••••"
                 />
                 <button
                   type="button"
@@ -256,10 +246,10 @@ const Login = () => {
               whileTap={{ scale: 0.98 }} 
               disabled={isLoading} 
               type="submit" 
-              className="w-full py-5 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 cursor-pointer"
+              className="w-full py-5 bg-gradient-to-r from-[#1b3d27] via-[#234e32] to-[#1b3d27] border border-[#c5a878]/30 text-[#fdfcfb] rounded-2xl font-black text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:border-[#c5a878]/60 disabled:opacity-50 cursor-pointer transition-all"
             >
               {isLoading ? "Verifying..." : "Authorize Access"} 
-              {!isLoading && <ChevronRight size={18} />}
+              {!isLoading && <ChevronRight size={18} className="text-[#c5a878]" />}
             </motion.button>
           </form>
 

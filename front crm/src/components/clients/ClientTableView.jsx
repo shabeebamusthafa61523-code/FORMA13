@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Edit3, Trash2, Building, ExternalLink } from 'lucide-react';
+import { Edit3, Trash2, Building, ExternalLink, Eye } from 'lucide-react';
 
-const ClientTableView = ({ clients, onEdit, onDelete }) => {
+const ClientTableView = ({ clients, onEdit, onDelete, onViewTransactions }) => {
   const navigate = useNavigate();
 
   return (
@@ -60,6 +60,15 @@ const ClientTableView = ({ clients, onEdit, onDelete }) => {
                     {/* Actions */}
                     <td className="py-4 px-6 text-center">
                       <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onViewTransactions?.(client)}
+                          title="View Client Activity & Ledger (Sale, Income, Purchase...)"
+                          className="p-2 rounded-xl text-slate-400 hover:text-emerald-700 dark:hover:text-[#c5a878] hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => onEdit?.(client)}

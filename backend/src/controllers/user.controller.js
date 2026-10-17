@@ -465,7 +465,7 @@ export const userController = {
         identityNumber
       } = req.body;
 
-      const finalEmail = (email && email.trim()) ? email.trim() : `${(name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}${phone ? phone.slice(-4) : Date.now()}@fabtec.com`;
+      const finalEmail = (email && email.trim()) ? email.trim() : `${(name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}${phone ? phone.slice(-2) : Date.now().toString().slice(-2)}@forma.com`;
       const finalEmpId = (employeeId && employeeId.trim()) ? employeeId.trim() : `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
       const searchConditions = [{ email: finalEmail }];

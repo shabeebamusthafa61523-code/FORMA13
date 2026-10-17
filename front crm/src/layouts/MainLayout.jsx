@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import DailyReportReminderModal from '../components/DailyReportReminderModal';
 import TaskDueReminderModal from '../components/TaskDueReminderModal';
 import { useUser } from '../contexts/UserContext';
+import { PwaInstallPrompt } from '../components/PwaInstallPrompt';
 
 const MainLayout = ({ children }) => {
   const location = useLocation();
@@ -56,7 +57,7 @@ const MainLayout = ({ children }) => {
   }, [location.pathname, refetchUser]);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 selection:bg-indigo-100">
+    <div className="min-h-screen bg-[#f8f7f4] dark:bg-[#0c1810] text-[#142217] dark:text-[#f3efe6] selection:bg-lime-200 selection:text-indigo-950 transition-colors duration-200">
       <Sidebar 
         isCollapsed={sidebarCollapsed} 
         setIsCollapsed={setSidebarCollapsed} 
@@ -69,10 +70,11 @@ const MainLayout = ({ children }) => {
         toggleMobileSidebar={() => setMobileSidebarOpen(prev => !prev)} 
       />
 
-      <main className={`pt-20 pb-8 px-6 w-full min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-70'}`}>
+      <main className={`pt-20 pb-8 px-3.5 sm:px-6 w-full max-w-full overflow-x-hidden min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-70'}`}>
         {children}
       </main>
 
+      <PwaInstallPrompt />
       <DailyReportReminderModal />
       <TaskDueReminderModal />
     </div>
