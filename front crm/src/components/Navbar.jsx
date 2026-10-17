@@ -131,13 +131,14 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
     }
   }, [getAuthHeaders]);
 
+  // Notification polling disabled per user request
+  /*
   useEffect(() => {
     let cancelled = false;
     let timeoutId = null;
     let inFlight = false;
     let consecutiveFailures = 0;
-    const BASE_INTERVAL_MS = 8000; // Poll every 8s for live notification modal pop-ups
-    const MAX_BACKOFF_MS = 2 * 60 * 1000;
+    const BASE_INTERVAL_MS = 8000;
 
     const scheduleNext = (delay) => {
       if (cancelled) return;
@@ -166,6 +167,7 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [fetchMyNotifications]);
+  */
 
   // Handle auto-triggering live pop-up modal ONLY for the single latest unread notification
   const [dismissedPopupIds, setDismissedPopupIds] = useState(new Set());
@@ -292,14 +294,14 @@ const Navbar = ({ isSidebarCollapsed, toggleMobileSidebar }) => {
 
       </header>
 
-      {/* Live Navbar Floating Notification Pop-up Modal */}
-      {activePopupNotification && (
+      {/* Live Navbar Floating Notification Pop-up Modal (Temporarily Disabled) */}
+      {/* {activePopupNotification && (
         <NavbarNotificationPopup
           notification={activePopupNotification}
           onClose={handleClosePopup}
           onMarkAsRead={handleMarkAsRead}
         />
-      )}
+      )} */}
 
       {/* Profile Drawer */}
       <ProfileDrawer

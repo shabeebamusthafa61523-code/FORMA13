@@ -2,8 +2,6 @@ import React from 'react';
 import Sidebar from '../components/Sidebar';
 import Navbar from '../components/Navbar';
 import { useLocation } from 'react-router-dom';
-import DailyReportReminderModal from '../components/DailyReportReminderModal';
-import TaskDueReminderModal from '../components/TaskDueReminderModal';
 import { useUser } from '../contexts/UserContext';
 import { PwaInstallPrompt } from '../components/PwaInstallPrompt';
 
@@ -75,8 +73,6 @@ const MainLayout = ({ children }) => {
       </main>
 
       <PwaInstallPrompt />
-      <DailyReportReminderModal />
-      <TaskDueReminderModal />
     </div>
   );
 };

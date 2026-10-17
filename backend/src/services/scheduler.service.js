@@ -19,7 +19,8 @@ export const schedulerService = {
   start: () => {
     logger.info('⏰ SchedulerService: Initializing background cron automation processes...');
 
-    // 1. Daily at 9:00 AM IST: Send shift report reminder
+    // 1. Daily report reminders disabled per user request
+    /*
     const shiftReminderJob = cron.schedule('0 9 * * *', async () => {
       logger.info('⏰ CRON TRIGGERED: Daily Shift Report Reminder (9:00 AM IST)');
       try {
@@ -28,7 +29,7 @@ export const schedulerService = {
         
         await notificationService.sendBulk(staffIds, ['IN_APP', 'WHATSAPP'], {
           title: '☀️ Daily Shift Commenced',
-          body: 'Good morning! Please remember to check-in on the KOD.BRAND CRM portal and log your goals for today.',
+          body: 'Good morning! Please remember to check-in on the CRM portal and log your goals for today.',
           type: 'SYSTEM'
         });
       } catch (err) {
@@ -57,7 +58,6 @@ export const schedulerService = {
         const missingReportStaff = activeStaff.filter((s) => s.dailyReports.length === 0);
 
         for (const staff of missingReportStaff) {
-          // Alert user
           await notificationService.dispatchMultiChannel({
             userId: staff.id,
             channels: ['IN_APP'],
@@ -66,7 +66,6 @@ export const schedulerService = {
             type: 'REPORT'
           });
 
-          // Alert Team Leader of department if available
           if (staff.departmentId) {
             const dept = await prisma.department.findUnique({
               where: { id: staff.departmentId },
@@ -89,6 +88,7 @@ export const schedulerService = {
       }
     }, { scheduled: true, timezone: TIMEZONE });
     activeJobs.push(reportAlertJob);
+    */
 
     // 3. Daily at 11:59 PM IST: Mark absent if no check-in recorded
     const autoAbsentJob = cron.schedule('59 23 * * *', async () => {
