@@ -289,7 +289,7 @@ const LedgerTab = () => {
         rawRows.push({
           id: `${inc._id}_inc`,
           date: incDate,
-          refNo: inc.receiptNo || `KBR-${String(inc._id).slice(-4)}`,
+          refNo: inc.receiptNo || `F13-${String(inc._id).slice(-4)}`,
           type: 'Income',
           categoryGroup: 'INCOME',
           particulars: inc.title || inc.description || 'Direct Income Entry',
@@ -309,7 +309,7 @@ const LedgerTab = () => {
               rawRows.push({
                 id: `${inc._id}_pay_${pIdx}`,
                 date: p.receiptDate || inc.receiptDate || incDate,
-                refNo: p.receiptNo || inc.receiptNo || `KBR-${String(inc._id).slice(-4)}-${pIdx + 1}`,
+                refNo: p.receiptNo || inc.receiptNo || `F13-${String(inc._id).slice(-4)}-${pIdx + 1}`,
                 type: 'Receipt',
                 categoryGroup: 'RECEIPT',
                 particulars: `Receipt (${p.paymentMethod || inc.paymentMethod || 'Bank Transfer'}) - ${p.notes || 'Payment'}`,
@@ -326,7 +326,7 @@ const LedgerTab = () => {
             rawRows.push({
               id: `${inc._id}_pay_single`,
               date: inc.receiptDate || incDate,
-              refNo: inc.receiptNo || `KBR-${String(inc._id).slice(-4)}`,
+              refNo: inc.receiptNo || `F13-${String(inc._id).slice(-4)}`,
               type: 'Receipt',
               categoryGroup: 'RECEIPT',
               particulars: `Receipt (${inc.paymentMethod || 'Bank Transfer'})`,

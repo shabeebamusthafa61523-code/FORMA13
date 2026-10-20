@@ -18,7 +18,8 @@ import {
 
 const API_URL = import.meta.env?.VITE_API_URL || import.meta.env?.REACT_APP_API_URL || 'http://localhost:5000/api/v1';
 
-export const AiAnalyzeButton = ({ onClick, label = "AI Analyze", className = "" }) => {
+export const AiAnalyzeButton = () => null;
+const UnusedAiAnalyzeButton = ({ onClick, label = "AI Analyze", className = "" }) => {
   return (
     <button
       type="button"

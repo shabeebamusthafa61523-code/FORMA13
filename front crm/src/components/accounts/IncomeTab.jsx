@@ -54,7 +54,6 @@ const getApiEndpoint = (path) => {
 const DEFAULT_DEPARTMENTS = [
   'Development',
   'Marketing',
-  'Academy & LMS',
   'Designing',
   'HR & Admin',
   'Accounts & Finance',
@@ -242,7 +241,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-        const names = data.data.map(d => d.name || d.departmentName).filter(Boolean);
+        const names = data.data.map(d => d.name || d.departmentName).filter(Boolean).filter(n => !/academy|lms/i.test(n));
         if (names.length > 0) {
           setDepartments(Array.from(new Set([...names, ...DEFAULT_DEPARTMENTS])));
         }
@@ -345,22 +344,27 @@ const IncomeTab = ({ mode = 'sales' }) => {
   const sortedAndFilteredIncomes = React.useMemo(() => {
     let result = incomes.filter((inc) => {
       const st = String(inc.status || '').trim().toLowerCase();
+      const paidAmt = (Array.isArray(inc.payments) && inc.payments.length > 0)
+        ? inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+        : parseFloat(inc.receiptAmount || 0);
 
-      // Exclude Pending/Unpaid status invoices from Income
-      if (st === 'pending' || st === 'unpaid' || st === 'draft') {
+      // Exclude Pending/Unpaid status invoices from Income if they have NO payment at all
+      if ((st === 'pending' || st === 'unpaid' || st === 'draft') && paidAmt <= 0) {
         return false;
       }
+
+      const isPart = st === 'partially paid' || st === 'partial' || st === 'partially_paid' || paidAmt > 0;
 
       if (mode === 'proforma') {
         return st === 'proforma';
       }
       if (mode === 'income') {
-        return st === 'paid' || st === 'partially paid' || st === 'completed';
+        return st === 'paid' || st === 'completed' || isPart;
       }
       if (mode === 'sales') {
-        const refNo = String(inc.referenceNo || '').trim();
+        const refNo = String(inc.referenceNo || inc.invoiceNo || '').trim();
         const hasInvoiceNo = Boolean(refNo && refNo !== '-' && !inc.isDirectReceipt);
-        return st !== 'proforma' && st !== 'pending' && st !== 'unpaid' && hasInvoiceNo;
+        return st !== 'proforma' && (st !== 'unpaid' || isPart) && (hasInvoiceNo || isPart);
       }
       return true;
     });
@@ -430,8 +434,8 @@ const IncomeTab = ({ mode = 'sales' }) => {
       const y = isNaN(dObj.getTime()) ? new Date().getFullYear() : dObj.getFullYear();
       const m = isNaN(dObj.getTime()) ? new Date().getMonth() : dObj.getMonth();
       const fyStr = `${String(m >= 3 ? y : y - 1).slice(-2)}-${String((m >= 3 ? y : y - 1) + 1).slice(-2)}`;
-      const defaultRecNo = inc.receiptNo || `KBR/${fyStr}/${mongoIdNum}`;
-      const defaultInvNo = inc.referenceNo || '-';
+      const defaultRecNo = (inc.receiptNo || `F13/${fyStr}/${mongoIdNum}`).replace(/^KBR\//i, 'F13/').replace(/^KB\//i, 'F13/');
+      const defaultInvNo = (inc.referenceNo || '-').replace(/^KB\//i, 'F13/');
 
       const resolvedSType = (inc.sourceType === 'Academy' || inc.department === 'Academy & LMS')
         ? 'Academy'
@@ -451,7 +455,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
         inc.payments.forEach((p, idx) => {
           const amt = parseFloat(p.amount || 0);
           if (amt <= 0) return;
-          const recNo = p.receiptNo || (idx === 0 ? defaultRecNo : `${defaultRecNo}-${idx + 1}`);
+          const recNo = (p.receiptNo || (idx === 0 ? defaultRecNo : `${defaultRecNo}-${idx + 1}`)).replace(/^KBR\//i, 'F13/').replace(/^KB\//i, 'F13/');
           receiptsList.push({
             id: p._id || `${inc._id}_rec_${idx}`,
             receiptNo: recNo,
@@ -522,14 +526,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
   // Handle Source Type Switch (Academy vs Client vs General)
   const handleSourceTypeChange = (type) => {
     setSourceType(type);
-    if (type === 'Academy') {
-      setSelectedClientId('');
-      setClientName('');
-      setDepartment('Academy & LMS');
-      if (!title || title.includes('Client Payment')) {
-        setTitle('Academy Course & LMS Fee');
-      }
-    } else if (type === 'Client') {
+    if (type === 'Client') {
       setDepartment('Sales & CRM');
       if (clients.length > 0 && !selectedClientId) {
         const firstClient = clients[0];
@@ -873,7 +870,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
     setConfirmModalConfig({
       isOpen: true,
       title: 'Convert Proforma to Official Tax Invoice',
-      message: `Are you sure you want to convert Proforma Invoice ${pRef} into an official Tax Invoice? An official Invoice Number (KB/26-27/...) will be generated and assigned.`,
+      message: `Are you sure you want to convert Proforma Invoice ${pRef} into an official Tax Invoice? An official Invoice Number (F13/26-27/...) will be generated and assigned.`,
       type: 'info',
       confirmText: 'Convert Now',
       onConfirm: async () => {
@@ -1059,347 +1056,6 @@ const IncomeTab = ({ mode = 'sales' }) => {
         </div>
       </div>
 
-      {/* Income Records Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-slate-400 text-xs">
-            <Loader2 className="animate-spin text-emerald-600 mr-2" size={20} />
-            Loading income records...
-          </div>
-        ) : sortedAndFilteredIncomes.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-xs space-y-1">
-            <Coins className="mx-auto text-slate-300 dark:text-slate-700 mb-2" size={28} />
-            <p className="font-semibold text-slate-600 dark:text-slate-300">
-              {mode === 'proforma' ? 'No Proforma Invoices Found' : 'No Income Records Found'}
-            </p>
-            <p>No income records found.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50/70 dark:bg-slate-950/50 border-b border-slate-200/60 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                {mode === 'income' ? (
-                  <tr>
-                    <th className="py-3 px-4">Receipt No. & Date</th>
-                    <th className="py-3 px-4">Company / Client</th>
-                    <th className="py-3 px-4">Invoice No.</th>
-                    <th className="py-3 px-4">Way of Income</th>
-                    <th className="py-3 px-4 text-right">Amount Paid (₹)</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                ) : (
-                  <tr>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Source / Title</th>
-                    <th className="py-3 px-4">Source Type</th>
-                    <th className="py-3 px-4">Department</th>
-                    <th className="py-3 px-4">Way of Income</th>
-                    <th className="py-3 px-4">Ref No.</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Amount (₹)</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                )}
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 text-slate-700 dark:text-slate-300 font-medium">
-                {mode === 'income' ? (
-                  displayReceiptRows.map((rec) => (
-                    <tr key={rec.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/30 transition">
-                      <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
-                        <div className="font-mono font-extrabold text-slate-900 dark:text-slate-100 text-xs">
-                          #{rec.receiptNo}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          {new Date(rec.receiptDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
-                          <Building2 size={13} className="text-indigo-500 shrink-0" />
-                          <span>{rec.company}</span>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                        {rec.invoiceNo}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px] border border-emerald-200/60 dark:border-emerald-800/60">
-                          {rec.wayOfIncome}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right font-extrabold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
-                        ₹{Math.round(rec.amountPaid).toLocaleString('en-IN')}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'receipt')}
-                            className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
-                            title="View Receipt Voucher"
-                          >
-                            <Receipt size={12} className="text-emerald-600 dark:text-emerald-400" />
-                            <span>Receipt</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'logs')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
-                            title="View Logs & History"
-                          >
-                            <Eye size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  sortedAndFilteredIncomes.map((inc) => (
-                  <tr key={inc._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/30 transition">
-                    <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
-                      {new Date(inc.date || inc.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {/* 1. Company Name */}
-                      {(() => {
-                        const companyStr = (
-                          inc.clientName ||
-                          (typeof inc.client === 'object' && (inc.client?.companyName || inc.client?.clientName || inc.client?.name)) ||
-                          inc.companyName ||
-                          ''
-                        ).trim();
-
-                        return companyStr ? (
-                          <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
-                            <Building2 size={13} className="text-indigo-500 shrink-0" />
-                            <span>{companyStr}</span>
-                          </div>
-                        ) : (
-                          <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
-                            <Building2 size={13} className="text-slate-400 shrink-0" />
-                            <span>{inc.sourceType || 'General'}</span>
-                          </div>
-                        );
-                      })()}
-
-                      {/* 2. Title */}
-                      {inc.title && (
-                        <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5 leading-tight">
-                          {inc.title}
-                        </div>
-                      )}
-
-                      {/* 3. Subject */}
-                      {(inc.subject || inc.description) && (
-                        <div className="text-[11px] font-normal text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5">
-                          {inc.subject || inc.description}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {(() => {
-                        const resolvedSType = (inc.sourceType === 'Academy' || inc.department === 'Academy & LMS')
-                          ? 'Academy'
-                          : (inc.sourceType === 'Client' || inc.client)
-                          ? 'Client'
-                          : 'General';
-                        return (
-                          <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
-                            resolvedSType === 'Academy'
-                              ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
-                              : resolvedSType === 'Client'
-                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                          }`}>
-                            {resolvedSType}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">
-                        {inc.department}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]">
-                        {inc.paymentMethod}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      {inc.referenceNo || (() => {
-                        const dObj = new Date(inc.date || inc.createdAt || Date.now());
-                        const y = isNaN(dObj.getTime()) ? new Date().getFullYear() : dObj.getFullYear();
-                        const m = isNaN(dObj.getTime()) ? new Date().getMonth() : dObj.getMonth();
-                        const fyStr = `${String(m >= 3 ? y : y - 1).slice(-2)}-${String((m >= 3 ? y : y - 1) + 1).slice(-2)}`;
-                        return `KB/${fyStr}/${String(inc._id || '').slice(-4).padStart(4, '0')}`;
-                      })()}
-                    </td>
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {(() => {
-                        const netPayable = getNetPayableAmount(inc);
-                        const recStatus = String(inc.status || '').trim().toLowerCase();
-                        let paidAmt = 0;
-                        if (Array.isArray(inc.payments) && inc.payments.length > 0) {
-                          paidAmt = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-                        } else if (parseFloat(inc.receiptAmount || 0) > 0) {
-                          paidAmt = parseFloat(inc.receiptAmount);
-                        } else if (recStatus === 'paid' || recStatus === 'completed') {
-                          paidAmt = netPayable;
-                        }
-
-                        const balDue = Math.max(0, netPayable - paidAmt);
-                        const isFullyPaid = balDue <= 0.01 || recStatus === 'paid' || recStatus === 'completed';
-                        const isPartiallyPaid = !isFullyPaid && (paidAmt > 0 || recStatus === 'partially paid');
-
-                        return (
-                          <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] flex items-center gap-1 w-fit ${
-                            isFullyPaid
-                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
-                              : isPartiallyPaid
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60'
-                              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/60'
-                          }`}>
-                            {isFullyPaid && <CheckCircle2 size={11} />}
-                            {isPartiallyPaid && <Clock size={11} className="text-amber-600" />}
-                            {!isFullyPaid && !isPartiallyPaid && <Clock size={11} className="text-rose-500" />}
-                            {isFullyPaid ? 'Paid' : isPartiallyPaid ? 'Partially Paid' : 'Pending'}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-bold">
-                      {(() => {
-                        const netPayable = getNetPayableAmount(inc);
-                        const recStatus = String(inc.status || '').trim().toLowerCase();
-                        const isExplicitlyPaid = recStatus === 'paid' || recStatus === 'completed';
-
-                        let paidAmt = 0;
-                        if (Array.isArray(inc.payments) && inc.payments.length > 0) {
-                          paidAmt = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-                        } else if (parseFloat(inc.receiptAmount || 0) > 0) {
-                          paidAmt = parseFloat(inc.receiptAmount);
-                        } else if (isExplicitlyPaid) {
-                          paidAmt = netPayable;
-                        }
-
-                        const balDue = Math.max(0, netPayable - paidAmt);
-
-                        return (
-                          <div className="space-y-0.5 text-right">
-                            <div className="text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
-                              ₹{Math.round(netPayable).toLocaleString('en-IN')}
-                            </div>
-                            
-                            <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                              Paid: ₹{Math.round(paidAmt).toLocaleString('en-IN')}
-                            </div>
-
-                            {balDue > 0.01 && (
-                              <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                                Due: ₹{Math.round(balDue).toLocaleString('en-IN')}
-                              </div>
-                            )}
-
-                            {parseFloat(inc.gstRate || 0) > 0 && (
-                              <div className="text-[9px] font-medium text-slate-400">
-                                Incl. GST ({inc.gstRate}%)
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {inc.status === 'Proforma' && activeIncomeTab !== 'inactive' && (
-                          <button
-                            type="button"
-                            onClick={() => handleConvertProformaToInvoice(inc)}
-                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
-                            title="Convert Proforma Invoice to Official Tax Invoice"
-                          >
-                            <CheckCircle2 size={12} />
-                            <span>Convert to Invoice</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenDocumentModal(inc, 'invoice')}
-                          className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs"
-                          title="View & Print Tax Invoice"
-                        >
-                          <FileText size={12} className="text-indigo-600 dark:text-indigo-400" />
-                          <span>Invoice</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenDocumentModal(inc, 'logs')}
-                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
-                          title="View Details & Logs"
-                        >
-                          <Eye size={15} />
-                        </button>
-                        {activeIncomeTab === 'inactive' ? (
-                          <>
-                            <button
-                              onClick={() => handleRestoreIncome(inc._id, inc.title)}
-                              className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
-                              title="Restore invoice back to active list"
-                            >
-                              <RotateCcw size={12} />
-                              <span>Restore</span>
-                            </button>
-                            <button
-                              onClick={() => handlePermanentDeleteIncome(inc._id, inc.title)}
-                              className="p-1 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                              title="Permanently Delete Invoice"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleOpenEdit(inc)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                              title="Edit Income"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteIncome(inc._id, inc.title)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
-                              title="Move Invoice to Inactive Tab (Soft Delete)"
-                            >
-                              <Archive size={14} />
-                            </button>
-                            {isSuperadmin && (
-                              <button
-                                onClick={() => handlePermanentDeleteIncome(inc._id, inc.title)}
-                                className="p-1 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition cursor-pointer font-bold"
-                                title="Superadmin Permanent Delete"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* Inline Add Income / Invoice Form (In Page Itself) */}
       {isAddModalOpen && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs p-5 mb-5 space-y-4">
@@ -1418,12 +1074,12 @@ const IncomeTab = ({ mode = 'sales' }) => {
           </div>
 
           <form onSubmit={handleCreateIncome} className="space-y-4 text-xs">
-              {/* Source Type Selector (Academy vs Client vs General) */}
+              {/* Source Type Selector (General vs Client) */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                   Select Income Source Category <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => handleSourceTypeChange('General')}
@@ -1434,18 +1090,6 @@ const IncomeTab = ({ mode = 'sales' }) => {
                     }`}
                   >
                     <Coins size={14} /> General / Other
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSourceTypeChange('Academy')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      sourceType === 'Academy'
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <GraduationCap size={14} /> Academy / LMS
                   </button>
 
                   <button
@@ -1733,6 +1377,347 @@ const IncomeTab = ({ mode = 'sales' }) => {
         </div>
       )}
 
+      {/* Income Records Table */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-slate-400 text-xs">
+            <Loader2 className="animate-spin text-emerald-600 mr-2" size={20} />
+            Loading income records...
+          </div>
+        ) : sortedAndFilteredIncomes.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 text-xs space-y-1">
+            <Coins className="mx-auto text-slate-300 dark:text-slate-700 mb-2" size={28} />
+            <p className="font-semibold text-slate-600 dark:text-slate-300">
+              {mode === 'proforma' ? 'No Proforma Invoices Found' : 'No Income Records Found'}
+            </p>
+            <p>No income records found.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50/70 dark:bg-slate-950/50 border-b border-slate-200/60 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {mode === 'income' ? (
+                  <tr>
+                    <th className="py-3 px-4">Receipt No. & Date</th>
+                    <th className="py-3 px-4">Company / Client</th>
+                    <th className="py-3 px-4">Invoice No.</th>
+                    <th className="py-3 px-4">Way of Income</th>
+                    <th className="py-3 px-4 text-right">Amount Paid (₹)</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Source / Title</th>
+                    <th className="py-3 px-4">Source Type</th>
+                    <th className="py-3 px-4">Department</th>
+                    <th className="py-3 px-4">Way of Income</th>
+                    <th className="py-3 px-4">Ref No.</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Amount (₹)</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                )}
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 text-slate-700 dark:text-slate-300 font-medium">
+                {mode === 'income' ? (
+                  displayReceiptRows.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/30 transition">
+                      <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
+                        <div className="font-mono font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                          #{rec.receiptNo}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {new Date(rec.receiptDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                          <Building2 size={13} className="text-indigo-500 shrink-0" />
+                          <span>{rec.company}</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                        {rec.invoiceNo}
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px] border border-emerald-200/60 dark:border-emerald-800/60">
+                          {rec.wayOfIncome}
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right font-extrabold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
+                        ₹{Math.round(rec.amountPaid).toLocaleString('en-IN')}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'receipt')}
+                            className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
+                            title="View Receipt Voucher"
+                          >
+                            <Receipt size={12} className="text-emerald-600 dark:text-emerald-400" />
+                            <span>Receipt</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'logs')}
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+                            title="View Logs & History"
+                          >
+                            <Eye size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  sortedAndFilteredIncomes.map((inc) => (
+                  <tr key={inc._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/30 transition">
+                    <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
+                      {new Date(inc.date || inc.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {/* 1. Company Name */}
+                      {(() => {
+                        const companyStr = (
+                          inc.clientName ||
+                          (typeof inc.client === 'object' && (inc.client?.companyName || inc.client?.clientName || inc.client?.name)) ||
+                          inc.companyName ||
+                          ''
+                        ).trim();
+
+                        return companyStr ? (
+                          <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                            <Building2 size={13} className="text-indigo-500 shrink-0" />
+                            <span>{companyStr}</span>
+                          </div>
+                        ) : (
+                          <div className="font-extrabold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                            <Building2 size={13} className="text-slate-400 shrink-0" />
+                            <span>{inc.sourceType || 'General'}</span>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 2. Title */}
+                      {inc.title && (
+                        <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5 leading-tight">
+                          {inc.title}
+                        </div>
+                      )}
+
+                      {/* 3. Subject */}
+                      {(inc.subject || inc.description) && (
+                        <div className="text-[11px] font-normal text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5">
+                          {inc.subject || inc.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {(() => {
+                        const resolvedSType = (inc.sourceType === 'Academy' || inc.department === 'Academy & LMS')
+                          ? 'Academy'
+                          : (inc.sourceType === 'Client' || inc.client)
+                          ? 'Client'
+                          : 'General';
+                        return (
+                          <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
+                            resolvedSType === 'Academy'
+                              ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
+                              : resolvedSType === 'Client'
+                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}>
+                            {resolvedSType}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">
+                        {inc.department}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]">
+                        {inc.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                      {((inc.referenceNo || '').replace(/^KB\//i, 'F13/')) || (() => {
+                        const dObj = new Date(inc.date || inc.createdAt || Date.now());
+                        const y = isNaN(dObj.getTime()) ? new Date().getFullYear() : dObj.getFullYear();
+                        const m = isNaN(dObj.getTime()) ? new Date().getMonth() : dObj.getMonth();
+                        const fyStr = `${String(m >= 3 ? y : y - 1).slice(-2)}-${String((m >= 3 ? y : y - 1) + 1).slice(-2)}`;
+                        return `F13/${fyStr}/${String(inc._id || '').slice(-4).padStart(4, '0')}`;
+                      })()}
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      {(() => {
+                        const netPayable = getNetPayableAmount(inc);
+                        const recStatus = String(inc.status || '').trim().toLowerCase();
+                        let paidAmt = 0;
+                        if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+                          paidAmt = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                        } else if (parseFloat(inc.receiptAmount || 0) > 0) {
+                          paidAmt = parseFloat(inc.receiptAmount);
+                        } else if (recStatus === 'paid' || recStatus === 'completed') {
+                          paidAmt = netPayable;
+                        }
+
+                        const balDue = Math.max(0, netPayable - paidAmt);
+                        const isFullyPaid = balDue <= 0.01 || recStatus === 'paid' || recStatus === 'completed';
+                        const isPartiallyPaid = !isFullyPaid && (paidAmt > 0 || recStatus === 'partially paid');
+
+                        return (
+                          <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] flex items-center gap-1 w-fit ${
+                            isFullyPaid
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
+                              : isPartiallyPaid
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60'
+                              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/60'
+                          }`}>
+                            {isFullyPaid && <CheckCircle2 size={11} />}
+                            {isPartiallyPaid && <Clock size={11} className="text-amber-600" />}
+                            {!isFullyPaid && !isPartiallyPaid && <Clock size={11} className="text-rose-500" />}
+                            {isFullyPaid ? 'Paid' : isPartiallyPaid ? 'Partially Paid' : 'Pending'}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-bold">
+                      {(() => {
+                        const netPayable = getNetPayableAmount(inc);
+                        const recStatus = String(inc.status || '').trim().toLowerCase();
+                        const isExplicitlyPaid = recStatus === 'paid' || recStatus === 'completed';
+
+                        let paidAmt = 0;
+                        if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+                          paidAmt = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                        } else if (parseFloat(inc.receiptAmount || 0) > 0) {
+                          paidAmt = parseFloat(inc.receiptAmount);
+                        } else if (isExplicitlyPaid) {
+                          paidAmt = netPayable;
+                        }
+
+                        const balDue = Math.max(0, netPayable - paidAmt);
+
+                        return (
+                          <div className="space-y-0.5 text-right">
+                            <div className="text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
+                              ₹{Math.round(netPayable).toLocaleString('en-IN')}
+                            </div>
+                            
+                            <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                              Paid: ₹{Math.round(paidAmt).toLocaleString('en-IN')}
+                            </div>
+
+                            {balDue > 0.01 && (
+                              <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                Due: ₹{Math.round(balDue).toLocaleString('en-IN')}
+                              </div>
+                            )}
+
+                            {parseFloat(inc.gstRate || 0) > 0 && (
+                              <div className="text-[9px] font-medium text-slate-400">
+                                Incl. GST ({inc.gstRate}%)
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {inc.status === 'Proforma' && activeIncomeTab !== 'inactive' && (
+                          <button
+                            type="button"
+                            onClick={() => handleConvertProformaToInvoice(inc)}
+                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+                            title="Convert Proforma Invoice to Official Tax Invoice"
+                          >
+                            <CheckCircle2 size={12} />
+                            <span>Convert to Invoice</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDocumentModal(inc, 'invoice')}
+                          className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs"
+                          title="View & Print Tax Invoice"
+                        >
+                          <FileText size={12} className="text-indigo-600 dark:text-indigo-400" />
+                          <span>Invoice</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDocumentModal(inc, 'logs')}
+                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+                          title="View Details & Logs"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        {activeIncomeTab === 'inactive' ? (
+                          <>
+                            <button
+                              onClick={() => handleRestoreIncome(inc._id, inc.title)}
+                              className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
+                              title="Restore invoice back to active list"
+                            >
+                              <RotateCcw size={12} />
+                              <span>Restore</span>
+                            </button>
+                            <button
+                              onClick={() => handlePermanentDeleteIncome(inc._id, inc.title)}
+                              className="p-1 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="Permanently Delete Invoice"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(inc)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                              title="Edit Income"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteIncome(inc._id, inc.title)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition cursor-pointer"
+                              title="Move Invoice to Inactive Tab (Soft Delete)"
+                            >
+                              <Archive size={14} />
+                            </button>
+                            {isSuperadmin && (
+                              <button
+                                onClick={() => handlePermanentDeleteIncome(inc._id, inc.title)}
+                                className="p-1 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition cursor-pointer font-bold"
+                                title="Superadmin Permanent Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Wide Edit Income Modal (Responsive Scrollable Flexbox - Portal to document.body) */}
       {editingIncome && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
@@ -1881,7 +1866,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
                         const fyStr = `${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`;
                         const numDigits = String(updated._id || '').replace(/\D/g, '');
                         const seqStr = numDigits ? numDigits.slice(-4).padStart(4, '0') : '0001';
-                        updated.receiptNo = `KBR/${fyStr}/${seqStr}`;
+                        updated.receiptNo = `F13/${fyStr}/${seqStr}`;
                         updated.receiptDate = new Date().toISOString().split('T')[0];
                       }
                       setEditingIncome(updated);
@@ -1902,7 +1887,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
                     type="text"
                     value={editingIncome.receiptNo || ''}
                     onChange={(e) => setEditingIncome({ ...editingIncome, receiptNo: e.target.value })}
-                    placeholder="e.g. KBR/26-27/0001"
+                    placeholder="e.g. F13/26-27/0001"
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
                   />
                 </div>

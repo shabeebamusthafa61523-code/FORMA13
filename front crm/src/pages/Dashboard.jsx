@@ -34,7 +34,7 @@ import {
   Layers
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { AiAnalyzeButton, AiAnalyzeModal } from '../components/AiAnalyzeModal';
+import { AiAnalyzeModal } from '../components/AiAnalyzeModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -1126,17 +1126,6 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <AiAnalyzeButton
-              onClick={() => {
-                setAiModalContext({
-                  employeeName: user?.name || user?.username || '',
-                  department: user?.department?.name || user?.department || '',
-                  designation: user?.designation?.title || user?.designation?.name || user?.designation || user?.role?.name || user?.role || '',
-                  actualReportContentText: JSON.stringify({ adminStats, funnelData, sourcePerformance, staffPerformance, followupMetrics })
-                });
-                setIsAiModalOpen(true);
-              }}
-            />
             <button
               onClick={handleSync}
               className="px-5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 transition-all active:scale-95 shadow-sm cursor-pointer"

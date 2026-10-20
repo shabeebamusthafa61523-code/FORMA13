@@ -97,7 +97,7 @@ const AccountsPage = () => {
         {activeTab === 'capital' && <CapitalTab />}
         {activeTab === 'sales' && <SalesTab />}
         {activeTab === 'proforma' && <CreateInvoiceTab isProformaMode={true} />}
-        {activeTab === 'income' && <IncomeTab />}
+        {activeTab === 'income' && <IncomeTab mode="income" />}
         {activeTab === 'purchase' && <PurchaseTab />}
         {activeTab === 'expenses' && <AddExpenseTab />}
         {activeTab === 'salary' && <SalaryPaymentTab />}

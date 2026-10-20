@@ -318,7 +318,7 @@ const CreateInvoiceTab = () => {
       const fyStr = `${String(sY).slice(-2)}-${String(sY + 1).slice(-2)}`;
       const numDigits = editingId ? String(editingId).replace(/\D/g, '') : '';
       const idSuffix = numDigits ? numDigits.slice(-4).padStart(4, '0') : '0001';
-      autoRecNo = `KBR/${fyStr}/${idSuffix}`;
+      autoRecNo = `F13/${fyStr}/${idSuffix}`;
       setReceiptNo(autoRecNo);
     }
     if (!receiptDate) {
@@ -352,7 +352,7 @@ const CreateInvoiceTab = () => {
       const fyStr = `${String(sY).slice(-2)}-${String(sY + 1).slice(-2)}`;
       const numDigits = editingId ? String(editingId).replace(/\D/g, '') : '';
       const idSuffix = numDigits ? numDigits.slice(-4).padStart(4, '0') : '0001';
-      autoRecNo = `KBR/${fyStr}/${idSuffix}`;
+      autoRecNo = `F13/${fyStr}/${idSuffix}`;
       setReceiptNo(autoRecNo);
     }
 
@@ -363,8 +363,7 @@ const CreateInvoiceTab = () => {
     const numPaid = receiptAmount > 0 ? receiptAmount : grandTotal;
     setReceiptAmount(numPaid);
 
-    const isPartial = numPaid > 0 && grandTotal > 0 && numPaid < (grandTotal - 0.01);
-    setStatus(isPartial ? 'Partially Paid' : 'Paid');
+    setStatus('Paid');
     setIsPreviewModalOpen(true);
 
     showToast('Auto-fetched invoice details & generated Payment Receipt!', 'success');
@@ -486,12 +485,10 @@ const CreateInvoiceTab = () => {
         finalRecAmt = 0;
       }
 
-      if (finalRecAmt <= 0) {
-        targetStatus = 'Pending';
-      } else if (finalRecAmt >= (grandTotal - 0.01) && grandTotal > 0) {
+      if (finalRecAmt >= (grandTotal - 0.01) && grandTotal > 0) {
         targetStatus = 'Paid';
       } else {
-        targetStatus = 'Partially Paid';
+        targetStatus = 'Pending';
       }
     }
     const finalAmountToRecord = grandTotal > 0 ? grandTotal : (subtotalBase > 0 ? subtotalBase : 0);
@@ -1099,7 +1096,7 @@ const CreateInvoiceTab = () => {
                   type="text"
                   value={receiptNo}
                   onChange={(e) => setReceiptNo(e.target.value)}
-                  placeholder="e.g. KBR/26-27/0001"
+                  placeholder="e.g. F13/26-27/0001"
                   className="w-full bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-700 rounded-lg px-2.5 py-1 text-[11px] font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   required
                 />
@@ -1209,8 +1206,8 @@ const CreateInvoiceTab = () => {
             igstAmount: taxCalc.igstAmount,
             totalAmount: grandTotal,
             receiptAmount: receiptAmount > 0 ? receiptAmount : grandTotal,
-            status: (receiptAmount > 0 && receiptAmount < grandTotal) ? 'Partially Paid' : 'Paid',
-            receiptNo: receiptNo || 'KBR/26-27/0001',
+            status: (receiptAmount >= (grandTotal - 0.01) && grandTotal > 0) ? 'Paid' : 'Pending',
+            receiptNo: receiptNo || 'F13/26-27/0001',
             receiptDate: receiptDate || date,
             lineItems,
             notes: receiptNotes || notes,

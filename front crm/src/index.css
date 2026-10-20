@@ -212,18 +212,6 @@ div[class*="bg-lime-400"][class*="rounded-full"] {
   box-shadow: 0 0 8px rgba(197, 168, 120, 0.6) !important;
 }
 
-header[class*="fixed"] > div {
-  background-color: #ffffff !important;
-  border: 1px solid #e5e0d4 !important;
-  box-shadow: 0 2px 12px rgba(20, 34, 23, 0.04) !important;
-}
-
-.dark header[class*="fixed"] > div {
-  background-color: #132419 !important;
-  border: 1px solid #203a27 !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
-}
-
 /* 5. Typography Normalization */
 h1, h2, h3, h4, h5, h6 {
   font-style: normal !important;

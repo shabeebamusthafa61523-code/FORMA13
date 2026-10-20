@@ -1962,23 +1962,6 @@ const HrReportPage = () => {
                   Monthly Report
                 </button>
 
-
-
-                
-
-                <AiAnalyzeButton
-                  onClick={() => {
-                    setAiModalContext({
-                      employeeName: basicDetails.employeeName,
-                      department: 'Human Resources & Recruitment',
-                      designation: basicDetails.designation,
-                      date: selectedDate,
-                      actualReportContentText: JSON.stringify({ basicDetails, dailyOperations, employeeMgmt, recruitmentPipeline, hrComments: comments })
-                    });
-                    setIsAiModalOpen(true);
-                  }}
-                />
-
                 <ExcelExportButton
                   data={dailyOperations.map(op => ({
                     'Time / Period': op.period || '',
