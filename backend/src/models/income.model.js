@@ -20,6 +20,7 @@ const incomeSchema = new mongoose.Schema({
   igstAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
   status: { type: String, enum: ['Draft', 'Pending', 'Paid', 'Partially Paid', 'Overdue', 'Inactive', 'Cancelled', 'Proforma'], default: 'Pending' },
+  isDirectReceipt: { type: Boolean, default: false },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date, default: null },
   dueDate: { type: Date },

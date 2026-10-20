@@ -655,13 +655,13 @@ export const getClientTransactions = async (req, res) => {
             type: 'Income'
           });
         });
-      } else if (inc.status === 'Paid') {
+      } else if (inc.status === 'Paid' || (inc.status === 'Partially Paid' && parseFloat(inc.receiptAmount || 0) > 0) || parseFloat(inc.receiptAmount || 0) > 0) {
         incomes.push({
           _id: inc._id,
           invoiceId: inc._id,
           invoiceNumber: inc.orderNumber || inc.referenceNo || `INV-${String(inc._id).slice(-6).toUpperCase()}`,
           receiptNo: inc.receiptNo || inc.referenceNo || 'PAID',
-          amount: inc.totalAmount || inc.amount,
+          amount: inc.status === 'Paid' ? (inc.totalAmount || inc.amount) : parseFloat(inc.receiptAmount || inc.totalAmount || inc.amount || 0),
           date: inc.date || inc.createdAt,
           paymentMethod: inc.paymentMethod || 'Bank Transfer',
           notes: inc.description || inc.title,

@@ -44,6 +44,21 @@ const getAuthHeaders = () => {
   };
 };
 
+const isPartial = (st) => {
+  const clean = String(st || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+  return clean === 'partial' || clean === 'partially paid';
+};
+
+const isPaid = (st) => {
+  const clean = String(st || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+  return clean === 'paid' || clean === 'completed';
+};
+
+const isPending = (st) => {
+  const clean = String(st || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+  return clean === 'pending' || clean === 'unpaid';
+};
+
 const SalesTab = () => {
   const { showToast } = useToast();
   const [sales, setSales] = useState([]);
@@ -154,7 +169,7 @@ const SalesTab = () => {
       amount: amt,
       gstAmount: gstAmt,
       totalAmount: totalAmt,
-      receiptAmount: formData.paymentStatus === 'Paid' ? totalAmt : (formData.paymentStatus === 'Partial' ? totalAmt / 2 : 0),
+      receiptAmount: formData.paymentStatus === 'Paid' ? totalAmt : 0,
       status: formData.paymentStatus,
       paymentMethod: formData.paymentMethod,
       department: 'Sales & CRM',
@@ -220,19 +235,46 @@ const SalesTab = () => {
   };
 
   // Filtered sales
-  const filteredSales = sales.filter(s => {
+  const salesList = sales.filter(s => {
+    // Exclude direct receipts created via "Add Receipts" in Income tab
+    if (s.isDirectReceipt) return false;
+    // Exclude proforma
+    if (String(s.status || '').toLowerCase() === 'proforma') return false;
+    // Exclude records without an invoice number (pure receipts from Add Receipts)
+    const hasInvoiceNo = Boolean((s.referenceNo && s.referenceNo.trim() && s.referenceNo !== '-') || (s.invoiceNo && s.invoiceNo.trim()));
+    if (!hasInvoiceNo && (s.receiptNo || s.isDirectReceipt)) return false;
+    return true;
+  });
+
+  const filteredSales = salesList.filter(s => {
     const matchesSearch = 
       (s.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.invoiceNo || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || (s.status || 'Paid').toUpperCase() === statusFilter.toUpperCase();
+      (s.referenceNo || s.invoiceNo || s.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.subject || '').toLowerCase().includes(searchQuery.toLowerCase());
+    let matchesStatus = true;
+    if (statusFilter === 'Paid') {
+      matchesStatus = isPaid(s.status);
+    } else if (statusFilter === 'Pending') {
+      matchesStatus = !isPaid(s.status);
+    } else if (statusFilter !== 'ALL') {
+      matchesStatus = String(s.status || '').toUpperCase() === statusFilter.toUpperCase();
+    }
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate Metrics
-  const totalSalesRevenue = sales.reduce((sum, s) => sum + (Number(s.totalAmount || s.receiptAmount || s.amount) || 0), 0);
-  const totalPaidRevenue = sales.reduce((sum, s) => sum + (s.status === 'Paid' ? (Number(s.totalAmount || s.receiptAmount || s.amount) || 0) : 0), 0);
-  const totalPendingRevenue = sales.reduce((sum, s) => sum + (s.status === 'Pending' || s.status === 'UNPAID' ? (Number(s.totalAmount || s.receiptAmount || s.amount) || 0) : 0), 0);
+  // Calculate Metrics on salesList only
+  const totalSalesRevenue = salesList.reduce((sum, s) => sum + (Number(s.totalAmount || s.amount) || 0), 0);
+  const totalPaidRevenue = salesList.reduce((sum, s) => {
+    if (isPaid(s.status)) return sum + (Number(s.totalAmount || s.amount) || 0);
+    return sum + (Number(s.receiptAmount) || 0);
+  }, 0);
+  const totalPendingRevenue = salesList.reduce((sum, s) => {
+    if (isPaid(s.status)) return sum;
+    const tot = Number(s.totalAmount || s.amount) || 0;
+    const rec = Number(s.receiptAmount) || 0;
+    return sum + Math.max(0, tot - rec);
+  }, 0);
 
   return (
     <div className="space-y-2.5">
@@ -269,7 +311,6 @@ const SalesTab = () => {
           >
             <option value="ALL">All Status</option>
             <option value="Paid">Paid</option>
-            <option value="Partial">Partial</option>
             <option value="Pending">Pending</option>
           </select>
 
@@ -523,7 +564,6 @@ const SalesTab = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none font-semibold cursor-pointer"
                 >
                   <option value="Paid">Paid</option>
-                  <option value="Partial">Partial</option>
                   <option value="Pending">Pending</option>
                 </select>
               </div>
@@ -596,17 +636,16 @@ const SalesTab = () => {
               ) : (
                 filteredSales.map((s) => (
                   <tr key={s._id || s.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">{s.invoiceNo || `INV-SL-${s._id.slice(-4)}`}</td>
-                    <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">{s.clientName}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">{s.referenceNo || s.invoiceNo || s.orderNumber || (s._id ? `INV-SL-${String(s._id).slice(-4)}` : 'N/A')}</td>
+                    <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">{s.clientName || (typeof s.client === 'object' && (s.client?.companyName || s.client?.clientName || s.client?.name)) || 'N/A'}</td>
                     <td className="py-3 px-3">{s.title || 'Product Sale'}</td>
                     <td className="py-3 px-3 text-slate-500">{new Date(s.date || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                        (s.status || 'Paid') === 'Paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                        (s.status || '').toLowerCase() === 'partial' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' :
-                        'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                        isPaid(s.status) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                        'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
                       }`}>
-                        {s.status || 'Paid'}
+                        {isPaid(s.status) ? 'Paid' : 'Pending'}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-black text-slate-900 dark:text-white">
@@ -656,11 +695,11 @@ const SalesTab = () => {
               <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-2xl space-y-2">
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-bold uppercase">Invoice No</span>
-                  <span className="font-mono font-bold text-blue-600">{selectedSale.invoiceNo || 'N/A'}</span>
+                  <span className="font-mono font-bold text-blue-600">{selectedSale.referenceNo || selectedSale.invoiceNo || selectedSale.orderNumber || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-bold uppercase">Client</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{selectedSale.clientName}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{selectedSale.clientName || (typeof selectedSale.client === 'object' && (selectedSale.client?.companyName || selectedSale.client?.clientName || selectedSale.client?.name)) || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-bold uppercase">Product / Service</span>

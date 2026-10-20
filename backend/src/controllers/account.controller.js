@@ -806,7 +806,7 @@ export const getCashBook = async (req, res) => {
   try {
     const { startDate, endDate, entryType, type, category, paymentMode } = req.query;
     const expenseQuery = {};
-    const incomeQuery = {};
+    const incomeQuery = { isDeleted: { $ne: true }, status: { $ne: 'Inactive' } };
 
     if (paymentMode) {
       if (paymentMode === 'UPI_BANK' || paymentMode === 'UPI/BANK') {
@@ -1747,12 +1747,12 @@ const getFinancialYearStr = (dateInput = new Date()) => {
   return `${String(startYear).slice(-2)}-${String(endYear).slice(-2)}`;
 };
 
-// Generate Invoice Number in KB/26-27/0001 format
+// Generate Invoice Number in F13/26-27/0001 format
 const generateInvoiceNumber = async (dateInput = new Date()) => {
   const fyStr = getFinancialYearStr(dateInput);
-  const prefix = `KB/${fyStr}/`;
+  const prefix = `F13/${fyStr}/`;
   
-  const regex = new RegExp(`^KB\\/${fyStr}\\/(\\d+)$`, 'i');
+  const regex = new RegExp(`^(?:F13|KB)\\/${fyStr}\\/(\\d+)$`, 'i');
   const matchingRecords = await Income.find({ referenceNo: { $regex: regex } }).select('referenceNo').lean();
   
   let maxSeq = 0;
@@ -1779,12 +1779,12 @@ const generateInvoiceNumber = async (dateInput = new Date()) => {
   return candidate;
 };
 
-// Generate Receipt Voucher Number in KBR/26-27/0001 format
+// Generate Receipt Voucher Number in F13/26-27/0001 format
 const generateReceiptNumber = async (dateInput = new Date()) => {
   const fyStr = getFinancialYearStr(dateInput);
-  const prefix = `KBR/${fyStr}/`;
+  const prefix = `F13/${fyStr}/`;
 
-  const regex = new RegExp(`^KBR\\/${fyStr}\\/(\\d+)$`, 'i');
+  const regex = new RegExp(`^(?:F13|KBR)\\/${fyStr}\\/(\\d+)$`, 'i');
   const matchingRecords = await Income.find({ receiptNo: { $regex: regex } }).select('receiptNo').lean();
 
   let maxSeq = 0;
@@ -1918,7 +1918,7 @@ export const createIncome = async (req, res) => {
           message: `Receipt No. '${finalReceiptNo}' already exists (in active or inactive records). Receipt numbers cannot be repeated.`
         });
       }
-    } else if (inputStatus === 'Paid') {
+    } else if (inputStatus === 'Paid' || inputStatus === 'Partially Paid' || parseFloat(req.body.receiptAmount || 0) > 0) {
       finalReceiptNo = await generateReceiptNumber(date ? new Date(date) : new Date());
     }
 
@@ -1942,6 +1942,7 @@ export const createIncome = async (req, res) => {
       igstAmount: parseFloat(igstAmount || 0),
       totalAmount: parseFloat(totalAmount || parsedAmount),
       status: inputStatus,
+      isDirectReceipt: Boolean(req.body.isDirectReceipt),
       dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(Date.now() + 15*24*60*60*1000),
       orderNumber: req.body.orderNumber ? req.body.orderNumber.trim() : '',
       paymentTerms: req.body.paymentTerms || 'Due on Receipt',
@@ -1959,6 +1960,14 @@ export const createIncome = async (req, res) => {
       receiptAmount: (inputStatus === 'Paid' || inputStatus === 'Partially Paid') 
         ? parseFloat(req.body.receiptAmount !== undefined ? req.body.receiptAmount : (totalAmount || parsedAmount))
         : 0,
+      payments: ((inputStatus === 'Paid' || inputStatus === 'Partially Paid') && parseFloat(req.body.receiptAmount !== undefined ? req.body.receiptAmount : (totalAmount || parsedAmount)) > 0) ? [{
+        receiptNo: finalReceiptNo || 'REC',
+        receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : (date ? new Date(date) : new Date()),
+        amount: parseFloat(req.body.receiptAmount !== undefined ? req.body.receiptAmount : (totalAmount || parsedAmount)),
+        paymentMethod: paymentMethod || 'Bank Transfer',
+        notes: req.body.notes ? req.body.notes.trim() : 'Initial Payment Settlement',
+        createdAt: new Date()
+      }] : [],
       lineItems: Array.isArray(req.body.lineItems) && req.body.lineItems.length > 0 
         ? req.body.lineItems.map(item => ({
             description: item.description || title.trim(),
@@ -2172,7 +2181,7 @@ export const updateIncome = async (req, res) => {
     } else if (balanceDueLogs <= 0.01 || totalCollectedLogs >= (finalTotAmt - 0.01)) {
       income.status = 'Paid';
     } else {
-      income.status = 'Partially Paid';
+      income.status = 'Pending';
     }
     if (Array.isArray(req.body.lineItems) && req.body.lineItems.length > 0) {
       income.lineItems = req.body.lineItems.map(item => ({
@@ -2242,7 +2251,7 @@ export const restoreIncome = async (req, res) => {
     const recPaid = parseFloat(income.receiptAmount || 0);
     const targetStatus = (recPaid > 0 && recPaid >= (income.totalAmount || income.amount || 0))
       ? 'Paid'
-      : (recPaid > 0 ? 'Partially Paid' : 'Pending');
+      : 'Pending';
 
     income.status = targetStatus;
     income.isDeleted = false;
@@ -2375,7 +2384,7 @@ export const recordPaymentSettlement = async (req, res) => {
     } else if (balanceDue <= 0.01 || totalCollected >= (totalBilled - 0.01)) {
       income.status = 'Paid';
     } else {
-      income.status = 'Partially Paid';
+      income.status = 'Pending';
     }
 
     await income.save();
@@ -2447,7 +2456,7 @@ export const updatePaymentSettlement = async (req, res) => {
     } else if (balanceDue <= 0.01 || totalCollected >= (totalBilled - 0.01)) {
       income.status = 'Paid';
     } else {
-      income.status = 'Partially Paid';
+      income.status = 'Pending';
     }
 
     await income.save();
@@ -2506,7 +2515,7 @@ export const deletePaymentSettlement = async (req, res) => {
     } else if (balanceDue <= 0.01 || totalCollected >= (totalBilled - 0.01)) {
       income.status = 'Paid';
     } else {
-      income.status = 'Partially Paid';
+      income.status = 'Pending';
     }
 
     await income.save();

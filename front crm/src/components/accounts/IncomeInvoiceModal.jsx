@@ -147,7 +147,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
       const seqStr = numDigits ? numDigits.slice(-4).padStart(4, '0') : '0001';
       const defaultRecNo = incomeRecord.receiptNo && incomeRecord.receiptNo.trim()
         ? incomeRecord.receiptNo.trim()
-        : `KBR/${fyStr}/${seqStr}`;
+        : `F13/${fyStr}/${seqStr}`;
 
       setEditReceiptNo(defaultRecNo);
       setEditReceiptDate(
@@ -236,13 +236,13 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
 
   // Auto-generate display reference number if blank
   const getInvoiceNumber = () => {
-    if (referenceNo && referenceNo.trim()) return referenceNo.trim();
+    if (referenceNo && referenceNo.trim()) return referenceNo.trim().replace(/^KB\//i, 'F13/');
     return '-';
   };
 
   const invoiceNo = getInvoiceNumber();
   const getReceiptNumber = () => {
-    if (receiptNo && receiptNo.trim()) return receiptNo.trim();
+    if (receiptNo && receiptNo.trim()) return receiptNo.trim().replace(/^KBR\//i, 'F13/').replace(/^KB\//i, 'F13/');
     const dateObj = new Date(date || Date.now());
     const year = isNaN(dateObj.getTime()) ? new Date().getFullYear() : dateObj.getFullYear();
     const month = isNaN(dateObj.getTime()) ? new Date().getMonth() : dateObj.getMonth();
@@ -250,7 +250,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
     const fyStr = `${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`;
     const rawId = String(incomeRecord._id || '').replace(/\D/g, '');
     const mongoIdNum = rawId ? rawId.slice(-4).padStart(4, '0') : '0001';
-    return `KBR/${fyStr}/${mongoIdNum}`;
+    return `F13/${fyStr}/${mongoIdNum}`;
   };
   const defaultRecNo = getReceiptNumber();
   const recNo = editReceiptNo || defaultRecNo;
@@ -1024,7 +1024,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
         ? rawEditAmt
         : (totalSettlementPaid > 0 ? totalSettlementPaid : calculatedTotalPayable));
 
-  const particularRecNo = selectedSettlement?.receiptNo || editReceiptNo || defaultRecNo;
+  const particularRecNo = (selectedSettlement?.receiptNo || editReceiptNo || defaultRecNo || '').replace(/^KBR\//i, 'F13/').replace(/^KB\//i, 'F13/');
   const particularReceiptDate = selectedSettlement?.receiptDate
     ? new Date(selectedSettlement.receiptDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : (editReceiptDate ? new Date(editReceiptDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : formattedDate);
@@ -1037,13 +1037,13 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
     ? 'PROFORMA'
     : (displayBalanceDue <= 0.01 
         ? 'PAID' 
-        : (displayPaidAmt > 0 ? 'PARTIAL PAYMENT' : 'UNPAID'));
+        : 'UNPAID');
 
   const dynamicStatus = isProformaRecord
     ? 'Proforma'
     : (displayBalanceDue <= 0.01
         ? 'Paid'
-        : (displayPaidAmt > 0 ? 'Partially Paid' : 'Pending'));
+        : 'Pending');
 
   const allSettlementList = Array.isArray(currentRecord?.payments) && currentRecord.payments.length > 0
     ? currentRecord.payments
@@ -1285,10 +1285,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 {/* Top Header Branding */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-4" style={{ borderColor: '#e2e8f0' }}>
                   <div>
-                    <img src="/logo3.png" alt="Logo" className="h-11 w-auto object-contain mb-1" />
-                    <h2 className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#0f172a' }}>KOD.BRAND TECH PVT LTD</h2>
-                    <p className="text-[11px]" style={{ color: '#64748b' }}>Aranyakam Building ,Thamarakuzhi Rd <br/>Uphill ,Malappuram</p>
-                    {/* <p className="text-[10px] font-mono" style={{ color: '#94a3b8' }}>GSTIN: 32ABCDE1234F1Z5</p> */}
+                    <img src="/logo3.png" alt="Logo" className="h-11 w-auto object-contain" />
                   </div>
 
                   <div className="sm:text-right space-y-1">
@@ -1396,10 +1393,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 {/* Header Branding & Meta Block */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-4" style={{ borderColor: '#e2e8f0' }}>
                   <div>
-                    <img src="/logo3.png" alt="Logo" className="h-12 w-auto object-contain mb-1" />
-                    <h2 className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#0f172a' }}>KOD.BRAND TECH PVT LTD</h2>
-                    <p className="text-[11px]" style={{ color: '#64748b' }}>Aranyakam Building ,Thamarakuzhi Rd <br/>Uphill ,Malappuram</p>
-                    {/* <p className="text-[10px] font-mono" style={{ color: '#94a3b8' }}>GSTIN: 32ABCDE1234F1Z5 | HSN/SAC: 998314</p> */}
+                    <img src="/logo3.png" alt="Logo" className="h-12 w-auto object-contain" />
                   </div>
 
                   <div className="sm:text-right space-y-1">
@@ -1573,7 +1567,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                   <div className="flex items-center gap-2 font-semibold">
                     <ShieldCheck size={18} style={{ color: '#64748b' }} />
                     <div>
-                      <p className="font-bold" style={{ color: '#0f172a' }}>KOD.BRAND TECH PVT LTD</p>
+                      <p className="font-bold" style={{ color: '#0f172a' }}>Official Tax Invoice</p>
                       <p className="text-[10px] font-normal" style={{ color: '#64748b' }}>Computer Generated Document. No signature required.</p>
                     </div>
                   </div>
@@ -1600,8 +1594,6 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${
                   dynamicStatus === 'Paid'
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : dynamicStatus === 'Partially Paid'
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
                     : 'bg-rose-50 text-rose-700 border border-rose-200'
                 }`}>
                   Status: {dynamicStatus}
@@ -1834,7 +1826,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                         <span>Outstanding Balance Remaining</span>
                         <span className="text-amber-800 font-black">₹{Math.round(displayBalanceDue).toLocaleString('en-IN')}</span>
                       </div>
-                      <p className="text-[11px] text-amber-800 mt-0.5">Status set to Partially Paid. Awaiting final settlement.</p>
+                      <p className="text-[11px] text-amber-800 mt-0.5">Status set to Pending. Awaiting final settlement.</p>
                     </div>
                   </div>
                 ) : (

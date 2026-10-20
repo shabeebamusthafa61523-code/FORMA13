@@ -5,7 +5,7 @@ import { useLocation } from 'react-router-dom';
 import ProfileDrawer from './ProfileDrawer';
 import NotificationPopover from './NotificationPopover';
 import NavbarNotificationPopup from './NavbarNotificationPopup';
-import { AiAnalyzeButton, AiAnalyzeModal } from './AiAnalyzeModal';
+import { AiAnalyzeModal } from './AiAnalyzeModal';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
