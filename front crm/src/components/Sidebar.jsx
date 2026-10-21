@@ -3,7 +3,9 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard,
   Users, 
-  Building2, 
+  UserCheck,
+  Building2,
+  Hammer, 
   Wallet, 
   ShieldCheck,
   X,
@@ -112,6 +114,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
   const showDashboard = hasPerm('Dashboard', '/dashboard') || hasPerm('Admin Dashboard', '/dashboard');
   const showEmployees = hasPerm('Employees', '/users') || hasPerm('Users', '/users');
   const showClients = hasPerm('Clients', '/clients');
+  const showClientLeads = isSuper || hasPerm('Client Leads', '/client-leads') || hasPerm('Leads', '/client-leads') || hasPerm('Clients', '/clients');
+  const showFabrication = isSuper || hasPerm('Workspace', '/fabrication') || hasPerm('Fabrication', '/fabrication') || hasPerm('Fabrication Works', '/fabrication') || !userPermissions || userPermissions.length === 0;
   const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
   const showPermissions = isSuper || hasPerm('Sidebar Permissions', '/sidebar-permissions');
 
@@ -220,6 +224,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             </Link>
           )}
 
+          {/* Client Leads */}
+          {showClientLeads && (
+            <Link
+              to="/client-leads"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/client-leads'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Client Leads' : undefined}
+            >
+              <UserCheck size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Client Leads</span>}
+            </Link>
+          )}
+
           {/* Clients */}
           {showClients && (
             <Link
@@ -233,6 +253,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             >
               <Building2 size={20} className="shrink-0" />
               {!isCollapsed && <span className="truncate">Clients</span>}
+            </Link>
+          )}
+
+          {/* Fabrication */}
+          {showFabrication && (
+            <Link
+              to="/fabrication"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath.startsWith('/fabrication')
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Workspace' : undefined}
+            >
+              <Hammer size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Workspace</span>}
             </Link>
           )}
 
@@ -390,6 +426,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             </Link>
           )}
 
+          {/* Client Leads */}
+          {showClientLeads && (
+            <Link
+              to="/client-leads"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/client-leads'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <UserCheck size={20} className="shrink-0" />
+              <span>Client Leads</span>
+            </Link>
+          )}
+
           {/* Clients */}
           {showClients && (
             <Link
@@ -403,6 +455,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             >
               <Building2 size={20} className="shrink-0" />
               <span>Clients</span>
+            </Link>
+          )}
+
+          {/* Fabrication */}
+          {showFabrication && (
+            <Link
+              to="/fabrication"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath.startsWith('/fabrication')
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Hammer size={20} className="shrink-0" />
+              <span>Workspace</span>
             </Link>
           )}
 

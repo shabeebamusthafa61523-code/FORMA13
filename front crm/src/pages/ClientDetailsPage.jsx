@@ -1,35 +1,230 @@
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
-  Building, ArrowLeft, Mail, Phone, Globe, MapPin, Calendar as CalendarIcon, 
-  ShieldCheck, FolderKanban, FileText, Clock, Plus, ChevronRight, User as UserIcon, Edit,
-  Video, PhoneCall, CheckCircle2, AlertCircle, CalendarDays, BarChart3, Search, CheckSquare,
-  ChevronLeft, X, Trash2, Tag, Check, Pencil, CalendarClock, Layers, Eye, Activity
+  Building, ArrowLeft, Mail, Phone, MapPin, 
+  FileText, Plus, ChevronRight, Edit, Hammer, CreditCard,
+  CheckCircle2, AlertCircle, TrendingUp, Loader2, DollarSign,
+  ShoppingCart, Users, Trash2, Edit3, X, Calendar, Clock, Printer,
+  ChevronDown, ChevronUp, Layers, Download, Percent
 } from 'lucide-react';
+import { getClientById } from '../services/clientService';
 import { 
-  getClientById,
-  createClientMeeting,
-  updateClientMeeting,
-  deleteClientMeeting,
-  createClientFollowup,
-  updateClientFollowup,
-  deleteClientFollowup
-} from '../services/clientService';
+  getOrCreateClientJob,
+  addQuotationItem,
+  updateQuotationItem,
+  deleteQuotationItem,
+  updateQuotationDiscount,
+  addDailyWage,
+  updateDailyWage,
+  deleteDailyWage,
+  addPurchaseExpense,
+  updatePurchaseExpense,
+  deletePurchaseExpense,
+  addClientPayment,
+  updateClientPayment,
+  deleteClientPayment
+} from '../services/fabricationService';
 import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
 import EditClientModal from '../components/clients/EditClientModal';
 import ConfirmModal from '../components/ConfirmModal';
+import QuotationInvoiceModal from '../components/fabrication/QuotationInvoiceModal';
+import ExpenseCategoryModal, { DEFAULT_FABRICATION_CATEGORIES } from '../components/fabrication/ExpenseCategoryModal';
+import DescriptionVendorModal, { DEFAULT_DESCRIPTIONS, DEFAULT_VENDORS } from '../components/fabrication/DescriptionVendorModal';
+import WorkScopeModal, { DEFAULT_WORK_SCOPE_DESCRIPTIONS } from '../components/fabrication/WorkScopeModal';
+
+const UNIT_OPTIONS = [
+  'Sq.Ft',
+  'Inches',
+  'Feet',
+  'Kg',
+  'Nos',
+  'Lengths',
+  'Meters',
+  'Tons',
+  'Box',
+  'Litres',
+  'Lumpsum',
+  'Hours',
+  'Days'
+];
+
+const EXPENSE_CATEGORIES = [
+  'Raw Material (MS/SS Steel)',
+  'Pipes & Tubes',
+  'Plates & Sheets',
+  'Consumables (Welding Rods/Grinding)',
+  'Industrial Gas (Oxygen/CO2/Argon)',
+  'Hardware & Fasteners',
+  'Primer & Painting',
+  'Transport & Freight',
+  'Crane / Scaffolding Hire',
+  'Tools & Equipment Repair',
+  'Site Refreshment / Food',
+  'Miscellaneous'
+];
+
+const PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Credit/Pay Later'];
+const SHIFT_TYPES = ['Full Day', 'Half Day', 'Overtime', 'Piece Rate'];
+
+const formatCurrency = (val) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(val || 0);
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+const groupWagesByDate = (dailyWages = []) => {
+  if (!dailyWages || !dailyWages.length) return [];
+  const sorted = [...dailyWages].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  const groups = [];
+  const map = new Map();
+
+  for (const wage of sorted) {
+    let key = 'undated';
+    let displayDate = 'Undated';
+    if (wage.date) {
+      const d = new Date(wage.date);
+      if (!isNaN(d.getTime())) {
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        displayDate = formatDate(wage.date);
+      }
+    }
+
+    if (!map.has(key)) {
+      const newGroup = {
+        key,
+        displayDate,
+        rawDate: wage.date,
+        entries: [],
+        totalWage: 0,
+      };
+      map.set(key, newGroup);
+      groups.push(newGroup);
+    }
+
+    const grp = map.get(key);
+    grp.entries.push(wage);
+    grp.totalWage += Number(wage.totalWage || 0);
+  }
+
+  return groups;
+};
+
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
 const ClientDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [editOpen, setEditOpen] = useState(false);
 
+  const [clientData, setClientData] = useState(null);
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editClientOpen, setEditClientOpen] = useState(false);
+
+  // Staff members for employee selection dropdown
+  const [employees, setEmployees] = useState([]);
+
+  // Purchases filter pill: 'All' | 'Purchase' | 'Expense'
+  const [expenseFilter, setExpenseFilter] = useState('All');
+
+  // Modals state for EDIT operations
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [editingQuotationItem, setEditingQuotationItem] = useState(null);
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+
+  const [isWageModalOpen, setIsWageModalOpen] = useState(false);
+  const [editingWage, setEditingWage] = useState(null);
+
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
+
+  // Modals for Category & Description/Vendor management
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isDescVendorModalOpen, setIsDescVendorModalOpen] = useState(false);
+  const [descVendorModalTab, setDescVendorModalTab] = useState('descriptions'); // 'descriptions' | 'vendors'
+  
+  const [categoriesList, setCategoriesList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm_fab_expense_categories');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(c => typeof c === 'string' ? c : c.name);
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_FABRICATION_CATEGORIES;
+  });
+
+  const [savedDescriptions, setSavedDescriptions] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm_fab_item_descriptions');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_DESCRIPTIONS;
+  });
+
+  const [savedVendors, setSavedVendors] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm_fab_vendors_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_VENDORS;
+  });
+
+  const [isWorkScopeModalOpen, setIsWorkScopeModalOpen] = useState(false);
+  const [workScopeDescriptions, setWorkScopeDescriptions] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm_fab_work_scope_descriptions');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_WORK_SCOPE_DESCRIPTIONS;
+  });
+
+  const handleSelectWorkScope = (desc) => {
+    setQuoteForm(prev => ({ ...prev, description: desc }));
+  };
+
+  const handleWorkScopesChanged = (newList) => {
+    setWorkScopeDescriptions(newList);
+  };
+
+  const openItemDescriptionModal = () => {
+    setDescVendorModalTab('descriptions');
+    setIsDescVendorModalOpen(true);
+  };
+
+  const openVendorSupplierModal = () => {
+    setDescVendorModalTab('vendors');
+    setIsDescVendorModalOpen(true);
+  };
+
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
+
+  // Universal Confirm Delete Modal state
   const [deleteConfirm, setDeleteConfirm] = useState({
     isOpen: false,
     title: '',
@@ -37,254 +232,273 @@ const ClientDetailsPage = () => {
     onConfirm: null
   });
 
-  // Sub-tabs states
-  const [meetingsSubTab, setMeetingsSubTab] = useState('today'); // 'today' | 'upcoming' | 'history'
-  const [followupsSubTab, setFollowupsSubTab] = useState('today'); // 'today' | 'upcoming' | 'overdue' | 'all'
-  const [reportsSubTab, setReportsSubTab] = useState('meetings'); // 'meetings' | 'followups'
-
-  // Modals & Editing states
-  const [isAddMeetingOpen, setIsAddMeetingOpen] = useState(false);
-  const [editingMeeting, setEditingMeeting] = useState(null);
-
-  // Postpone Meeting modal state
-  const [isPostponeModalOpen, setIsPostponeModalOpen] = useState(false);
-  const [postponingMeeting, setPostponingMeeting] = useState(null);
-  const [postponeForm, setPostponeForm] = useState({
-    newDate: new Date().toISOString().split('T')[0],
-    newTime: '10:00 AM',
-    reason: ''
-  });
-
-  const [isAddFollowUpOpen, setIsAddFollowUpOpen] = useState(false);
-  const [editingFollowup, setEditingFollowup] = useState(null);
-
-  // Calendar view & Date Details modal state
-  const [calendarDate, setCalendarDate] = useState(new Date());
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
-  const [isDateDetailsOpen, setIsDateDetailsOpen] = useState(false);
-
-  // Form states
-  const [meetingForm, setMeetingForm] = useState({
-    title: '',
-    date: new Date().toISOString().split('T')[0],
-    time: '10:00 AM',
-    type: 'Online (Google Meet)',
-    status: 'Scheduled',
-    attendees: '',
+  // ================= INLINE FORM STATES =================
+  // 1. Quotation Item Form (Sq.Ft, Inches, Rate, Quantity, Auto-calc)
+  const [quoteForm, setQuoteForm] = useState({
+    description: '',
+    quantity: 1,
+    unit: 'Sq.Ft',
+    unitPrice: '',
+    amount: 0,
     notes: ''
   });
 
-  const [followUpForm, setFollowUpForm] = useState({
-    title: '',
-    dueDate: new Date().toISOString().split('T')[0],
-    dueTime: '03:00 PM',
-    priority: 'High',
-    notes: '',
-    status: 'Pending'
+  // Overall Quotation Discount state
+  const [overallDiscount, setOverallDiscount] = useState({
+    type: 'fixed',
+    value: ''
+  });
+  const [savingDiscount, setSavingDiscount] = useState(false);
+
+  // 2. Daily Wage Form (Date Picker & Employee Selection Dropdown)
+  const [wageForm, setWageForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    employee: '',
+    employeeName: '',
+    workDescription: '',
+    shiftType: 'Full Day',
+    dailyRate: 800,
+    overtimeHours: 0,
+    overtimeRate: 100,
+    totalWage: 800,
+    notes: ''
   });
 
-  // Meetings, Follow-ups, Projects data state
-  const [meetings, setMeetings] = useState([]);
-  const [followups, setFollowups] = useState([]);
-  const [clientProjects, setClientProjects] = useState([]);
+  // 3. Purchases & Expenses Form (Dropdown Sq.Ft/Inches, Rate, Quantity, Auto-calc)
+  const [expenseForm, setExpenseForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    type: 'Purchase',
+    category: 'Raw Material (MS/SS Steel)',
+    itemDescription: '',
+    vendorName: '',
+    billNumber: '',
+    quantity: 1,
+    unit: 'Sq.Ft',
+    rate: '',
+    amount: 0,
+    paymentMode: 'Cash',
+    notes: ''
+  });
 
-  useEffect(() => {
-    if (!id || id === 'undefined' || id === 'null') {
-      setLoading(false);
-      return;
-    }
-    fetchClientDetails();
-  }, [id]);
+  // 4. Client Payment Form ("Amount Given")
+  const [paymentForm, setPaymentForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    amount: '',
+    paymentMode: 'Cash',
+    transactionReference: '',
+    receivedBy: '',
+    notes: ''
+  });
 
-  const fetchClientDetails = async () => {
+  // Load client details and auto-linked fabrication job
+  const loadClientAndJob = useCallback(async () => {
     if (!id || id === 'undefined' || id === 'null') {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await getClientById(id);
-      if (res && res.success) {
-        setData(res.data);
-        setClientProjects(res.data?.projects || []);
+      const [clientRes, jobRes] = await Promise.all([
+        getClientById(id),
+        getOrCreateClientJob(id)
+      ]);
 
-        let initialMeetings = res.data?.meetings || [];
-        let initialFollowups = res.data?.followups || [];
-
-        // Migrate any legacy localStorage items once, then clear localStorage
-        const mainId = res.data?.client?._id || id;
-        const legacyM = localStorage.getItem(`crm_meetings_${mainId}`) || localStorage.getItem(`crm_meetings_${id}`);
-        const legacyF = localStorage.getItem(`crm_followups_${mainId}`) || localStorage.getItem(`crm_followups_${id}`);
-
-        if (legacyM) {
-          try {
-            const parsedM = JSON.parse(legacyM);
-            if (Array.isArray(parsedM) && parsedM.length > 0 && initialMeetings.length === 0) {
-              for (const m of parsedM) {
-                await createClientMeeting(mainId, {
-                  title: m.title,
-                  date: m.date,
-                  time: m.time,
-                  type: m.type,
-                  status: m.status,
-                  attendees: m.attendees,
-                  notes: m.notes
-                });
-              }
-              const refreshed = await getClientById(id);
-              if (refreshed?.data?.meetings) initialMeetings = refreshed.data.meetings;
-            }
-          } catch (e) {}
-          localStorage.removeItem(`crm_meetings_${mainId}`);
-          localStorage.removeItem(`crm_meetings_${id}`);
-        }
-
-        if (legacyF) {
-          try {
-            const parsedF = JSON.parse(legacyF);
-            if (Array.isArray(parsedF) && parsedF.length > 0 && initialFollowups.length === 0) {
-              for (const f of parsedF) {
-                await createClientFollowup(mainId, {
-                  title: f.title,
-                  dueDate: f.dueDate,
-                  dueTime: f.dueTime,
-                  priority: f.priority,
-                  status: f.status,
-                  notes: f.notes
-                });
-              }
-              const refreshed = await getClientById(id);
-              if (refreshed?.data?.followups) initialFollowups = refreshed.data.followups;
-            }
-          } catch (e) {}
-          localStorage.removeItem(`crm_followups_${mainId}`);
-          localStorage.removeItem(`crm_followups_${id}`);
-        }
-
-        setMeetings(initialMeetings);
-        setFollowups(initialFollowups);
-      } else {
-        showToast(formatApiError(res, "Failed to load client details"), "error");
+      if (clientRes && clientRes.success) {
+        setClientData(clientRes.data?.client || clientRes.data);
+      }
+      if (jobRes && jobRes.success) {
+        setJob(jobRes.data);
       }
     } catch (err) {
-      console.error("Failed to fetch client details:", err);
-      showToast(formatApiError(err, "Server error fetching client details"), "error");
+      console.error('Error loading client fabrication workspace:', err);
+      showToast(formatApiError(err, 'Failed to load client details'), 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, showToast]);
 
-  // --- Meeting Actions ---
-  const handleOpenAddMeeting = (initialDate = null) => {
-    setEditingMeeting(null);
-    setMeetingForm({
-      title: '',
-      date: initialDate || new Date().toISOString().split('T')[0],
-      time: '10:00 AM',
-      type: 'Online (Google Meet)',
-      status: 'Scheduled',
-      attendees: '',
-      notes: ''
-    });
-    setIsAddMeetingOpen(true);
-  };
-
-  const handleEditMeeting = (m) => {
-    setEditingMeeting(m);
-    setMeetingForm({
-      title: m.title || '',
-      date: m.date || new Date().toISOString().split('T')[0],
-      time: m.time || '10:00 AM',
-      type: m.type || 'Online (Google Meet)',
-      status: m.status || 'Scheduled',
-      attendees: m.attendees || '',
-      notes: m.notes || ''
-    });
-    setIsAddMeetingOpen(true);
-  };
-
-  const handleSelectMeetingStatus = async (m, nextStatus) => {
-    if (nextStatus === 'Postponed') {
-      setPostponingMeeting(m);
-      setPostponeForm({
-        newDate: m.date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
-        newTime: m.time || '10:00 AM',
-        reason: ''
-      });
-      setIsPostponeModalOpen(true);
-      return;
-    }
-    const meetingId = m._id || m.id;
-    const clientId = data?.client?._id || id;
+  // Fetch employees list for wage dropdown
+  const fetchEmployees = useCallback(async () => {
     try {
-      const res = await updateClientMeeting(clientId, meetingId, { status: nextStatus });
-      if (res && res.success) {
-        setMeetings(prev => prev.map(item => (item._id === meetingId || item.id === meetingId) ? { ...item, status: nextStatus } : item));
-        showToast(`Meeting status updated to ${nextStatus}`, 'success');
-      } else {
-        showToast(res?.message || 'Failed to update meeting status', 'error');
+      const rawToken = localStorage.getItem('token') || '';
+      const cleanToken = rawToken.replace(/^"(.*)"$/, '$1').trim();
+      const headers = { Authorization: cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}` };
+      const endpoint = API_BASE.endsWith('/v1') ? `${API_BASE}/users` : `${API_BASE}/v1/users`;
+      const res = await fetch(endpoint, { headers });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setEmployees(Array.isArray(data.data) ? data.data : []);
       }
     } catch (err) {
-      showToast(formatApiError(err, 'Failed to update meeting status'), 'error');
+      console.error('Failed to load employees:', err);
     }
+  }, []);
+
+  useEffect(() => {
+    loadClientAndJob();
+    fetchEmployees();
+  }, [loadClientAndJob, fetchEmployees]);
+
+  useEffect(() => {
+    if (job?.quotationDiscount) {
+      setOverallDiscount({
+        type: job.quotationDiscount.type || 'fixed',
+        value: job.quotationDiscount.value !== undefined ? job.quotationDiscount.value : ''
+      });
+    }
+  }, [job]);
+
+  // ================= AUTO CALCULATION EFFECTS =================
+  const handleQuoteQtyPriceChange = (
+    quantity = quoteForm.quantity, 
+    unitPrice = quoteForm.unitPrice
+  ) => {
+    const q = parseFloat(quantity) || 0;
+    const p = parseFloat(unitPrice) || 0;
+    const amount = Math.round(q * p * 100) / 100;
+
+    setQuoteForm(prev => ({
+      ...prev,
+      quantity,
+      unitPrice,
+      amount
+    }));
   };
 
-  const handleConfirmPostpone = async (e) => {
-    e.preventDefault();
-    if (!postponingMeeting) return;
-    if (!postponeForm.newDate) {
-      showToast('Please select a new date for the postponed meeting', 'warning');
-      return;
-    }
-    const meetingId = postponingMeeting._id || postponingMeeting.id;
-    const clientId = data?.client?._id || id;
-    const reasonTag = postponeForm.reason.trim() ? `[Postponed: ${postponeForm.reason.trim()}]` : '';
-    const updatedNotes = postponingMeeting.notes ? `${postponingMeeting.notes} ${reasonTag}`.trim() : reasonTag;
-    
+  const handleApplyOverallDiscount = async (e) => {
+    if (e) e.preventDefault();
+    if (!job?._id) return;
+    setSavingDiscount(true);
     try {
-      const res = await updateClientMeeting(clientId, meetingId, {
-        date: postponeForm.newDate,
-        time: postponeForm.newTime || postponingMeeting.time,
-        status: 'Postponed',
-        notes: updatedNotes
+      const res = await updateQuotationDiscount(job._id, {
+        type: overallDiscount.type,
+        value: parseFloat(overallDiscount.value) || 0
       });
       if (res && res.success) {
-        setMeetings(prev => prev.map(m => (m._id === meetingId || m.id === meetingId) ? {
-          ...m,
-          date: postponeForm.newDate,
-          time: postponeForm.newTime || m.time,
-          status: 'Postponed',
-          notes: updatedNotes
-        } : m));
-        showToast(`Meeting postponed & rescheduled to ${postponeForm.newDate} at ${postponeForm.newTime}`, 'success');
-      } else {
-        showToast(res?.message || 'Failed to postpone meeting', 'error');
+        showToast('Overall quotation discount updated', 'success');
+        setJob(res.data);
       }
     } catch (err) {
-      showToast(formatApiError(err, 'Failed to postpone meeting'), 'error');
+      showToast(err.response?.data?.message || 'Failed to update discount', 'error');
     } finally {
-      setIsPostponeModalOpen(false);
-      setPostponingMeeting(null);
+      setSavingDiscount(false);
     }
   };
 
-  const handleDeleteMeeting = (mId) => {
+  const handleWageCalcChange = (dailyRate, overtimeHours, overtimeRate) => {
+    const r = parseFloat(dailyRate) || 0;
+    const oth = parseFloat(overtimeHours) || 0;
+    const otr = parseFloat(overtimeRate) || 0;
+    setWageForm(prev => ({
+      ...prev,
+      dailyRate,
+      overtimeHours,
+      overtimeRate,
+      totalWage: Math.round((r + (oth * otr)) * 100) / 100
+    }));
+  };
+
+  const handleExpenseQtyRateChange = (quantity, rate) => {
+    const q = parseFloat(quantity) || 0;
+    const r = parseFloat(rate) || 0;
+    setExpenseForm(prev => ({
+      ...prev,
+      quantity,
+      rate,
+      amount: Math.round(q * r * 100) / 100
+    }));
+  };
+
+  const handleSelectCategory = (catName) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      category: catName
+    }));
+  };
+
+  const handleSelectDescVendor = ({ itemDescription, vendorName }) => {
+    setExpenseForm(prev => {
+      const next = { ...prev };
+      if (itemDescription !== undefined) {
+        next.itemDescription = itemDescription;
+      }
+      if (vendorName !== undefined) {
+        next.vendorName = vendorName;
+      }
+      return next;
+    });
+  };
+
+  // ================= 1. QUOTATION HANDLERS =================
+  const handleSaveQuotationItem = async (e) => {
+    e.preventDefault();
+    if (!job?._id) return;
+    if (!quoteForm.description.trim()) {
+      showToast('Please provide an item description', 'warning');
+      return;
+    }
+
+    try {
+      const itemData = {
+        ...quoteForm,
+        discountType: 'fixed',
+        discountValue: 0,
+        discountAmount: 0
+      };
+      let res;
+      if (editingQuotationItem) {
+        res = await updateQuotationItem(job._id, editingQuotationItem._id, itemData);
+      } else {
+        res = await addQuotationItem(job._id, itemData);
+      }
+
+      if (res && res.success) {
+        showToast(editingQuotationItem ? 'Quotation item updated' : 'Quotation item added to client ledger', 'success');
+        setJob(res.data);
+        setIsQuotationModalOpen(false);
+        setEditingQuotationItem(null);
+        // Reset add form
+        setQuoteForm({
+          description: '',
+          quantity: 1,
+          unit: 'Sq.Ft',
+          unitPrice: '',
+          amount: 0,
+          notes: ''
+        });
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save quotation item', 'error');
+    }
+  };
+
+  const openEditQuotationModal = (item) => {
+    setEditingQuotationItem(item);
+    setQuoteForm({
+      description: item.description || '',
+      quantity: item.quantity ?? 1,
+      unit: item.unit || 'Sq.Ft',
+      unitPrice: item.unitPrice ?? '',
+      amount: item.amount ?? 0,
+      notes: item.notes || ''
+    });
+    setIsQuotationModalOpen(true);
+  };
+
+  const promptDeleteQuotationItem = (item) => {
     setDeleteConfirm({
       isOpen: true,
-      title: 'Delete Scheduled Meeting',
-      message: 'Are you sure you want to delete this meeting? This action cannot be undone.',
+      title: 'Delete Quotation Item',
+      message: `Are you sure you want to delete "${item.description}"? This will update the quotation total.`,
       onConfirm: async () => {
-        const clientId = data?.client?._id || id;
         try {
-          const res = await deleteClientMeeting(clientId, mId);
+          const res = await deleteQuotationItem(job._id, item._id);
           if (res && res.success) {
-            setMeetings(prev => prev.filter(m => (m._id || m.id) !== mId));
-            showToast('Meeting deleted successfully', 'info');
-          } else {
-            showToast(res?.message || 'Failed to delete meeting', 'error');
+            showToast('Quotation item deleted', 'success');
+            setJob(res.data);
           }
         } catch (err) {
-          showToast(formatApiError(err, 'Failed to delete meeting'), 'error');
+          showToast('Failed to delete quotation item', 'error');
         } finally {
           setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
         }
@@ -292,106 +506,192 @@ const ClientDetailsPage = () => {
     });
   };
 
-  const handleSaveMeeting = async (e) => {
-    e.preventDefault();
-    if (!meetingForm.title.trim()) {
-      showToast('Please enter a meeting title', 'warning');
+  // ================= 2. DAILY WAGES HANDLERS =================
+  const handleEmployeeDropdownSelect = (e) => {
+    const empId = e.target.value;
+    if (!empId) {
+      setWageForm(prev => ({ ...prev, employee: '', employeeName: '' }));
       return;
     }
-    if (meetingForm.status === 'Postponed' && !editingMeeting) {
-      setPostponingMeeting({ ...meetingForm });
-      setPostponeForm({
-        newDate: meetingForm.date,
-        newTime: meetingForm.time,
-        reason: ''
-      });
-      setIsAddMeetingOpen(false);
-      setIsPostponeModalOpen(true);
+    const emp = employees.find(u => (u._id || u.id) === empId);
+    if (emp) {
+      setWageForm(prev => ({
+        ...prev,
+        employee: empId,
+        employeeName: emp.name || emp.username || 'Employee'
+      }));
+    }
+  };
+
+  const handleSaveWage = async (e) => {
+    e.preventDefault();
+    if (!job?._id) return;
+    if (!wageForm.employeeName.trim()) {
+      showToast('Please select an employee or enter worker name', 'warning');
       return;
     }
 
-    const clientId = data?.client?._id || id;
+    try {
+      let res;
+      if (editingWage) {
+        res = await updateDailyWage(job._id, editingWage._id, wageForm);
+      } else {
+        res = await addDailyWage(job._id, wageForm);
+      }
+
+      if (res && res.success) {
+        showToast(editingWage ? 'Daily wage record updated' : 'Daily wage recorded successfully', 'success');
+        setJob(res.data);
+        setIsWageModalOpen(false);
+        setEditingWage(null);
+        // Reset add form
+        setWageForm({
+          date: new Date().toISOString().split('T')[0],
+          employee: '',
+          employeeName: '',
+          workDescription: '',
+          shiftType: 'Full Day',
+          dailyRate: 800,
+          overtimeHours: 0,
+          overtimeRate: 100,
+          totalWage: 800,
+          notes: ''
+        });
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save daily wage', 'error');
+    }
+  };
+
+  const openEditWageModal = (wage) => {
+    setEditingWage(wage);
+    setWageForm({
+      date: wage.date ? new Date(wage.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      employee: wage.employee?._id || wage.employee || '',
+      employeeName: wage.employeeName || '',
+      workDescription: wage.workDescription || '',
+      shiftType: wage.shiftType || 'Full Day',
+      dailyRate: wage.dailyRate ?? 0,
+      overtimeHours: wage.overtimeHours ?? 0,
+      overtimeRate: wage.overtimeRate ?? 0,
+      totalWage: wage.totalWage ?? 0,
+      notes: wage.notes || ''
+    });
+    setIsWageModalOpen(true);
+  };
+
+  const promptDeleteWage = (wage) => {
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Wage Record',
+      message: `Delete daily wage entry for ${wage.employeeName} on ${formatDate(wage.date)} (${formatCurrency(wage.totalWage)})?`,
+      onConfirm: async () => {
+        try {
+          const res = await deleteDailyWage(job._id, wage._id);
+          if (res && res.success) {
+            showToast('Daily wage record deleted', 'success');
+            setJob(res.data);
+          }
+        } catch (err) {
+          showToast('Failed to delete wage record', 'error');
+        } finally {
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  // ================= 3. PURCHASES & EXPENSES HANDLERS =================
+  const handleSaveExpense = async (e) => {
+    e.preventDefault();
+    if (!job?._id) return;
+
+    if (expenseForm.type === 'Purchase' && !expenseForm.itemDescription.trim()) {
+      showToast('Please provide an item description', 'warning');
+      return;
+    }
+    if (expenseForm.type === 'Expense' && (!expenseForm.amount || parseFloat(expenseForm.amount) <= 0)) {
+      showToast('Please enter a valid expense amount', 'warning');
+      return;
+    }
+
     const payload = {
-      title: meetingForm.title.trim(),
-      date: meetingForm.date,
-      time: meetingForm.time,
-      type: meetingForm.type,
-      status: meetingForm.status || 'Scheduled',
-      attendees: meetingForm.attendees.trim() || 'Account Manager',
-      notes: meetingForm.notes.trim() || 'No additional notes provided.'
+      ...expenseForm,
+      itemDescription: expenseForm.type === 'Expense'
+        ? (expenseForm.notes?.trim() || expenseForm.itemDescription?.trim() || expenseForm.category || 'Site Operational Expense')
+        : expenseForm.itemDescription.trim(),
+      amount: parseFloat(expenseForm.amount) || 0,
+      quantity: expenseForm.type === 'Expense' ? 1 : (parseFloat(expenseForm.quantity) || 1),
+      rate: expenseForm.type === 'Expense' ? (parseFloat(expenseForm.amount) || 0) : (parseFloat(expenseForm.rate) || 0)
     };
 
     try {
-      if (editingMeeting) {
-        const meetingId = editingMeeting._id || editingMeeting.id;
-        const res = await updateClientMeeting(clientId, meetingId, payload);
-        if (res && res.success) {
-          setMeetings(prev => prev.map(m => (m._id === meetingId || m.id === meetingId) ? (res.data || { ...m, ...payload }) : m));
-          showToast('Meeting updated successfully!', 'success');
-        } else {
-          showToast(res?.message || 'Failed to update meeting', 'error');
-        }
+      let res;
+      if (editingExpense) {
+        res = await updatePurchaseExpense(job._id, editingExpense._id, payload);
       } else {
-        const res = await createClientMeeting(clientId, payload);
-        if (res && res.success) {
-          setMeetings(prev => [res.data, ...prev]);
-          showToast('Meeting scheduled successfully!', 'success');
-        } else {
-          showToast(res?.message || 'Failed to schedule meeting', 'error');
-        }
+        res = await addPurchaseExpense(job._id, payload);
+      }
+
+      if (res && res.success) {
+        showToast(editingExpense ? 'Entry updated successfully' : `${expenseForm.type} recorded successfully`, 'success');
+        setJob(res.data);
+        setIsExpenseModalOpen(false);
+        setEditingExpense(null);
+        // Reset add form
+        setExpenseForm({
+          date: new Date().toISOString().split('T')[0],
+          type: expenseForm.type,
+          category: expenseForm.category,
+          itemDescription: '',
+          vendorName: '',
+          billNumber: '',
+          quantity: 1,
+          unit: 'Sq.Ft',
+          rate: '',
+          amount: 0,
+          paymentMode: 'Cash',
+          notes: ''
+        });
       }
     } catch (err) {
-      showToast(formatApiError(err, 'Failed to save meeting'), 'error');
-    } finally {
-      setIsAddMeetingOpen(false);
-      setEditingMeeting(null);
+      showToast(err.response?.data?.message || 'Failed to save expense', 'error');
     }
   };
 
-  // --- Follow-up Actions ---
-  const handleOpenAddFollowUp = (initialDate = null) => {
-    setEditingFollowup(null);
-    setFollowUpForm({
-      title: '',
-      dueDate: initialDate || new Date().toISOString().split('T')[0],
-      dueTime: '03:00 PM',
-      priority: 'High',
-      notes: '',
-      status: 'Pending'
+  const openEditExpenseModal = (entry) => {
+    setEditingExpense(entry);
+    setExpenseForm({
+      date: entry.date ? new Date(entry.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      type: entry.type || 'Purchase',
+      category: entry.category || 'Raw Material (MS/SS Steel)',
+      itemDescription: entry.itemDescription || '',
+      vendorName: entry.vendorName || '',
+      billNumber: entry.billNumber || '',
+      quantity: entry.quantity ?? 1,
+      unit: entry.unit || 'Sq.Ft',
+      rate: entry.rate ?? 0,
+      amount: entry.amount ?? 0,
+      paymentMode: entry.paymentMode || 'Cash',
+      notes: entry.notes || ''
     });
-    setIsAddFollowUpOpen(true);
+    setIsExpenseModalOpen(true);
   };
 
-  const handleEditFollowUp = (f) => {
-    setEditingFollowup(f);
-    setFollowUpForm({
-      title: f.title || '',
-      dueDate: f.dueDate || new Date().toISOString().split('T')[0],
-      dueTime: f.dueTime || '03:00 PM',
-      priority: f.priority || 'High',
-      notes: f.notes || '',
-      status: f.status || 'Pending'
-    });
-    setIsAddFollowUpOpen(true);
-  };
-
-  const handleDeleteFollowUp = (fId) => {
+  const promptDeleteExpense = (entry) => {
     setDeleteConfirm({
       isOpen: true,
-      title: 'Delete Follow-up Task',
-      message: 'Are you sure you want to delete this follow-up task? This action cannot be undone.',
+      title: `Delete ${entry.type}`,
+      message: `Delete ${entry.type.toLowerCase()} record "${entry.itemDescription}" (${formatCurrency(entry.amount)})?`,
       onConfirm: async () => {
-        const clientId = data?.client?._id || id;
         try {
-          const res = await deleteClientFollowup(clientId, fId);
+          const res = await deletePurchaseExpense(job._id, entry._id);
           if (res && res.success) {
-            setFollowups(prev => prev.filter(f => (f._id || f.id) !== fId));
-            showToast('Follow-up task deleted successfully', 'info');
-          } else {
-            showToast(res?.message || 'Failed to delete follow-up', 'error');
+            showToast(`${entry.type} record deleted`, 'success');
+            setJob(res.data);
           }
         } catch (err) {
-          showToast(formatApiError(err, 'Failed to delete follow-up'), 'error');
+          showToast('Failed to delete expense entry', 'error');
         } finally {
           setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
         }
@@ -399,1418 +699,2493 @@ const ClientDetailsPage = () => {
     });
   };
 
-  const handleSaveFollowUp = async (e) => {
+  // ================= 4. CLIENT PAYMENTS HANDLERS ("Amount Given") =================
+  const handleSavePayment = async (e) => {
     e.preventDefault();
-    if (!followUpForm.title.trim()) {
-      showToast('Please enter a follow-up title', 'warning');
+    if (!job?._id) return;
+    if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
+      showToast('Please enter a valid payment amount', 'warning');
       return;
     }
-    const clientId = data?.client?._id || id;
 
     try {
-      if (editingFollowup) {
-        const followupId = editingFollowup._id || editingFollowup.id;
-        const payload = {
-          title: followUpForm.title.trim(),
-          dueDate: followUpForm.dueDate,
-          dueTime: followUpForm.dueTime,
-          priority: followUpForm.priority,
-          notes: followUpForm.notes.trim() || 'Follow-up task updated.'
-        };
-        const res = await updateClientFollowup(clientId, followupId, payload);
-        if (res && res.success) {
-          setFollowups(prev => prev.map(f => (f._id === followupId || f.id === followupId) ? (res.data || { ...f, ...payload }) : f));
-          showToast('Follow-up task updated successfully!', 'success');
-        } else {
-          showToast(res?.message || 'Failed to update follow-up', 'error');
-        }
+      let res;
+      if (editingPayment) {
+        res = await updateClientPayment(job._id, editingPayment._id, paymentForm);
       } else {
-        const payload = {
-          title: followUpForm.title.trim(),
-          dueDate: followUpForm.dueDate,
-          dueTime: followUpForm.dueTime,
-          priority: followUpForm.priority,
-          status: 'Pending',
-          notes: followUpForm.notes.trim() || 'Follow-up task scheduled.'
-        };
-        const res = await createClientFollowup(clientId, payload);
-        if (res && res.success) {
-          setFollowups(prev => [res.data, ...prev]);
-          showToast('Follow-up task added successfully!', 'success');
-        } else {
-          showToast(res?.message || 'Failed to add follow-up', 'error');
-        }
+        res = await addClientPayment(job._id, paymentForm);
       }
-    } catch (err) {
-      showToast(formatApiError(err, 'Failed to save follow-up'), 'error');
-    } finally {
-      setIsAddFollowUpOpen(false);
-      setEditingFollowup(null);
-    }
-  };
 
-  const toggleFollowUpStatus = async (fId) => {
-    const target = followups.find(f => (f._id || f.id) === fId);
-    if (!target) return;
-    const nextStatus = target.status === 'Completed' ? 'Pending' : 'Completed';
-    const clientId = data?.client?._id || id;
-    try {
-      const res = await updateClientFollowup(clientId, fId, { status: nextStatus });
       if (res && res.success) {
-        setFollowups(prev => prev.map(f => (f._id === fId || f.id === fId) ? { ...f, status: nextStatus } : f));
-        showToast(`Follow-up marked as ${nextStatus}`, 'success');
-      } else {
-        showToast(res?.message || 'Failed to update follow-up status', 'error');
+        showToast(editingPayment ? 'Payment updated successfully' : 'Client payment recorded successfully', 'success');
+        setJob(res.data);
+        setIsPaymentModalOpen(false);
+        setEditingPayment(null);
+        // Reset add form
+        setPaymentForm({
+          date: new Date().toISOString().split('T')[0],
+          amount: '',
+          paymentMode: 'Cash',
+          transactionReference: '',
+          receivedBy: '',
+          notes: ''
+        });
       }
     } catch (err) {
-      showToast(formatApiError(err, 'Failed to update follow-up status'), 'error');
+      showToast(err.response?.data?.message || 'Failed to record payment', 'error');
     }
   };
 
-  // --- Project Actions ---
-  const handleDeleteProjectCard = (pId) => {
+  const openEditPaymentModal = (pay) => {
+    setEditingPayment(pay);
+    setPaymentForm({
+      date: pay.date ? new Date(pay.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      amount: pay.amount ?? '',
+      paymentMode: pay.paymentMode || 'Cash',
+      transactionReference: pay.transactionReference || '',
+      receivedBy: pay.receivedBy || '',
+      notes: pay.notes || ''
+    });
+    setIsPaymentModalOpen(true);
+  };
+
+  const promptDeletePayment = (pay) => {
     setDeleteConfirm({
       isOpen: true,
-      title: 'Remove Project Card',
-      message: 'Are you sure you want to remove this project from client view?',
-      onConfirm: () => {
-        setClientProjects(prev => prev.filter(p => (p._id || p.id) !== pId));
-        showToast('Project removed successfully', 'info');
-        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+      title: 'Delete Client Payment',
+      message: `Delete payment receipt of ${formatCurrency(pay.amount)} dated ${formatDate(pay.date)}? This will restore the client's balance due.`,
+      onConfirm: async () => {
+        try {
+          const res = await deleteClientPayment(job._id, pay._id);
+          if (res && res.success) {
+            showToast('Payment record deleted', 'success');
+            setJob(res.data);
+          }
+        } catch (err) {
+          showToast('Failed to delete payment', 'error');
+        } finally {
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
 
-  // --- Calendar Date Click Action ---
-  const handleCalendarDayClick = (dateStr) => {
-    setSelectedCalendarDate(dateStr);
-    setIsDateDetailsOpen(true);
+  // Smooth scroll helper to jump directly to any section on this single page
+  const scrollToSection = (sectionId) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   if (loading) {
     return (
-      <div className="py-20 text-center text-xs text-slate-400 font-semibold">
-        Loading enterprise client profile...
+      <div className="py-24 flex flex-col items-center justify-center gap-3">
+        <Loader2 size={36} className="animate-spin text-indigo-600" />
+        <p className="text-sm font-semibold text-slate-500">Loading client fabrication workspace...</p>
       </div>
     );
   }
 
-  if (!data || !data.client) {
-    return (
-      <div className="py-20 text-center text-xs text-slate-400 font-semibold flex flex-col items-center gap-3">
-        <Building className="w-10 h-10 text-slate-300 dark:text-slate-700" />
-        <span>Client profile not found.</span>
-        <button onClick={() => navigate('/clients')} className="text-indigo-600 font-bold hover:underline">
-          Return to Directory
-        </button>
-      </div>
-    );
-  }
+  const clientName = clientData?.companyName || clientData?.clientName || job?.clientName || 'Client';
+  const phone = clientData?.phone || job?.clientPhone || '';
+  const address = clientData?.address || job?.siteAddress || '';
+  const email = clientData?.email || job?.clientEmail || '';
 
-  const { client, activities = [] } = data;
-  const todayStr = new Date().toISOString().split('T')[0];
+  const fin = job?.financials || {
+    totalQuotation: 0,
+    totalPurchases: 0,
+    totalWages: 0,
+    totalExpenses: 0,
+    totalDirectCost: 0,
+    totalAmountReceived: 0,
+    balanceDue: 0,
+    netProfit: 0
+  };
 
-  // Filtering Meetings - Postponed meetings show under Today's or Upcoming, NEVER in History
-  const todayMeetings = meetings.filter(m => m.date === todayStr && m.status !== 'Completed' && m.status !== 'Cancelled');
-  const upcomingMeetings = meetings.filter(m => (m.date > todayStr || m.status === 'Postponed') && m.status !== 'Completed' && m.status !== 'Cancelled');
-  const historyMeetings = meetings.filter(m => m.status !== 'Postponed' && (m.status === 'Completed' || m.status === 'Cancelled' || m.date < todayStr));
+  const quotationCount = (job?.quotationItems || []).length;
+  const wagesCount = (job?.dailyWages || []).length;
+  const groupedWages = groupWagesByDate(job?.dailyWages);
+  const purchasesCount = (job?.purchasesAndExpenses || []).length;
+  const paymentsCount = (job?.clientPayments || []).length;
 
-  // Filtering Follow-ups
-  const todayFollowups = followups.filter(f => f.dueDate === todayStr);
-  const upcomingFollowups = followups.filter(f => f.dueDate > todayStr && f.status !== 'Completed');
-  const overdueFollowups = followups.filter(f => f.dueDate < todayStr && f.status !== 'Completed');
+  const paidPercent = fin.totalQuotation > 0 
+    ? Math.min(100, Math.round((fin.totalAmountReceived / fin.totalQuotation) * 100))
+    : 0;
 
-  // Active Follow-ups list selection
-  const activeFollowupsList = 
-    followupsSubTab === 'all' ? followups :
-    followupsSubTab === 'today' ? todayFollowups :
-    followupsSubTab === 'upcoming' ? upcomingFollowups :
-    overdueFollowups;
-
-  // Calendar calculations
-  const currYear = calendarDate.getFullYear();
-  const currMonth = calendarDate.getMonth();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const daysInMonth = new Date(currYear, currMonth + 1, 0).getDate();
-  const firstDayOfWeek = new Date(currYear, currMonth, 1).getDay();
-
-  // Events for selected calendar date modal
-  const selectedDateMeetings = meetings.filter(m => m.date === selectedCalendarDate);
-  const selectedDateFollowups = followups.filter(f => f.dueDate === selectedCalendarDate);
-
-  // Unified Activity Timeline entries (ONLY showing completed meetings & system logs)
-  const combinedTimeline = [
-    ...activities.map(act => ({
-      id: act._id || act.id || `act_${Math.random()}`,
-      category: 'system',
-      title: act.title || 'Client Log Recorded',
-      subtitle: act.description || 'System activity logged',
-      date: act.createdAt ? new Date(act.createdAt).toLocaleString() : 'Recently',
-      timestamp: act.createdAt ? new Date(act.createdAt).getTime() : Date.now(),
-      status: 'Logged',
-      icon: Activity,
-      color: 'bg-slate-500'
-    })),
-    ...meetings.filter(m => m.status === 'Completed').map(m => ({
-      id: `m_tl_${m.id}`,
-      category: 'meeting',
-      title: `Completed Meeting: ${m.title}`,
-      subtitle: `Date: ${m.date} at ${m.time} (${m.type}) • Attendees: ${m.attendees || 'Account Team'}`,
-      date: `${m.date} ${m.time}`,
-      timestamp: new Date(`${m.date} ${m.time}`).getTime() || Date.now(),
-      status: m.status,
-      icon: Video,
-      color: 'bg-emerald-500'
-    }))
-  ].sort((a, b) => b.timestamp - a.timestamp);
+  const filteredPurchasesAndExpenses = (job?.purchasesAndExpenses || []).filter(item => {
+    if (expenseFilter === 'All') return true;
+    return item.type === expenseFilter;
+  });
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
-      {/* Back Button */}
-      <button
-        onClick={() => navigate('/clients')}
-        className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors w-fit cursor-pointer"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Directory
-      </button>
+    <div className="space-y-8 max-w-7xl mx-auto pb-20">
+      {/* 1. Header Navigation Bar */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => navigate('/clients')}
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          <ArrowLeft size={16} />
+          <span>Back to Clients Directory</span>
+        </button>
 
-      {/* Profile Header Hero Card */}
-      <div className="p-6 md:p-8 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-xl flex flex-col md:flex-row justify-between gap-6 items-start md:items-center">
-        <div className="flex items-center gap-5">
-          {client.companyLogo ? (
-            <img src={client.companyLogo} alt="" className="w-16 h-16 rounded-2xl object-cover ring-4 ring-indigo-500/20 shadow-md" />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              {client.companyName?.[0]}
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer shadow-xs"
+          >
+            <Printer size={14} />
+            <span>Print Client Ledger</span>
+          </button>
+          <button
+            onClick={() => setEditClientOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer shadow-xs"
+          >
+            <Edit className="w-3.5 h-3.5" />
+            <span>Edit Profile</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Client Identity Header */}
+      <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-black text-2xl flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0">
+            {clientName[0]?.toUpperCase() || 'C'}
+          </div>
 
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100">{client.companyName}</h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-mono text-[11px] font-bold">
-                {client.clientId}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+                {clientName}
+              </h1>
+              {job?.jobId && (
+                <span className="font-mono text-xs px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-lg font-bold border border-indigo-200 dark:border-indigo-800">
+                  Job #{job.jobId}
+                </span>
+              )}
+              <span className="text-xs px-2.5 py-0.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-lg font-bold border border-emerald-200 dark:border-emerald-800">
+                Fabrication Workspace
               </span>
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1 flex items-center gap-3">
-              <span>Primary Contact: <strong className="text-slate-700 dark:text-slate-300">{client.clientName}</strong></span>
-              <span>•</span>
-              <span>{client.industry || 'Technology'}</span>
-            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-semibold mt-2">
+              {phone && (
+                <span className="flex items-center gap-1">
+                  <Phone size={13} className="text-slate-400" />
+                  <a href={`tel:${phone}`} className="hover:underline">{phone}</a>
+                </span>
+              )}
+              {email && (
+                <span className="flex items-center gap-1">
+                  <Mail size={13} className="text-slate-400" />
+                  <a href={`mailto:${email}`} className="hover:underline">{email}</a>
+                </span>
+              )}
+              {address && (
+                <span className="flex items-center gap-1">
+                  <MapPin size={13} className="text-slate-400" />
+                  <span>{address}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end flex-wrap">
-          <button
-            onClick={() => handleOpenAddMeeting()}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all cursor-pointer hover:scale-[1.02]"
-          >
-            <Video className="w-4 h-4" />
-            <span>Schedule Meeting</span>
-          </button>
-          <button
-            onClick={() => handleOpenAddFollowUp()}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer hover:scale-[1.02]"
-          >
-            <CheckSquare className="w-4 h-4" />
-            <span>Add Follow-up</span>
-          </button>
-          <button
-            onClick={() => setEditOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
-          >
-            <Edit className="w-4 h-4" />
-            <span>Edit Client</span>
-          </button>
-          <Link
-            to={`/projects/new?clientId=${client._id || client.id || client.clientId || id || ''}&clientName=${encodeURIComponent(client.companyName || '')}`}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-all hover:scale-[1.02]"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Project</span>
-          </Link>
+        {/* Quick Highlights Badge */}
+        <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 w-full md:w-auto justify-between md:justify-start">
+          <div>
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Balance Pending</span>
+            <span className="text-base font-extrabold text-amber-600 dark:text-amber-400">
+              {formatCurrency(fin.balanceDue)}
+            </span>
+          </div>
+          <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+          <div>
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Quoted</span>
+            <span className="text-base font-extrabold text-slate-900 dark:text-white">
+              {formatCurrency(fin.totalQuotation)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Tabs Bar */}
-      <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800/80 pb-1 overflow-x-auto">
-        {[
-          { id: 'overview', label: 'Overview & Info', icon: Building },
-          { id: 'projects', label: `Projects (${clientProjects.length})`, icon: FolderKanban },
-          { id: 'meetings', label: `Meetings (${meetings.length})`, icon: Video },
-          { id: 'followups', label: `Follow-ups (${followups.length})`, icon: CheckSquare },
-          { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-          { id: 'reports', label: 'Reports', icon: BarChart3 },
-          { id: 'timeline', label: `Activity Timeline (${combinedTimeline.length})`, icon: Clock }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-extrabold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
-                isActive 
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* 3. Sticky Quick Jump Anchor Navigation Bar */}
+      <div className="sticky top-2 z-30 p-2.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-md flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-extrabold uppercase text-slate-400 px-2 hidden sm:inline">
+            Jump to:
+          </span>
+
+          <button
+            onClick={() => scrollToSection('section-quotation')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <FileText size={14} className="text-indigo-600" />
+            <span>1. Quotation ({quotationCount})</span>
+          </button>
+
+          <button
+            onClick={() => scrollToSection('section-wages')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Users size={14} className="text-indigo-600" />
+            <span>2. Daily Wages ({wagesCount})</span>
+          </button>
+
+          <button
+            onClick={() => scrollToSection('section-purchases')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <ShoppingCart size={14} className="text-indigo-600" />
+            <span>3. Purchases & Expenses ({purchasesCount})</span>
+          </button>
+
+          <button
+            onClick={() => scrollToSection('section-payments')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <CreditCard size={14} className="text-emerald-600" />
+            <span>4. Amount Given ({paymentsCount})</span>
+          </button>
+
+          <button
+            onClick={() => scrollToSection('section-financials')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 transition-colors cursor-pointer whitespace-nowrap border border-indigo-200 dark:border-indigo-800/60"
+          >
+            <DollarSign size={14} />
+            <span>5. Overall Financials</span>
+          </button>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-2 text-xs font-semibold text-slate-500">
+          <span>Paid: {paidPercent}%</span>
+          <div className="w-20 bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+            <div className="bg-emerald-500 h-2" style={{ width: `${paidPercent}%` }} />
+          </div>
+        </div>
       </div>
 
-      {/* Tab Panels */}
-      {/* 1. OVERVIEW TAB */}
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm flex flex-col gap-6">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
-              <Building size={16} className="text-indigo-600" /> Commercial & Account Parameters
-            </h2>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col gap-1">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Account Type</span>
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100">{client.clientType}</span>
-              </div>
-              <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 flex flex-col gap-1">
-                <span className="text-[10px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">NDA Status</span>
-                <span className="text-xs font-black text-emerald-700 dark:text-emerald-300">{client.ndaStatus}</span>
-              </div>
-              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 flex flex-col gap-1">
-                <span className="text-[10px] font-extrabold uppercase text-indigo-600 dark:text-indigo-400">Expected Revenue</span>
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100">₹{(client.expectedMonthlyRevenue || 0).toLocaleString()}/mo</span>
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col gap-1">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Lead Source</span>
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100">{client.leadSource || 'Direct'}</span>
-              </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col gap-1">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Support SLA</span>
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100">{client.supportPlan || 'Standard'}</span>
-              </div>
+      {/* ========================================================================= */}
+      {/* SECTION 1: 📋 ITEMISED WORK QUOTATION & MEASUREMENTS                      */}
+      {/* ========================================================================= */}
+      <section id="section-quotation" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
+              <FileText size={20} />
             </div>
-
-            {client.notes && (
-              <div className="flex flex-col gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400">Internal Account Notes</span>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  {client.notes}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm flex flex-col gap-4">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-2">
-              Contact & Location
-            </h2>
-
-            <div className="flex flex-col gap-3.5 text-xs text-slate-700 dark:text-slate-300">
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <Mail className="w-4 h-4 text-indigo-500 shrink-0" />
-                <span className="font-semibold">{client.email}</span>
-              </div>
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <Phone className="w-4 h-4 text-indigo-500 shrink-0" />
-                <span className="font-semibold">{client.phone}</span>
-              </div>
-              {client.alternativePhone && (
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                  <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="text-slate-500 font-semibold">{client.alternativePhone} <span className="text-[10px] text-slate-400">(Alt)</span></span>
-                </div>
-              )}
-              {client.website && (
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                  <Globe className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <a href={client.website} target="_blank" rel="noreferrer" className="text-indigo-600 font-semibold hover:underline">
-                    {client.website}
-                  </a>
-                </div>
-              )}
-              {client.address && (
-                <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                  <MapPin className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                  <span className="font-semibold">{client.address}, {client.city}, {client.country}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. PROJECTS TAB */}
-      {activeTab === 'projects' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clientProjects.length === 0 ? (
-            <div className="col-span-3 py-12 text-center text-xs text-slate-400 font-semibold bg-white/50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
-              No projects created for this client yet.
-            </div>
-          ) : (
-            clientProjects.map((prj) => (
-              <div key={prj._id || prj.id} className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm hover:shadow-xl hover:border-indigo-500/40 hover:-translate-y-0.5 transition-all flex flex-col justify-between space-y-3">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <h3 className="text-xs font-black text-slate-900 dark:text-slate-100 leading-snug">{prj.projectName}</h3>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-[9px] font-black text-indigo-600 border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider">
-                        {prj.status}
-                      </span>
-                      <Link
-                        to={`/projects/${prj._id || prj.id}`}
-                        className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
-                        title="Edit Project"
-                      >
-                        <Pencil size={12} />
-                      </Link>
-                      <button
-                        onClick={() => handleDeleteProjectCard(prj._id || prj.id)}
-                        className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                        title="Delete Project"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">{prj.description || 'No description provided.'}</p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
-                  <span className="text-[10px] font-mono font-bold text-slate-400">{prj.projectCode}</span>
-                  <Link to={`/projects/${prj._id || prj.id}`} className="text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5">
-                    Manage <ChevronRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* 3. MEETINGS TAB */}
-      {activeTab === 'meetings' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            {/* Meetings Sub-tabs */}
-            <div className="flex gap-2">
-              {[
-                { id: 'today', label: `Today's Meetings (${todayMeetings.length})` },
-                { id: 'upcoming', label: `Upcoming (${upcomingMeetings.length})` },
-                { id: 'history', label: `Meeting History (${historyMeetings.length})` }
-              ].map(sub => (
-                <button
-                  key={sub.id}
-                  onClick={() => setMeetingsSubTab(sub.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer transition ${
-                    meetingsSubTab === sub.id 
-                      ? 'bg-indigo-600 text-white shadow-xs' 
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  {sub.label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => handleOpenAddMeeting()}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20 w-fit transition"
-            >
-              <Plus size={14} /> Schedule Meeting
-            </button>
-          </div>
-
-          {/* Compact 3-Column Meetings Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {((meetingsSubTab === 'today' ? todayMeetings : meetingsSubTab === 'upcoming' ? upcomingMeetings : historyMeetings)).length === 0 ? (
-              <div className="col-span-3 py-12 text-center text-xs text-slate-400 font-semibold bg-white/50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
-                No meetings found in this category.
-              </div>
-            ) : (
-              (meetingsSubTab === 'today' ? todayMeetings : meetingsSubTab === 'upcoming' ? upcomingMeetings : historyMeetings).map(m => (
-                <div
-                  key={m.id}
-                  className={`p-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 border backdrop-blur-md shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between space-y-3 relative overflow-hidden ${
-                    m.status === 'Completed' ? 'border-emerald-500/30 border-l-4 border-l-emerald-500' :
-                    m.status === 'Scheduled' ? 'border-indigo-500/30 border-l-4 border-l-indigo-500' :
-                    m.status === 'Postponed' ? 'border-amber-500/30 border-l-4 border-l-amber-500' :
-                    'border-rose-500/30 border-l-4 border-l-rose-500'
-                  }`}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-1.5">
-                      <h3 className="font-black text-xs text-slate-900 dark:text-white leading-snug line-clamp-2 flex-1">{m.title}</h3>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {/* Sleek Custom Styled Status Badge Dropdown */}
-                        <div className="relative inline-block">
-                          <select
-                            value={m.status}
-                            onChange={e => handleSelectMeetingStatus(m, e.target.value)}
-                            className={`appearance-none px-2 py-0.5 text-[9px] font-extrabold rounded-full uppercase tracking-wider border shadow-2xs outline-none cursor-pointer pr-5 transition-all ${
-                              m.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' :
-                              m.status === 'Scheduled' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800' :
-                              m.status === 'Postponed' ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 ring-2 ring-amber-400/30' :
-                              'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                            }`}
-                            title="Click to update or postpone meeting"
-                          >
-                            <option value="Scheduled">Scheduled</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Postponed">Postponed</option>
-                            <option value="Cancelled">Cancelled</option>
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-current opacity-70">
-                            <svg className="w-2 h-2 fill-current" viewBox="0 0 20 20">
-                              <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                            </svg>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => handleEditMeeting(m)}
-                          className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                          title="Edit Meeting Details"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMeeting(m.id)}
-                          className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          title="Delete Meeting"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500 pt-0.5">
-                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                        <CalendarIcon size={11} className="text-indigo-500" />
-                        <span>{m.date}</span>
-                      </div>
-                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                        <Clock size={11} className="text-indigo-500" />
-                        <span>{m.time}</span>
-                      </div>
-                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                        <Video size={11} className="text-indigo-500" />
-                        <span className="truncate max-w-[100px]">{m.type}</span>
-                      </div>
-                    </div>
-
-                    {m.notes && (
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 line-clamp-2">
-                        {m.notes}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2 flex items-center justify-between">
-                    <span className="truncate">Attendees: <strong className="text-slate-700 dark:text-slate-300">{m.attendees}</strong></span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 4. FOLLOW-UPS TAB */}
-      {activeTab === 'followups' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/80 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            {/* Follow-ups Sub-tabs - Total Follow-ups next to Overdue */}
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { id: 'today', label: `Today's Follow-ups (${todayFollowups.length})` },
-                { id: 'upcoming', label: `Upcoming (${upcomingFollowups.length})` },
-                { id: 'overdue', label: `Overdue (${overdueFollowups.length})` },
-                { id: 'all', label: `Total Follow-ups (${followups.length})` }
-              ].map(sub => (
-                <button
-                  key={sub.id}
-                  onClick={() => setFollowupsSubTab(sub.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer transition ${
-                    followupsSubTab === sub.id 
-                      ? 'bg-indigo-600 text-white shadow-xs' 
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  {sub.label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => handleOpenAddFollowUp()}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20 w-fit transition"
-            >
-              <Plus size={14} /> Add Follow-up
-            </button>
-          </div>
-
-          {/* Render Active Follow-ups Sub-tab list */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeFollowupsList.length === 0 ? (
-              <div className="col-span-3 py-12 text-center text-xs text-slate-400 font-semibold bg-white/50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
-                No follow-ups found in this section.
-              </div>
-            ) : (
-              activeFollowupsList.map(f => (
-                <div
-                  key={f.id}
-                  className={`p-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 border backdrop-blur-md shadow-sm hover:shadow-lg transition-all flex items-start justify-between gap-3 ${
-                    f.priority === 'High' ? 'border-l-4 border-l-rose-500 border-slate-200/80 dark:border-slate-800/80' :
-                    f.priority === 'Medium' ? 'border-l-4 border-l-amber-500 border-slate-200/80 dark:border-slate-800/80' :
-                    'border-l-4 border-l-slate-400 border-slate-200/80 dark:border-slate-800/80'
-                  }`}
-                >
-                  <div className="flex items-start gap-2.5 flex-1">
-                    <button
-                      onClick={() => toggleFollowUpStatus(f.id)}
-                      className={`mt-0.5 p-1 rounded-lg border transition cursor-pointer ${
-                        f.status === 'Completed'
-                          ? 'bg-emerald-500 border-emerald-600 text-white shadow-xs'
-                          : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-transparent hover:text-slate-400'
-                      }`}
-                    >
-                      <Check size={13} />
-                    </button>
-
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h3 className={`font-black text-xs ${f.status === 'Completed' ? 'line-through text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                          {f.title}
-                        </h3>
-                        <span className={`px-2 py-0.5 text-[8px] font-black rounded-full uppercase tracking-wider shrink-0 ${
-                          f.priority === 'High' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200' :
-                          f.priority === 'Medium' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
-                          {f.priority}
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">{f.notes}</p>
-
-                      <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 pt-0.5">
-                        <span>Due: <strong>{f.dueDate}</strong></span>
-                        {f.dueDate < todayStr && f.status !== 'Completed' && (
-                          <span className="text-rose-500 font-extrabold flex items-center gap-0.5">
-                            <AlertCircle size={10} /> OVERDUE
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 ml-1">
-                    <button
-                      onClick={() => handleEditFollowUp(f)}
-                      className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                      title="Edit Follow-up"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteFollowUp(f.id)}
-                      className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                      title="Delete Follow-up"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 5. CALENDAR TAB - Sleek Enterprise UI & Interactive Date Detail Modal */}
-      {activeTab === 'calendar' && (
-        <div className="p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-xl space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50">
-                <CalendarDays size={22} />
-              </div>
-              <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
-                  {monthNames[currMonth]} {currYear}
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-400">Click any date to view detailed meetings & follow-ups</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCalendarDate(new Date(currYear, currMonth - 1, 1))}
-                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 transition cursor-pointer"
-                title="Previous Month"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                onClick={() => setCalendarDate(new Date())}
-                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm cursor-pointer transition"
-              >
-                Today
-              </button>
-              <button
-                onClick={() => setCalendarDate(new Date(currYear, currMonth + 1, 1))}
-                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 transition cursor-pointer"
-                title="Next Month"
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Weekday Header Bar */}
-          <div className="grid grid-cols-7 gap-2 text-center">
-            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(d => (
-              <div key={d} className="font-black text-slate-400 dark:text-slate-500 py-1.5 uppercase text-[10px] tracking-wider bg-slate-50/60 dark:bg-slate-800/40 rounded-xl">
-                {d.slice(0, 3)}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {/* Empty slots before first day */}
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div key={`empty_${i}`} className="h-28 bg-slate-50/20 dark:bg-slate-800/10 rounded-2xl border border-dashed border-slate-100 dark:border-slate-800/30 opacity-30"></div>
-            ))}
-
-            {/* Days in Month */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum = i + 1;
-              const dateStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-              const dayMeetings = meetings.filter(m => m.date === dateStr);
-              const dayFollowups = followups.filter(f => f.dueDate === dateStr);
-              const totalEventsCount = dayMeetings.length + dayFollowups.length;
-              const isToday = dateStr === todayStr;
-
-              return (
-                <div
-                  key={`day_${dayNum}`}
-                  onClick={() => handleCalendarDayClick(dateStr)}
-                  className={`h-28 p-2 rounded-2xl border text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg hover:border-indigo-500/50 hover:ring-2 hover:ring-indigo-500/20 ${
-                    isToday 
-                      ? 'bg-indigo-50/90 dark:bg-indigo-950/50 border-indigo-500/60 ring-2 ring-indigo-500/30' 
-                      : totalEventsCount > 0
-                      ? 'bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800'
-                      : 'bg-slate-50/40 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/50 hover:bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[11px] font-black w-6 h-6 flex items-center justify-center rounded-full ${
-                      isToday ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 dark:text-slate-300'
-                    }`}>
-                      {dayNum}
-                    </span>
-                    {totalEventsCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono text-[9px] font-bold">
-                        {totalEventsCount} {totalEventsCount === 1 ? 'event' : 'events'}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-1 overflow-hidden my-1">
-                    {dayMeetings.slice(0, 2).map(m => (
-                      <div
-                        key={m.id}
-                        className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-lg border truncate flex items-center gap-1 ${
-                          m.status === 'Postponed' ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300' :
-                          m.status === 'Completed' ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300' :
-                          'bg-indigo-100 text-indigo-900 border-indigo-200 dark:bg-indigo-950/80 dark:text-indigo-300'
-                        }`}
-                        title={`${m.title} (${m.status})`}
-                      >
-                        <Video size={10} className="shrink-0" />
-                        <span className="truncate">{m.title}</span>
-                      </div>
-                    ))}
-
-                    {dayFollowups.slice(0, 2 - Math.min(dayMeetings.length, 2)).map(f => (
-                      <div
-                        key={f.id}
-                        className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 truncate flex items-center gap-1"
-                        title={`Follow-up: ${f.title}`}
-                      >
-                        <CheckSquare size={10} className="shrink-0 text-amber-600" />
-                        <span className="truncate">{f.title}</span>
-                      </div>
-                    ))}
-
-                    {totalEventsCount > 2 && (
-                      <div className="text-[8px] font-bold text-slate-400 pl-1">
-                        +{totalEventsCount - 2} more...
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-[9px] font-semibold text-slate-400 flex items-center justify-between opacity-80 group-hover:opacity-100">
-                    <span>Click for details</span>
-                    <Eye size={11} className="text-indigo-500" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 6. REPORTS TAB */}
-      {activeTab === 'reports' && (
-        <div className="space-y-4">
-          <div className="flex gap-2 bg-white/80 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
-            {[
-              { id: 'meetings', label: 'Meeting Report', icon: Video },
-              { id: 'followups', label: 'Follow-up Report', icon: CheckSquare }
-            ].map(sub => {
-              const Icon = sub.icon;
-              return (
-                <button
-                  key={sub.id}
-                  onClick={() => setReportsSubTab(sub.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition ${
-                    reportsSubTab === sub.id 
-                      ? 'bg-indigo-600 text-white shadow-xs' 
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  <Icon size={14} />
-                  <span>{sub.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* MEETING REPORT */}
-          {reportsSubTab === 'meetings' && (
-            <div className="p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Total Scheduled Meetings</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{meetings.length} Meetings</div>
-                </div>
-                <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Completed Meetings</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{historyMeetings.length} Completed</div>
-                </div>
-                <div className="p-4 rounded-2xl bg-purple-50/50 dark:bg-purple-950/40 border border-purple-200/50 dark:border-purple-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400">Upcoming Syncs</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{upcomingMeetings.length + todayMeetings.length} Upcoming</div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">Meeting Summary Breakdown</h3>
-                <div className="space-y-2">
-                  {meetings.map(m => (
-                    <div key={m.id} className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{m.title}</span>
-                        <span className="text-slate-400 ml-2">({m.date} at {m.time})</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={m.status}
-                          onChange={e => handleSelectMeetingStatus(m, e.target.value)}
-                          className={`px-2.5 py-1 text-[9px] font-bold rounded-full uppercase border outline-none cursor-pointer ${
-                            m.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                            m.status === 'Scheduled' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
-                            m.status === 'Postponed' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-rose-100 text-rose-800 border-rose-200'
-                          }`}
-                        >
-                          <option value="Scheduled">Scheduled</option>
-                          <option value="Completed">Completed</option>
-                          <option value="Postponed">Postponed</option>
-                          <option value="Cancelled">Cancelled</option>
-                        </select>
-                        <button onClick={() => handleEditMeeting(m)} className="p-1 rounded text-slate-400 hover:text-indigo-600 transition cursor-pointer" title="Edit Meeting"><Pencil size={13} /></button>
-                        <button onClick={() => handleDeleteMeeting(m.id)} className="p-1 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer" title="Delete Meeting"><Trash2 size={13} /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* FOLLOW-UP REPORT */}
-          {reportsSubTab === 'followups' && (
-            <div className="p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Total Follow-ups</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{followups.length} Tasks</div>
-                </div>
-                <div className="p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-950/40 border border-rose-200/50 dark:border-rose-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">Overdue Tasks</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">{overdueFollowups.length} Overdue</div>
-                </div>
-                <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-800/50">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Completion Rate</span>
-                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
-                    {followups.length > 0 ? Math.round((followups.filter(f => f.status === 'Completed').length / followups.length) * 100) : 100}%
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">Follow-up Task Audit</h3>
-                <div className="space-y-2">
-                  {followups.map(f => (
-                    <div key={f.id} className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{f.title}</span>
-                        <span className="text-slate-400 ml-2">Due: {f.dueDate}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-0.5 text-[9px] font-bold rounded-full uppercase ${f.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>
-                          {f.status}
-                        </span>
-                        <button onClick={() => handleEditFollowUp(f)} className="p-1 rounded text-slate-400 hover:text-indigo-600 transition cursor-pointer" title="Edit Follow-up"><Pencil size={13} /></button>
-                        <button onClick={() => handleDeleteFollowUp(f.id)} className="p-1 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer" title="Delete Follow-up"><Trash2 size={13} /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 7. TIMELINE TAB - Activity Log showing ONLY Completed Meetings and System Logs */}
-      {activeTab === 'timeline' && (
-        <div className="p-6 rounded-3xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-sm space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <Clock size={18} className="text-indigo-600" /> Client Activity Timeline Log
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                1. Quotation & Work Measurements
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                  {quotationCount} items
+                </span>
               </h2>
-              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                Unified audit trail including completed meetings and system records.
+              <p className="text-xs text-slate-500">
+                Itemize fabrication scopes, dimensions (Sq.Ft / Inches / Kg / Nos), rates and auto-calculate total.
               </p>
             </div>
-            <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 text-xs font-bold rounded-full font-mono">
-              {combinedTimeline.length} events logged
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <span className="text-[11px] font-bold uppercase text-slate-400 block">Quotation Subtotal</span>
+              <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">
+                {formatCurrency(fin.totalQuotation)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsInvoiceOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              title="Download or Print Quotation Work Invoice PDF"
+            >
+              <Download size={15} />
+              <span>Download Invoice</span>
+            </button>
+          </div>
+        </div>
+
+        {/* INLINE QUICK-ADD FORM FOR QUOTATION */}
+        <form onSubmit={handleSaveQuotationItem} className="p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 space-y-3">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+            <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+              <Plus size={15} />
+              <span>Add Quotation Item (Direct Inline Entry)</span>
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal">
+              Auto-calculates Amount = (Quantity × Rate) − Discount
             </span>
           </div>
 
-          <div className="space-y-3">
-            {combinedTimeline.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-400 font-semibold bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-                No activity recorded yet for this client.
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="md:col-span-5">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                  Item / Work Scope Description <span className="text-rose-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsWorkScopeModalOpen(true)}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                  title="Add, Edit or Delete Descriptions"
+                >
+                  <Plus size={11} className="stroke-[3]" />
+                  <span>Manage</span>
+                </button>
               </div>
-            ) : (
-              combinedTimeline.map((item) => {
-                const ItemIcon = item.icon;
-                return (
-                  <div key={item.id} className="flex items-start gap-4 bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 hover:shadow-md transition-all">
-                    <div className={`p-2.5 rounded-xl ${item.color} text-white shadow-xs shrink-0`}>
-                      <ItemIcon size={16} />
-                    </div>
+              <input
+                type="text"
+                required
+                list="client-work-scope-descriptions-list"
+                placeholder="e.g. Main Gate Tubular MS Frame (12x7 ft)"
+                value={quoteForm.description}
+                onChange={(e) => setQuoteForm({ ...quoteForm, description: e.target.value })}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <datalist id="client-work-scope-descriptions-list">
+                {workScopeDescriptions.map((desc, i) => (
+                  <option key={i} value={desc} />
+                ))}
+              </datalist>
+            </div>
 
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 truncate">
-                          {item.title}
-                        </h3>
-                        <span className={`px-2 py-0.5 text-[9px] font-black rounded-full uppercase tracking-wider shrink-0 ${
-                          item.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200' :
-                          'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200'
-                        }`}>
-                          {item.status}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Unit
+              </label>
+              <select
+                value={quoteForm.unit}
+                onChange={(e) => setQuoteForm({ ...quoteForm, unit: e.target.value })}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Qty
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={quoteForm.quantity}
+                onChange={(e) => handleQuoteQtyPriceChange(e.target.value, quoteForm.unitPrice)}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Rate (₹)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                placeholder="Rate"
+                value={quoteForm.unitPrice}
+                onChange={(e) => handleQuoteQtyPriceChange(quoteForm.quantity, e.target.value)}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="md:col-span-2 flex items-center justify-between gap-1.5">
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total</span>
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                  {formatCurrency(quoteForm.amount)}
+                </span>
+              </div>
+              <button
+                type="submit"
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
+              >
+                + Add Item
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* QUOTATION TABLE */}
+        {quotationCount === 0 ? (
+          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+            <FileText size={28} className="mx-auto text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No quotation items added yet</p>
+            <p className="text-[11px] text-slate-400">Use the form above to enter your first line item with measurements & rates.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">#</th>
+                    <th className="py-3 px-4">Work / Item Description</th>
+                    <th className="py-3 px-4 text-center">Unit</th>
+                    <th className="py-3 px-4 text-right">Quantity</th>
+                    <th className="py-3 px-4 text-right">Unit Rate</th>
+                    <th className="py-3 px-4 text-right">Total Amount</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {job.quotationItems.map((item, idx) => (
+                    <tr key={item._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                      <td className="py-3 px-4 font-mono text-slate-400">{idx + 1}</td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-900 dark:text-white">{item.description}</div>
+                        {item.notes && <div className="text-[11px] text-slate-400 mt-0.5">{item.notes}</div>}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300 font-semibold">
+                          {item.unit}
                         </span>
-                      </div>
+                      </td>
+                      <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
+                        {item.quantity}
+                      </td>
+                      <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                        {formatCurrency(item.unitPrice)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                        {formatCurrency(item.amount)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => openEditQuotationModal(item)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Edit Item"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            onClick={() => promptDeleteQuotationItem(item)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Delete Item"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Subtotal & Discount row */}
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                    <td colSpan={2} className="py-2.5 px-4 text-left">
+                      <button
+                        type="button"
+                        onClick={() => setIsInvoiceOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-xs cursor-pointer"
+                      >
+                        <Download size={13} />
+                        <span>Download Invoice PDF</span>
+                      </button>
+                    </td>
+                    <td colSpan={3} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                      {fin.discountAmount > 0 ? (
+                        <span>Gross Total: {formatCurrency(fin.grossQuotation)} • Discount: −{formatCurrency(fin.discountAmount)} • Net Quoted:</span>
+                      ) : (
+                        <span>Total Quotation Value:</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-sm text-indigo-600 dark:text-indigo-400">
+                      {formatCurrency(fin.totalQuotation)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">{item.subtitle}</p>
+        {/* Overall Quotation Discount Card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 rounded-xl border border-rose-200/60 dark:border-rose-900/40">
+              <Percent size={16} />
+            </span>
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Overall Quotation Discount
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Deduct special flat amount (₹) or percentage (%) from total quoted work order
+              </span>
+            </div>
+          </div>
 
-                      <div className="text-[10px] font-mono text-slate-400 pt-0.5">
-                        <span>{item.date}</span>
-                      </div>
-                    </div>
+          <form onSubmit={handleApplyOverallDiscount} className="flex items-center gap-2">
+            <select
+              value={overallDiscount.type}
+              onChange={(e) => setOverallDiscount(prev => ({ ...prev, type: e.target.value }))}
+              className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+            >
+              <option value="fixed">Flat (₹)</option>
+              <option value="percentage">Percent (%)</option>
+            </select>
+
+            <input
+              type="number"
+              min="0"
+              step="any"
+              placeholder="0"
+              value={overallDiscount.value}
+              onChange={(e) => setOverallDiscount(prev => ({ ...prev, value: e.target.value }))}
+              className="w-24 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white"
+            />
+
+            <button
+              type="submit"
+              disabled={savingDiscount}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {savingDiscount ? 'Applying...' : 'Apply Discount'}
+            </button>
+          </form>
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 2: 👷 EMPLOYEE DAILY WAGES TRACKER                                */}
+      {/* ========================================================================= */}
+      <section id="section-wages" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
+              <Users size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                2. Employee Daily Wage Tracker
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                  {wagesCount} entries
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Log daily worker wages with a calendar date picker, employee picker, shifts and overtime payout.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Wages Incurred</span>
+            <span className="text-lg font-black text-rose-600 dark:text-rose-400">
+              {formatCurrency(fin.totalWages)}
+            </span>
+          </div>
+        </div>
+
+        {/* INLINE QUICK-ADD FORM FOR DAILY WAGES */}
+        <form onSubmit={handleSaveWage} className="p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 space-y-3">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+            <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+              <Plus size={15} />
+              <span>Log Daily Wage (Direct Inline Entry)</span>
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal">
+              Total Wage = Daily Rate + (OT Hours × OT Rate)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            {/* Calendar Date Picker */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Work Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={wageForm.date}
+                onChange={(e) => setWageForm({ ...wageForm, date: e.target.value })}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              />
+            </div>
+
+            {/* Employee Selection Dropdown */}
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Select Employee / Welder <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={wageForm.employee}
+                onChange={handleEmployeeDropdownSelect}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="">-- Choose Employee / Staff --</option>
+                {employees.map(emp => (
+                  <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                    {emp.name || emp.username} ({emp.designation || emp.role?.name || emp.role || 'Staff'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Shift Type */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Shift Type
+              </label>
+              <select
+                value={wageForm.shiftType}
+                onChange={(e) => setWageForm({ ...wageForm, shiftType: e.target.value })}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                {SHIFT_TYPES.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Daily Rate */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Daily Rate (₹)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={wageForm.dailyRate}
+                onChange={(e) => handleWageCalcChange(e.target.value, wageForm.overtimeHours, wageForm.overtimeRate)}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Overtime (Hours & Rate) */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                OT (Hrs @ ₹/hr)
+              </label>
+              <div className="flex gap-1">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="Hrs"
+                  value={wageForm.overtimeHours}
+                  onChange={(e) => handleWageCalcChange(wageForm.dailyRate, e.target.value, wageForm.overtimeRate)}
+                  className="w-1/2 px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="₹/hr"
+                  value={wageForm.overtimeRate}
+                  onChange={(e) => handleWageCalcChange(wageForm.dailyRate, wageForm.overtimeHours, e.target.value)}
+                  className="w-1/2 px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Submit & Wage Subtotal */}
+            <div className="md:col-span-1">
+              <button
+                type="submit"
+                className="w-full px-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                title={`Log Wage: ${formatCurrency(wageForm.totalWage)}`}
+              >
+                + Log
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* WAGES TABLE */}
+        {wagesCount === 0 ? (
+          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+            <Users size={28} className="mx-auto text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No daily wage records logged yet</p>
+            <p className="text-[11px] text-slate-400">Select an employee and work date above to track labor costs.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">Employee / Fabricator</th>
+                    <th className="py-3 px-4">Shift & Work Notes</th>
+                    <th className="py-3 px-4 text-right">Daily Rate</th>
+                    <th className="py-3 px-4 text-right">Overtime</th>
+                    <th className="py-3 px-4 text-right">Total Wage</th>
+                    <th className="py-3 px-4 text-center w-24">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {groupedWages.map((group) => (
+                    <React.Fragment key={group.key}>
+                      {/* Minimal Date Head Row */}
+                      <tr className="bg-slate-100/80 dark:bg-slate-800/70 border-t border-b border-slate-200 dark:border-slate-700">
+                        <td colSpan={6} className="py-2 px-4">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <Calendar size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {group.displayDate}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                • {group.entries.length} {group.entries.length === 1 ? 'shift' : 'shifts'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11.5px]">
+                              <span className="text-slate-500 dark:text-slate-400">Day Total:</span>
+                              <span className="font-bold font-mono text-slate-900 dark:text-slate-100">
+                                {formatCurrency(group.totalWage)}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Shift / Employee Rows under this Date */}
+                      {group.entries.map((wage) => (
+                        <tr key={wage._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                          <td className="py-3 px-4 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            👷 {wage.employeeName}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="inline-block px-2 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded text-[11px] font-bold mr-2">
+                              {wage.shiftType}
+                            </span>
+                            <span className="text-slate-600 dark:text-slate-400">
+                              {wage.workDescription || wage.notes || '-'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                            {formatCurrency(wage.dailyRate)}
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-500">
+                            {wage.overtimeHours > 0 ? (
+                              <span>{wage.overtimeHours}h @ {formatCurrency(wage.overtimeRate)}</span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                            {formatCurrency(wage.totalWage)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openEditWageModal(wage)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                title="Edit Record"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                onClick={() => promptDeleteWage(wage)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                title="Delete Record"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                  {/* Subtotal row */}
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                    <td colSpan={4} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                      Total Employee Daily Wages:
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400">
+                      {formatCurrency(fin.totalWages)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 3: 🛒 MATERIAL PURCHASES & OPERATIONAL EXPENSES                   */}
+      {/* ========================================================================= */}
+      <section id="section-purchases" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
+              <ShoppingCart size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                3. Material Purchases & Operational Expenses
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                  {purchasesCount} items
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Log metal purchases (Sq.Ft, Inches, Kg, Tubes), welding consumables, transport & site expenses.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Purchases & Expenses</span>
+            <span className="text-lg font-black text-rose-600 dark:text-rose-400">
+              {formatCurrency(fin.totalPurchases + fin.totalExpenses)}
+            </span>
+          </div>
+        </div>
+
+        {/* INLINE QUICK-ADD FORM FOR PURCHASES & EXPENSES */}
+        <form onSubmit={handleSaveExpense} className="p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                <Plus size={15} />
+                <span>Add Material Purchase or Site Expense</span>
+              </span>
+              <div className="inline-flex p-0.5 bg-slate-200 dark:bg-slate-700 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseForm(prev => ({ ...prev, type: 'Purchase' }));
+                    setExpenseFilter('Purchase');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                    expenseForm.type === 'Purchase' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Material Purchase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseForm(prev => ({ ...prev, type: 'Expense' }));
+                    setExpenseFilter('Expense');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                    expenseForm.type === 'Expense' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Operational Expense
+                </button>
+              </div>
+            </div>
+
+            <span className="text-[11px] text-slate-400 font-normal">
+              {expenseForm.type === 'Expense' ? 'Direct site expense / petty cash entry' : 'Amount = Quantity × Unit Rate'}
+            </span>
+          </div>
+
+          {expenseForm.type === 'Expense' ? (
+            /* ========================================================================= */
+            /* OPERATIONAL EXPENSE FORM: Date, Type & Category, Amount, Mode, Remarks, Actions */
+            /* ========================================================================= */
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+              {/* 1. Date */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Date <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={expenseForm.date}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                  className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                />
+              </div>
+
+              {/* 2. Type & Category */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                    Category
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryModalOpen(true)}
+                    className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                    title="Add, Edit or Delete Categories"
+                  >
+                    <Plus size={11} className="stroke-[3]" />
+                    <span>Manage</span>
+                  </button>
+                </div>
+                <select
+                  value={expenseForm.category}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {categoriesList.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Amount */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  required
+                  placeholder="e.g. 1500"
+                  value={expenseForm.amount}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* 4. Mode */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Payment Mode
+                </label>
+                <select
+                  value={expenseForm.paymentMode}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {PAYMENT_MODES.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Remarks (If any) */}
+              <div className="md:col-span-3">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Remarks (If any)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Tea & snacks for site team, diesel"
+                  value={expenseForm.notes}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* 6. Actions */}
+              <div className="md:col-span-1">
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs text-center"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ========================================================================= */
+            /* MATERIAL PURCHASE FORM: Full 2 Rows                                      */
+            /* ========================================================================= */
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                {/* Date */}
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={expenseForm.date}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
+                </div>
+
+                {/* Category */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Category
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Categories"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
                   </div>
-                );
-              })
-            )}
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {categoriesList.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 1. SEPARATE FIELD: Item Description */}
+                <div className="md:col-span-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Item Description <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={openItemDescriptionModal}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Item Descriptions"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    list="fab-item-descriptions-list"
+                    placeholder="e.g. MS Square Pipe 2x2 inch"
+                    value={expenseForm.itemDescription}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, itemDescription: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="fab-item-descriptions-list">
+                    {savedDescriptions.map((desc, i) => (
+                      <option key={i} value={desc} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* 2. SEPARATE FIELD: Vendor / Supplier */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Vendor / Supplier
+                    </label>
+                    <button
+                      type="button"
+                      onClick={openVendorSupplierModal}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Suppliers / Vendors"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    list="fab-vendors-list"
+                    placeholder="e.g. Krishna Steels & Hardware"
+                    value={expenseForm.vendorName}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, vendorName: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="fab-vendors-list">
+                    {savedVendors.map((v, i) => (
+                      <option key={i} value={typeof v === 'string' ? v : v.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Unit Dropdown */}
+                <div className="md:col-span-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Unit
+                  </label>
+                  <select
+                    value={expenseForm.unit}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
+                    className="w-full px-1 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {UNIT_OPTIONS.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quantity */}
+                <div className="md:col-span-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Qty
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={expenseForm.quantity}
+                    onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
+                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Rate */}
+                <div className="md:col-span-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Rate (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="Rate"
+                    value={expenseForm.rate}
+                    onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
+                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Optional Bill #, Payment Mode, Total & Add Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                <div className="flex items-center flex-wrap gap-3">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Bill/Inv #:</span>
+                    <input
+                      type="text"
+                      placeholder="Optional (e.g. INV-8492)"
+                      value={expenseForm.billNumber}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, billNumber: e.target.value })}
+                      className="w-36 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Mode:</span>
+                    <select
+                      value={expenseForm.paymentMode}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                      className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      {PAYMENT_MODES.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
+                    <span className="text-sm font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                      {formatCurrency(expenseForm.amount)}
+                    </span>
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                  >
+                    + Add Entry
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </form>
+
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1.5 pt-1">
+          {['All', 'Purchase', 'Expense'].map(type => (
+            <button
+              key={type}
+              onClick={() => setExpenseFilter(type)}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                expenseFilter === type
+                  ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
+            </button>
+          ))}
+        </div>
+
+        {/* PURCHASES & EXPENSES TABLE */}
+        {filteredPurchasesAndExpenses.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+            <ShoppingCart size={28} className="mx-auto text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No purchases or expenses logged</p>
+            <p className="text-[11px] text-slate-400">Record steel sheets, tubular pipes, fasteners, and workshop expenses above.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  {expenseFilter === 'Expense' ? (
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Type & Category</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-center">Mode</th>
+                      <th className="py-3 px-4">Remarks (If any)</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  ) : (
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Type & Category</th>
+                      <th className="py-3 px-4">Item Description</th>
+                      <th className="py-3 px-4">Vendor / Supplier</th>
+                      <th className="py-3 px-4 text-center">Unit</th>
+                      <th className="py-3 px-4 text-right">Quantity</th>
+                      <th className="py-3 px-4 text-right">Rate</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-center">Mode</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredPurchasesAndExpenses.map((entry) => (
+                    expenseFilter === 'Expense' ? (
+                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                          {formatDate(entry.date)}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                            {entry.type}
+                          </span>
+                          <span className="text-slate-600 dark:text-slate-300 font-semibold">{entry.category}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {formatCurrency(entry.amount)}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                            {entry.paymentMode || 'Cash'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {entry.notes || entry.itemDescription || <span className="text-slate-400 italic">No remarks</span>}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditExpenseModal(entry)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Edit Entry"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => promptDeleteExpense(entry)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Delete Entry"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                          {formatDate(entry.date)}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 ${
+                            entry.type === 'Purchase' 
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300' 
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}>
+                            {entry.type}
+                          </span>
+                          <span className="text-slate-500">{entry.category}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900 dark:text-white">{entry.itemDescription}</div>
+                          {entry.billNumber && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">Bill #{entry.billNumber}</div>
+                          )}
+                          {entry.notes && entry.type === 'Expense' && (
+                            <div className="text-[10px] text-slate-500 mt-0.5 italic">{entry.notes}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {entry.vendorName ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                              🏪 {entry.vendorName}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                            {entry.unit || 'Nos'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
+                          {entry.type === 'Expense' ? '—' : entry.quantity}
+                        </td>
+                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                          {entry.type === 'Expense' ? '—' : (entry.rate > 0 ? formatCurrency(entry.rate) : '-')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {formatCurrency(entry.amount)}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
+                          {entry.paymentMode}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditExpenseModal(entry)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Edit Entry"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => promptDeleteExpense(entry)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Delete Entry"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  ))}
+                  {/* Subtotal row */}
+                  {expenseFilter === 'Expense' ? (
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                      <td colSpan={2} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                        Site Operational Expenses Total:
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                        {formatCurrency(fin.totalExpenses)}
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  ) : (
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                      <td colSpan={7} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                        {expenseFilter === 'Purchase' ? 'Material Purchases Total:' : 'Purchases & Site Expenses Total:'}
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                        {formatCurrency(expenseFilter === 'Purchase' ? fin.totalPurchases : (fin.totalPurchases + fin.totalExpenses))}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 4: 💳 CLIENT PAYMENTS ("AMOUNT GIVEN")                             */}
+      {/* ========================================================================= */}
+      <section id="section-payments" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 border border-emerald-100 dark:border-emerald-900/50">
+              <CreditCard size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                4. Client Payments ("Amount Given")
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                  {paymentsCount} payments
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Track client advances, milestone installment payments, and final settlements.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Amount Given</span>
+            <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+              {formatCurrency(fin.totalAmountReceived)}
+            </span>
+          </div>
+        </div>
+
+        {/* INLINE QUICK-ADD FORM FOR CLIENT PAYMENTS */}
+        <form onSubmit={handleSavePayment} className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 space-y-3">
+          <div className="flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
+            <span className="flex items-center gap-1.5">
+              <Plus size={15} className="text-emerald-600" />
+              <span>Record Client Payment Receipt (Direct Inline Entry)</span>
+            </span>
+            <span className="text-[11px] text-emerald-600/80 font-normal">
+              Reduces Client Balance Due in real-time
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            {/* Payment Date */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-emerald-900 dark:text-emerald-300 mb-1">
+                Payment Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={paymentForm.date}
+                onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              />
+            </div>
+
+            {/* Amount Given */}
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-bold text-emerald-900 dark:text-emerald-300 mb-1">
+                Amount Given (₹) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                required
+                step="any"
+                min="1"
+                placeholder="e.g. 50000"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-700 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Payment Mode */}
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-bold text-emerald-900 dark:text-emerald-300 mb-1">
+                Payment Mode
+              </label>
+              <select
+                value={paymentForm.paymentMode}
+                onChange={(e) => setPaymentForm({ ...paymentForm, paymentMode: e.target.value })}
+                className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                {PAYMENT_MODES.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Transaction Ref */}
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-bold text-emerald-900 dark:text-emerald-300 mb-1">
+                Reference / Cheque #
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. GPay / UPI Ref / Cheque # / NEFT"
+                value={paymentForm.transactionReference}
+                onChange={(e) => setPaymentForm({ ...paymentForm, transactionReference: e.target.value })}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Record Payment Button */}
+            <div className="md:col-span-2">
+              <button
+                type="submit"
+                className="w-full px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
+              >
+                + Record Payment
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* PAYMENTS TABLE */}
+        {paymentsCount === 0 ? (
+          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+            <CreditCard size={28} className="mx-auto text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No payment receipts recorded yet</p>
+            <p className="text-[11px] text-slate-400">Record client advance amounts or milestone installments above.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Payment Mode</th>
+                    <th className="py-3 px-4">Reference / Transaction ID</th>
+                    <th className="py-3 px-4">Received By & Notes</th>
+                    <th className="py-3 px-4 text-right">Amount Given</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {job.clientPayments.map((pay) => (
+                    <tr key={pay._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                      <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                        {formatDate(pay.date)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-bold border border-emerald-200 dark:border-emerald-800">
+                          {pay.paymentMode}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-300">
+                        {pay.transactionReference || '-'}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                        {pay.receivedBy && <div className="font-semibold text-slate-800 dark:text-slate-200">Recv by: {pay.receivedBy}</div>}
+                        {pay.notes && <div className="text-slate-400">{pay.notes}</div>}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm whitespace-nowrap">
+                        {formatCurrency(pay.amount)}
+                      </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => openEditPaymentModal(pay)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Edit Payment"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            onClick={() => promptDeletePayment(pay)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                            title="Delete Payment"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Payments Subtotals */}
+                  <tr className="bg-emerald-50/40 dark:bg-emerald-950/20 font-bold border-t-2 border-emerald-200 dark:border-emerald-800">
+                    <td colSpan={4} className="py-2.5 px-4 text-right text-[11px] uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
+                      Total Amount Received from Client:
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-sm text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
+                      {formatCurrency(fin.totalAmountReceived)}
+                    </td>
+                    <td></td>
+                  </tr>
+                  <tr className="bg-amber-50/40 dark:bg-amber-950/20 font-bold">
+                    <td colSpan={4} className="py-2 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                      Outstanding Client Balance:
+                    </td>
+                    <td className="py-2 px-4 text-right text-sm text-amber-700 dark:text-amber-300 whitespace-nowrap">
+                      {formatCurrency(fin.balanceDue)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 5: 📊 OVERALL FINANCIAL SUMMARY & LEDGER DETAILS                  */}
+      {/* ("At last its overall amount show and details")                           */}
+      {/* ========================================================================= */}
+      <section id="section-financials" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border-2 border-indigo-200 dark:border-indigo-900/50 shadow-md space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
+              <DollarSign size={22} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                5. Overall Financial Statement & Details
+              </h2>
+              <p className="text-xs text-slate-500">
+                Complete financial reconciliation: Total Quoted, Direct Costs, Amount Given, Pending Balance & Profit.
+              </p>
+            </div>
+          </div>
+          <span className="font-mono text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-xl font-bold border border-indigo-200 dark:border-indigo-800">
+            Real-Time Auto-Calculated
+          </span>
+        </div>
+
+        {/* 6 Key Financial Metric Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* Total Quoted */}
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/60">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+              Total Quoted
+            </span>
+            <div className="text-xl font-black text-slate-900 dark:text-white">
+              {formatCurrency(fin.totalQuotation)}
+            </div>
+            <span className="text-[11px] text-slate-400">{quotationCount} line items</span>
+          </div>
+
+          {/* Amount Given by Client */}
+          <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/70 dark:border-emerald-800/60">
+            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block mb-1">
+              Amount Given
+            </span>
+            <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">
+              {formatCurrency(fin.totalAmountReceived)}
+            </div>
+            <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400">
+              {paidPercent}% collected
+            </span>
+          </div>
+
+          {/* Balance Due */}
+          <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200/70 dark:border-amber-800/60">
+            <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block mb-1">
+              Balance Due
+            </span>
+            <div className="text-xl font-black text-amber-700 dark:text-amber-300">
+              {formatCurrency(fin.balanceDue)}
+            </div>
+            <span className="text-[11px] text-amber-600/80 dark:text-amber-400">
+              Pending client payment
+            </span>
+          </div>
+
+          {/* Material Purchases */}
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/60">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+              Purchases
+            </span>
+            <div className="text-xl font-black text-slate-900 dark:text-white">
+              {formatCurrency(fin.totalPurchases)}
+            </div>
+            <span className="text-[11px] text-slate-400">Steel & consumables</span>
+          </div>
+
+          {/* Labor Wages */}
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/60">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+              Labor Wages
+            </span>
+            <div className="text-xl font-black text-slate-900 dark:text-white">
+              {formatCurrency(fin.totalWages)}
+            </div>
+            <span className="text-[11px] text-slate-400">{wagesCount} daily wage shifts</span>
+          </div>
+
+          {/* Net Margin */}
+          <div className={`p-4 rounded-2xl border ${
+            fin.netProfit >= 0 
+              ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200/80 dark:border-indigo-800/60' 
+              : 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200/80 dark:border-rose-800/60'
+          }`}>
+            <span className={`text-[11px] font-bold uppercase tracking-wider block mb-1 ${
+              fin.netProfit >= 0 ? 'text-indigo-700 dark:text-indigo-400' : 'text-rose-700 dark:text-rose-400'
+            }`}>
+              Net Margin
+            </span>
+            <div className={`text-xl font-black ${
+              fin.netProfit >= 0 ? 'text-indigo-700 dark:text-indigo-300' : 'text-rose-700 dark:text-rose-300'
+            }`}>
+              {formatCurrency(fin.netProfit)}
+            </div>
+            <span className={`text-[11px] ${
+              fin.netProfit >= 0 ? 'text-indigo-600/80 dark:text-indigo-400' : 'text-rose-600/80 dark:text-rose-400'
+            }`}>
+              Amount Given vs Direct Costs
+            </span>
+          </div>
+        </div>
+
+        {/* Detailed Breakdown Ledger Table */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-xs">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800 uppercase text-[11px]">
+                <th className="py-3 px-4">Financial Parameter</th>
+                <th className="py-3 px-4">Calculation Formula</th>
+                <th className="py-3 px-4 text-right">Amount (₹)</th>
+                <th className="py-3 px-4 text-right">Status / Impact</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tr>
+                <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">Total Quoted Work Order</td>
+                <td className="py-3 px-4 text-slate-500">Sum of all approved quotation line items</td>
+                <td className="py-3 px-4 text-right font-black text-slate-900 dark:text-white">{formatCurrency(fin.totalQuotation)}</td>
+                <td className="py-3 px-4 text-right font-semibold text-indigo-600">Total Agreed Contract</td>
+              </tr>
+              <tr>
+                <td className="py-3 px-4 font-bold text-emerald-700 dark:text-emerald-400">Total Amount Received from Client</td>
+                <td className="py-3 px-4 text-slate-500">Sum of client advances & payment receipts</td>
+                <td className="py-3 px-4 text-right font-black text-emerald-700 dark:text-emerald-400">{formatCurrency(fin.totalAmountReceived)}</td>
+                <td className="py-3 px-4 text-right font-semibold text-emerald-600">{paidPercent}% Received</td>
+              </tr>
+              <tr className="bg-amber-50/30 dark:bg-amber-950/10">
+                <td className="py-3 px-4 font-bold text-amber-700 dark:text-amber-400">Outstanding Receivable Balance</td>
+                <td className="py-3 px-4 text-slate-500">Total Quoted − Total Amount Given</td>
+                <td className="py-3 px-4 text-right font-black text-amber-700 dark:text-amber-400">{formatCurrency(fin.balanceDue)}</td>
+                <td className="py-3 px-4 text-right font-semibold text-amber-600">{100 - paidPercent}% Pending</td>
+              </tr>
+              <tr>
+                <td className="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">Total Material Purchases</td>
+                <td className="py-3 px-4 text-slate-500">Steel pipes, sheets, consumables & hardware</td>
+                <td className="py-3 px-4 text-right font-black text-slate-700 dark:text-slate-300">{formatCurrency(fin.totalPurchases)}</td>
+                <td className="py-3 px-4 text-right text-slate-500">Direct Cost</td>
+              </tr>
+              <tr>
+                <td className="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">Total Employee Daily Wages</td>
+                <td className="py-3 px-4 text-slate-500">Worker shifts, welder daily rates & overtime</td>
+                <td className="py-3 px-4 text-right font-black text-slate-700 dark:text-slate-300">{formatCurrency(fin.totalWages)}</td>
+                <td className="py-3 px-4 text-right text-slate-500">Labor Cost</td>
+              </tr>
+              <tr>
+                <td className="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">Operational & Site Expenses</td>
+                <td className="py-3 px-4 text-slate-500">Freight, gas, crane hire & refreshments</td>
+                <td className="py-3 px-4 text-right font-black text-slate-700 dark:text-slate-300">{formatCurrency(fin.totalExpenses)}</td>
+                <td className="py-3 px-4 text-right text-slate-500">Site Cost</td>
+              </tr>
+              <tr className="bg-rose-50/30 dark:bg-rose-950/10">
+                <td className="py-3 px-4 font-bold text-rose-700 dark:text-rose-400">Total Direct Workshop Costs Incurred</td>
+                <td className="py-3 px-4 text-slate-500">Purchases + Daily Wages + Operational Expenses</td>
+                <td className="py-3 px-4 text-right font-black text-rose-700 dark:text-rose-400">{formatCurrency(fin.totalDirectCost)}</td>
+                <td className="py-3 px-4 text-right font-bold text-rose-600">Total Outflow</td>
+              </tr>
+              <tr className={`font-bold ${fin.netProfit >= 0 ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : 'bg-rose-50/40 dark:bg-rose-950/20'}`}>
+                <td className="py-3.5 px-4 text-sm font-black text-slate-900 dark:text-white">Current Net Profit (Realized Margin)</td>
+                <td className="py-3.5 px-4 text-slate-500">Amount Given − Total Direct Costs Incurred</td>
+                <td className={`py-3.5 px-4 text-right text-base font-black ${fin.netProfit >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {formatCurrency(fin.netProfit)}
+                </td>
+                <td className={`py-3.5 px-4 text-right font-black ${fin.netProfit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                  {fin.netProfit >= 0 ? 'Profitable' : 'Deficit / Pending Payment'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Progress bar */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+            <span>Client Payment Collection Progress</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">{paidPercent}% of Quoted Total Received</span>
+          </div>
+          <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+            <div
+              className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+              style={{ width: `${paidPercent}%` }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 6: CLIENT PROFILE & COMMERCIAL INFO CARD                          */}
+      {/* ========================================================================= */}
+      <div className="p-6 rounded-3xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+        <div>
+          <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">Commercial Profile & GST</span>
+          <div className="flex items-center gap-4 text-slate-700 dark:text-slate-300 font-semibold">
+            <span>Status: <strong className="text-slate-900 dark:text-white">{clientData?.status || 'Active'}</strong></span>
+            <span>Industry: <strong className="text-slate-900 dark:text-white">{clientData?.industry || 'Fabrication'}</strong></span>
+            <span>GSTIN: <strong className="font-mono text-slate-900 dark:text-white">{clientData?.gstNumber || 'Not Specified'}</strong></span>
+          </div>
+          {clientData?.notes && (
+            <p className="text-slate-500 mt-1 italic">"{clientData.notes}"</p>
+          )}
+        </div>
+
+        <button
+          onClick={() => setEditClientOpen(true)}
+          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer shadow-xs shrink-0"
+        >
+          Update Client Information
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODALS FOR EDITING EXISTING LINE ITEMS                                    */}
+      {/* ========================================================================= */}
+
+      {/* 1. Edit Quotation Item Modal */}
+      {isQuotationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Edit Quotation Item
+              </h3>
+              <button onClick={() => { setIsQuotationModalOpen(false); setEditingQuotationItem(null); }} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuotationItem} className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Item / Work Scope Description <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsWorkScopeModalOpen(true)}
+                    className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                    title="Add, Edit or Delete Descriptions"
+                  >
+                    <Plus size={11} className="stroke-[3]" />
+                    <span>Manage</span>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  list="client-work-scope-descriptions-list"
+                  placeholder="e.g. Main Gate Tubular MS Frame (12x7 ft)"
+                  value={quoteForm.description}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={quoteForm.quantity}
+                    onChange={(e) => handleQuoteQtyPriceChange(e.target.value, quoteForm.unitPrice)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Unit
+                  </label>
+                  <select
+                    value={quoteForm.unit}
+                    onChange={(e) => setQuoteForm({ ...quoteForm, unit: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {UNIT_OPTIONS.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Rate per Unit (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={quoteForm.unitPrice}
+                    onChange={(e) => handleQuoteQtyPriceChange(quoteForm.quantity, e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-300 block">
+                    Total Item Amount:
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Calculated as Quantity × Rate per Unit
+                  </span>
+                </div>
+                <span className="text-base font-bold text-indigo-700 dark:text-indigo-400 font-mono">
+                  {formatCurrency(quoteForm.amount)}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Specifications / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={quoteForm.notes}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, notes: e.target.value })}
+                  placeholder="Material specs, thickness, powder coating, etc."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setIsQuotationModalOpen(false); setEditingQuotationItem(null); }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Edit Client Modal */}
-      <EditClientModal
-        isOpen={editOpen}
-        onClose={() => setEditOpen(false)}
-        client={client}
-        onSuccess={() => {
-          fetchClientDetails();
-          showToast('Client profile updated successfully!', 'success');
-        }}
-      />
-
-      {/* Calendar Date Event Details Modal rendered via Portal */}
-      {isDateDetailsOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 space-y-5 border border-slate-200 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <CalendarDays className="text-indigo-600" size={20} />
-                <div>
-                  <h3 className="font-black text-sm text-slate-900 dark:text-white">
-                    Schedule Details for {selectedCalendarDate}
-                  </h3>
-                  <span className="text-[11px] text-slate-400 font-semibold">
-                    {selectedDateMeetings.length} meetings • {selectedDateFollowups.length} follow-ups
-                  </span>
-                </div>
-              </div>
-              <button onClick={() => setIsDateDetailsOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Content for Selected Date */}
-            {selectedDateMeetings.length === 0 && selectedDateFollowups.length === 0 ? (
-              <div className="py-10 text-center text-xs text-slate-400 space-y-3">
-                <CalendarIcon className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
-                <p className="font-semibold">No meetings or follow-ups scheduled for this date.</p>
-                <div className="flex items-center justify-center gap-2 pt-2">
-                  <button
-                    onClick={() => { setIsDateDetailsOpen(false); handleOpenAddMeeting(selectedCalendarDate); }}
-                    className="px-3.5 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm hover:bg-indigo-500"
-                  >
-                    <Video size={13} /> Schedule Meeting
-                  </button>
-                  <button
-                    onClick={() => { setIsDateDetailsOpen(false); handleOpenAddFollowUp(selectedCalendarDate); }}
-                    className="px-3.5 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm hover:bg-amber-400"
-                  >
-                    <CheckSquare size={13} /> Add Follow-up
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-5 text-xs">
-                {/* Meetings List */}
-                {selectedDateMeetings.length > 0 && (
-                  <div className="space-y-2.5">
-                    <h4 className="font-black text-xs uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center justify-between">
-                      <span>Meetings ({selectedDateMeetings.length})</span>
-                      <button
-                        onClick={() => { setIsDateDetailsOpen(false); handleOpenAddMeeting(selectedCalendarDate); }}
-                        className="text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus size={12} /> Add Meeting
-                      </button>
-                    </h4>
-
-                    <div className="space-y-2">
-                      {selectedDateMeetings.map(m => (
-                        <div key={m.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <h5 className="font-black text-xs text-slate-900 dark:text-white">{m.title}</h5>
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value={m.status}
-                                onChange={e => handleSelectMeetingStatus(m, e.target.value)}
-                                className={`px-2 py-0.5 text-[9px] font-bold rounded-full uppercase border outline-none cursor-pointer ${
-                                  m.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' :
-                                  m.status === 'Scheduled' ? 'bg-indigo-100 text-indigo-800' :
-                                  m.status === 'Postponed' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
-                                }`}
-                              >
-                                <option value="Scheduled">Scheduled</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Postponed">Postponed</option>
-                                <option value="Cancelled">Cancelled</option>
-                              </select>
-                              <button onClick={() => { setIsDateDetailsOpen(false); handleEditMeeting(m); }} className="p-1 text-slate-400 hover:text-indigo-600"><Pencil size={12} /></button>
-                              <button onClick={() => handleDeleteMeeting(m.id)} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 size={12} /></button>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-500">
-                            <span>🕒 {m.time}</span>
-                            <span>🎥 {m.type}</span>
-                          </div>
-                          {m.notes && <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">{m.notes}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Follow-ups List */}
-                {selectedDateFollowups.length > 0 && (
-                  <div className="space-y-2.5">
-                    <h4 className="font-black text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center justify-between">
-                      <span>Follow-up Tasks ({selectedDateFollowups.length})</span>
-                      <button
-                        onClick={() => { setIsDateDetailsOpen(false); handleOpenAddFollowUp(selectedCalendarDate); }}
-                        className="text-[11px] font-bold text-amber-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus size={12} /> Add Task
-                      </button>
-                    </h4>
-
-                    <div className="space-y-2">
-                      {selectedDateFollowups.map(f => (
-                        <div key={f.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2.5 flex-1">
-                            <button
-                              onClick={() => toggleFollowUpStatus(f.id)}
-                              className={`mt-0.5 p-1 rounded-lg border cursor-pointer ${f.status === 'Completed' ? 'bg-emerald-500 text-white' : 'bg-white text-transparent'}`}
-                            >
-                              <Check size={12} />
-                            </button>
-                            <div>
-                              <span className={`font-extrabold text-xs block ${f.status === 'Completed' ? 'line-through text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                                {f.title}
-                              </span>
-                              <p className="text-[11px] text-slate-500 mt-0.5">{f.notes}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => { setIsDateDetailsOpen(false); handleEditFollowUp(f); }} className="p-1 text-slate-400 hover:text-indigo-600"><Pencil size={12} /></button>
-                            <button onClick={() => handleDeleteFollowUp(f.id)} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 size={12} /></button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={() => setIsDateDetailsOpen(false)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Schedule / Edit Meeting Modal rendered via Portal */}
-      {isAddMeetingOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <Video className="text-indigo-600" size={18} /> {editingMeeting ? 'Edit Client Meeting' : 'Schedule Client Meeting'}
+      {/* 2. Edit Wage Modal */}
+      {isWageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Edit Daily Wage Record
               </h3>
-              <button onClick={() => { setIsAddMeetingOpen(false); setEditingMeeting(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={() => { setIsWageModalOpen(false); setEditingWage(null); }} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveMeeting} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Meeting Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Project Review & Timeline Discussion"
-                  value={meetingForm.title}
-                  onChange={e => setMeetingForm(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
+            <form onSubmit={handleSaveWage} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Date *</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Date Picker <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="date"
                     required
-                    value={meetingForm.date}
-                    onChange={e => setMeetingForm(prev => ({ ...prev, date: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={wageForm.date}
+                    onChange={(e) => setWageForm({ ...wageForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Time *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="10:30 AM"
-                    value={meetingForm.time}
-                    onChange={e => setMeetingForm(prev => ({ ...prev, time: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Meeting Type</label>
-                  <select
-                    value={meetingForm.type}
-                    onChange={e => setMeetingForm(prev => ({ ...prev, type: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option>Online (Google Meet)</option>
-                    <option>Online (Zoom)</option>
-                    <option>In-Person (Head Office)</option>
-                    <option>In-Person (Client Site)</option>
-                    <option>Phone Conference</option>
-                  </select>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Status</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Shift Type
+                  </label>
                   <select
-                    value={meetingForm.status}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setMeetingForm(prev => ({ ...prev, status: val }));
-                    }}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={wageForm.shiftType}
+                    onChange={(e) => setWageForm({ ...wageForm, shiftType: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                   >
-                    <option value="Scheduled">Scheduled</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Postponed">Postponed</option>
-                    <option value="Cancelled">Cancelled</option>
+                    {SHIFT_TYPES.map(st => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Attendees</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Client Tech Lead, Account Manager"
-                  value={meetingForm.attendees}
-                  onChange={e => setMeetingForm(prev => ({ ...prev, attendees: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Agenda & Notes</label>
-                <textarea
-                  rows={2}
-                  placeholder="Key topics to discuss..."
-                  value={meetingForm.notes}
-                  onChange={e => setMeetingForm(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setIsAddMeetingOpen(false); setEditingMeeting(null); }}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm"
-                >
-                  {editingMeeting ? 'Update Meeting' : 'Save Meeting'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Postpone & Reschedule Meeting Modal rendered via Portal */}
-      {isPostponeModalOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-4 border border-amber-200 dark:border-amber-800 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="font-extrabold text-sm text-amber-600 dark:text-amber-400 flex items-center gap-2">
-                <CalendarClock size={18} /> Postpone & Reschedule Meeting
-              </h3>
-              <button onClick={() => { setIsPostponeModalOpen(false); setPostponingMeeting(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmPostpone} className="space-y-3 text-xs">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200">
-                <span className="font-bold block text-xs">{postponingMeeting?.title}</span>
-                <span className="text-[11px] opacity-80">Currently scheduled: {postponingMeeting?.date} at {postponingMeeting?.time}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={postponeForm.newDate}
-                    onChange={e => setPostponeForm(prev => ({ ...prev, newDate: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Time *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 11:30 AM"
-                    value={postponeForm.newTime}
-                    onChange={e => setPostponeForm(prev => ({ ...prev, newTime: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Reason for Postponing (Optional)</label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Client requested delay due to travel schedule..."
-                  value={postponeForm.reason}
-                  onChange={e => setPostponeForm(prev => ({ ...prev, reason: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setIsPostponeModalOpen(false); setPostponingMeeting(null); }}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm flex items-center gap-1.5"
-                >
-                  <CalendarClock size={14} /> Confirm Postpone & Reschedule
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Add / Edit Follow-up Modal rendered via Portal */}
-      {isAddFollowUpOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <CheckSquare className="text-indigo-600" size={18} /> {editingFollowup ? 'Edit Follow-up Task' : 'Add Follow-up Task'}
-              </h3>
-              <button onClick={() => { setIsAddFollowUpOpen(false); setEditingFollowup(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveFollowUp} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Follow-up Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Send updated SLA agreement"
-                  value={followUpForm.title}
-                  onChange={e => setFollowUpForm(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Due Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={followUpForm.dueDate}
-                    onChange={e => setFollowUpForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Due Time *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="04:00 PM"
-                    value={followUpForm.dueTime}
-                    onChange={e => setFollowUpForm(prev => ({ ...prev, dueTime: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Priority</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Employee Selection <span className="text-rose-500">*</span>
+                </label>
                 <select
-                  value={followUpForm.priority}
-                  onChange={e => setFollowUpForm(prev => ({ ...prev, priority: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={wageForm.employee}
+                  onChange={handleEmployeeDropdownSelect}
+                  className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer mb-1.5"
                 >
-                  <option>High</option>
-                  <option>Medium</option>
-                  <option>Normal</option>
+                  <option value="">-- Select from Staff List --</option>
+                  {employees.map(emp => (
+                    <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                      {emp.name || emp.username} ({emp.designation || 'Staff'})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Or enter employee / welder name directly"
+                  value={wageForm.employeeName}
+                  onChange={(e) => setWageForm({ ...wageForm, employeeName: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Daily Rate (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={wageForm.dailyRate}
+                    onChange={(e) => handleWageCalcChange(e.target.value, wageForm.overtimeHours, wageForm.overtimeRate)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    OT Hours
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={wageForm.overtimeHours}
+                    onChange={(e) => handleWageCalcChange(wageForm.dailyRate, e.target.value, wageForm.overtimeRate)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    OT Rate (₹/hr)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={wageForm.overtimeRate}
+                    onChange={(e) => handleWageCalcChange(wageForm.dailyRate, wageForm.overtimeHours, e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl flex items-center justify-between">
+                <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-300">
+                  Total Wage Payout:
+                </span>
+                <span className="text-base font-bold text-indigo-700 dark:text-indigo-400 font-mono">
+                  {formatCurrency(wageForm.totalWage)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setIsWageModalOpen(false); setEditingWage(null); }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Edit Expense Modal */}
+      {isExpenseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Edit {expenseForm.type} Entry
+              </h3>
+              <button onClick={() => { setIsExpenseModalOpen(false); setEditingExpense(null); }} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveExpense} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Entry Type
+                  </label>
+                  <select
+                    value={expenseForm.type}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, type: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="Purchase">Material Purchase</option>
+                    <option value="Expense">Site Operational Expense</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Category
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {categoriesList.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Date Picker <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={expenseForm.date}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {expenseForm.type === 'Expense' ? (
+                <>
+                  {/* Amount */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Amount (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      placeholder="e.g. 1500"
+                      value={expenseForm.amount}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Mode */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Payment Mode
+                    </label>
+                    <select
+                      value={expenseForm.paymentMode}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {PAYMENT_MODES.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Remarks */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Remarks (If any)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Site team refreshments, diesel, travel"
+                      value={expenseForm.notes}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* 1. SEPARATE FIELD: Item Description */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Item Description <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={openItemDescriptionModal}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                        title="Add, Edit or Delete Item Descriptions"
+                      >
+                        <Plus size={11} className="stroke-[3]" />
+                        <span>Manage</span>
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      list="fab-item-descriptions-list"
+                      placeholder="e.g. MS Square Pipe 2x2 inch"
+                      value={expenseForm.itemDescription}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, itemDescription: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* 2. SEPARATE FIELD: Vendor / Supplier */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Vendor / Supplier
+                      </label>
+                      <button
+                        type="button"
+                        onClick={openVendorSupplierModal}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                        title="Add, Edit or Delete Suppliers / Vendors"
+                      >
+                        <Plus size={11} className="stroke-[3]" />
+                        <span>Manage</span>
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      list="fab-vendors-list"
+                      placeholder="e.g. Krishna Steels & Hardware"
+                      value={expenseForm.vendorName}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, vendorName: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Quantity
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={expenseForm.quantity}
+                        onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Unit
+                      </label>
+                      <select
+                        value={expenseForm.unit}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
+                        className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        {UNIT_OPTIONS.map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Rate per Unit (₹)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={expenseForm.rate}
+                        onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl flex items-center justify-between">
+                    <span className="text-xs font-semibold text-rose-900 dark:text-rose-300">
+                      Total Cost:
+                    </span>
+                    <span className="text-base font-bold text-rose-700 dark:text-rose-400 font-mono">
+                      {formatCurrency(expenseForm.amount)}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setIsExpenseModalOpen(false); setEditingExpense(null); }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Edit Client Payment Modal */}
+      {isPaymentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Edit Client Payment Receipt
+              </h3>
+              <button onClick={() => { setIsPaymentModalOpen(false); setEditingPayment(null); }} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePayment} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Date Received <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={paymentForm.date}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Amount Received (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    step="any"
+                    min="1"
+                    value={paymentForm.amount}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-emerald-700 dark:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Payment Mode
+                </label>
+                <select
+                  value={paymentForm.paymentMode}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paymentMode: e.target.value })}
+                  className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  {PAYMENT_MODES.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
                 </select>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Notes & Action Items</label>
-                <textarea
-                  rows={2}
-                  placeholder="Task details..."
-                  value={followUpForm.notes}
-                  onChange={e => setFollowUpForm(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Reference / Cheque Number
+                </label>
+                <input
+                  type="text"
+                  value={paymentForm.transactionReference}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, transactionReference: e.target.value })}
+                  placeholder="UPI transaction reference, Cheque number, etc."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => { setIsAddFollowUpOpen(false); setEditingFollowup(null); }}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                  onClick={() => { setIsPaymentModalOpen(false); setEditingPayment(null); }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                 >
-                  {editingFollowup ? 'Update Task' : 'Add Task'}
+                  Save Changes
                 </button>
               </div>
             </form>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
+
+      {/* 5. Edit Client Profile Modal */}
+      {clientData && (
+        <EditClientModal
+          isOpen={editClientOpen}
+          onClose={() => setEditClientOpen(false)}
+          client={clientData}
+          onSuccess={() => {
+            loadClientAndJob();
+            showToast('Client profile updated successfully', 'success');
+          }}
+        />
+      )}
+
+      {/* 6. Universal Confirm Delete Modal */}
       <ConfirmModal
         isOpen={deleteConfirm.isOpen}
-        onClose={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={deleteConfirm.onConfirm}
         title={deleteConfirm.title}
         message={deleteConfirm.message}
-        confirmText="Delete"
-        cancelText="Cancel"
-        type="danger"
+        onConfirm={deleteConfirm.onConfirm}
+        onCancel={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* 7. Quotation & Work Measurements Invoice Modal */}
+      <QuotationInvoiceModal
+        isOpen={isInvoiceOpen}
+        onClose={() => setIsInvoiceOpen(false)}
+        client={clientData}
+        job={job}
+        quotationItems={job?.quotationItems || []}
+        financials={fin}
+      />
+
+      {/* 8. Manage Expense Categories Modal */}
+      <ExpenseCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        selectedCategory={expenseForm.category}
+        onSelectCategory={handleSelectCategory}
+        onCategoriesChanged={(newCats) => setCategoriesList(newCats)}
+      />
+
+      {/* 9. Manage Descriptions & Vendors Modal */}
+      <DescriptionVendorModal
+        isOpen={isDescVendorModalOpen}
+        onClose={() => setIsDescVendorModalOpen(false)}
+        initialTab={descVendorModalTab}
+        initialDescription={expenseForm.itemDescription}
+        initialVendor={expenseForm.vendorName}
+        onSelect={handleSelectDescVendor}
+      />
+
+      {/* 10. Manage Work Scope Descriptions Modal */}
+      <WorkScopeModal
+        isOpen={isWorkScopeModalOpen}
+        onClose={() => setIsWorkScopeModalOpen(false)}
+        selectedDescription={quoteForm.description}
+        onSelectDescription={handleSelectWorkScope}
+        onDescriptionsChanged={handleWorkScopesChanged}
       />
     </div>
   );

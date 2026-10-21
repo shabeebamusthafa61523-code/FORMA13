@@ -74,6 +74,8 @@ import CreateProjectPage from './pages/CreateProjectPage';
 import ProjectDetailsPage from './pages/ProjectDetailsPage';
 import VisibleWorkPage from './pages/VisibleWorkPage';
 import ProjectReportsPage from './pages/ProjectReportsPage';
+import FabricationPage from './pages/FabricationPage';
+import FabricationJobDetailsPage from './pages/FabricationJobDetailsPage';
 
 
 
@@ -270,6 +272,10 @@ function App() {
         <Route path="/projects/reports" element={<ProtectedRoute><MainLayout><RestrictedRoute><ProjectReportsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/projects/:id" element={<ProtectedRoute><MainLayout><RestrictedRoute><ProjectDetailsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/projects/:id/visible-work" element={<ProtectedRoute><MainLayout><RestrictedRoute><VisibleWorkPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
+
+        {/* Fabrication Operations & Job Ledger Routes */}
+        <Route path="/fabrication" element={<ProtectedRoute><MainLayout><RestrictedRoute><FabricationPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
+        <Route path="/fabrication/:id" element={<ProtectedRoute><MainLayout><RestrictedRoute><FabricationJobDetailsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
 
         {/* Content Calendar Module Route */}
         <Route path="/calendar-work" element={<ProtectedRoute><MainLayout><CalendarWorkPage /></MainLayout></ProtectedRoute>} />

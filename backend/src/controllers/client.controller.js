@@ -9,7 +9,7 @@ import Expense from '../models/expense.model.js';
 import User from '../models/user.model.js';
 import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
-import { generateClientId, fetchClientStats } from '../services/client.service.js';
+import { generateClientId, fetchClientStats, syncAllConfirmedLeadsToClients } from '../services/client.service.js';
 import { sendSuccess, sendError } from '../utils/response.helper.js';
 
 /**
@@ -38,6 +38,9 @@ const sanitizeClientPayload = (body) => {
 
 export const getClients = async (req, res) => {
   try {
+    // Automatically ensure any confirmed leads in ClientLead collection are reflected in Clients
+    await syncAllConfirmedLeadsToClients();
+
     const {
       page = 1,
       limit = 10,

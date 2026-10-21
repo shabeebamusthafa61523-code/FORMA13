@@ -1247,7 +1247,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
         )}
 
         {/* Printable Document Container */}
-        <div className="p-6 overflow-y-auto font-sans" ref={invoiceRef} data-pdf-container="true">
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto font-sans" ref={invoiceRef} data-pdf-container="true">
           {/* ─────────────────────────────────────────────────────────────
               VIEW MODE: RECEIPT VOUCHER (CLEAN LIGHT MINIMAL STRUCTURE)
              ───────────────────────────────────────────────────────────── */}
@@ -1255,8 +1255,8 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
             <div className="space-y-5 text-slate-800 bg-white p-2 relative flex flex-col min-h-[960px] justify-between">
               {/* Top Document Body */}
               <div className="space-y-5">
-                {/* Minimal Top Light Accent Line */}
-                <div className="h-0.5 w-full rounded-full mb-3" style={{ backgroundColor: '#cbd5e1' }} />
+                {/* Luxury Gradient Accent Line */}
+                <div className="w-full rounded-full mb-3" style={{ height: '4px', background: 'linear-gradient(90deg, #1e1b4b 0%, #4338ca 35%, #0284c7 70%, #059669 100%)' }} />
 
                 {/* Minimal Watermark Status Stamp Badge */}
                 <div
@@ -1289,7 +1289,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                   </div>
 
                   <div className="sm:text-right space-y-1">
-                    <span className="inline-block px-3 py-1 text-[11px] font-bold uppercase rounded tracking-widest border" style={{ backgroundColor: '#f8fafc', color: '#0f172a', borderColor: '#cbd5e1' }}>
+                    <span className="inline-block px-3.5 py-1 text-[11px] font-black uppercase rounded-md tracking-widest shadow-xs" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
                       RECEIPT VOUCHER
                     </span>
                     <div className="pt-1.5 text-xs space-y-0.5">
@@ -1342,12 +1342,12 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 {/* Itemized Table */}
                 <div className="border rounded-xl overflow-hidden" style={{ borderColor: '#cbd5e1', backgroundColor: '#ffffff' }}>
                   <table className="w-full text-xs text-left border-collapse">
-                    <thead className="font-bold uppercase text-[10px] tracking-wider border-b" style={{ backgroundColor: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1' }}>
+                    <thead className="font-bold uppercase text-[10px] tracking-wider" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
                       <tr>
-                        <th className="py-2.5 px-3" style={{ color: '#0f172a' }}>Invoice Number</th>
-                        <th className="py-2.5 px-3" style={{ color: '#0f172a' }}>Invoice Date</th>
-                        <th className="py-2.5 px-3 text-right" style={{ color: '#0f172a', textAlign: 'right' }}>Net Payable Amount (₹)</th>
-                        <th className="py-2.5 px-3 text-right" style={{ color: '#0f172a', textAlign: 'right' }}>Voucher Amount Paid (₹)</th>
+                        <th className="py-2.5 px-3" style={{ color: '#ffffff' }}>Invoice Number</th>
+                        <th className="py-2.5 px-3" style={{ color: '#ffffff' }}>Invoice Date</th>
+                        <th className="py-2.5 px-3 text-right" style={{ color: '#ffffff', textAlign: 'right' }}>Net Payable Amount (₹)</th>
+                        <th className="py-2.5 px-3 text-right" style={{ color: '#ffffff', textAlign: 'right' }}>Voucher Amount Paid (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y font-medium" style={{ borderColor: '#e2e8f0' }}>
@@ -1387,8 +1387,8 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
             <div className="space-y-5 text-slate-800 bg-white p-2 relative flex flex-col min-h-[960px] justify-between">
               {/* Top Document Body */}
               <div className="space-y-5">
-                {/* Minimal Top Light Accent Line */}
-                <div className="h-0.5 w-full rounded-full mb-3" style={{ backgroundColor: '#cbd5e1' }} />
+                {/* Luxury Gradient Accent Line */}
+                <div className="w-full rounded-full mb-3" style={{ height: '4px', background: 'linear-gradient(90deg, #1e1b4b 0%, #4338ca 35%, #0284c7 70%, #059669 100%)' }} />
 
                 {/* Header Branding & Meta Block */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-4" style={{ borderColor: '#e2e8f0' }}>
@@ -1397,8 +1397,8 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                   </div>
 
                   <div className="sm:text-right space-y-1">
-                    <span className="inline-block px-3 py-1 text-[11px] font-bold uppercase rounded tracking-widest border" style={{ backgroundColor: '#f8fafc', color: '#0f172a', borderColor: '#cbd5e1' }}>
-                      {incomeRecord?.status === 'Proforma' ? 'PROFORMA INVOICE' : 'INVOICE'}
+                    <span className="inline-block px-3.5 py-1 text-[11px] font-black uppercase rounded-md tracking-widest shadow-xs" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                      {incomeRecord?.status === 'Proforma' ? 'PROFORMA INVOICE' : 'OFFICIAL TAX INVOICE'}
                     </span>
                     <div className="pt-1.5 text-xs space-y-0.5">
                       <p className="font-semibold" style={{ color: '#0f172a' }}>{incomeRecord?.status === 'Proforma' ? 'Proforma No:' : 'Invoice No:'} <span className="font-mono font-bold" style={{ color: '#0f172a' }}>{invoiceNo ? invoiceNo.replace(/^#+/, '') : ''}</span></p>
@@ -1472,15 +1472,15 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 {/* Itemized Table (Clean Minimal) */}
                 <div className="border rounded-xl overflow-hidden" style={{ borderColor: '#cbd5e1', backgroundColor: '#ffffff' }}>
                   <table className="w-full text-xs text-left border-collapse">
-                    <thead className="font-bold uppercase text-[10px] tracking-wider border-b" style={{ backgroundColor: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1' }}>
+                    <thead className="font-bold uppercase text-[10px] tracking-wider" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
                       <tr>
-                        <th className="py-2.5 px-3 text-center w-10" style={{ color: '#0f172a' }}>Sl no.</th>
-                        <th className="py-2.5 px-3" style={{ color: '#0f172a' }}>{resolvedSourceType === 'Academy' ? 'Course / Fee Description' : 'Item / Service Description'}</th>
+                        <th className="py-2.5 px-3 text-center w-10" style={{ color: '#ffffff' }}>#</th>
+                        <th className="py-2.5 px-3" style={{ color: '#ffffff' }}>{resolvedSourceType === 'Academy' ? 'Course / Fee Description' : 'Item / Service Description'}</th>
                         {resolvedSourceType !== 'Academy' && (
-                          <th className="py-2.5 px-3 text-center w-16" style={{ color: '#0f172a' }}>Qty</th>
+                          <th className="py-2.5 px-3 text-center w-16" style={{ color: '#ffffff' }}>Qty</th>
                         )}
-                        <th className="py-2.5 px-3 text-right w-28" style={{ color: '#0f172a', textAlign: 'right' }}>{resolvedSourceType === 'Academy' ? 'Course Fee (₹)' : 'Unit Price (₹)'}</th>
-                        <th className="py-2.5 px-3 text-right w-32" style={{ color: '#0f172a', textAlign: 'right' }}>Amount (₹)</th>
+                        <th className="py-2.5 px-3 text-right w-28" style={{ color: '#ffffff', textAlign: 'right' }}>{resolvedSourceType === 'Academy' ? 'Course Fee (₹)' : 'Unit Price (₹)'}</th>
+                        <th className="py-2.5 px-3 text-right w-32" style={{ color: '#ffffff', textAlign: 'right' }}>Amount (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y font-medium" style={{ borderColor: '#e2e8f0' }}>
@@ -1545,9 +1545,9 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                       </div>
                     )}
 
-                    <div className="flex justify-between border-t pt-2 text-xs font-bold items-center gap-2" style={{ borderColor: '#cbd5e1' }}>
-                      <span className="uppercase text-[10px] tracking-wider shrink-0" style={{ color: '#475569' }}>Total Payable :</span>
-                      <span className="text-base font-extrabold font-mono text-right" style={{ color: '#0f172a', textAlign: 'right' }}>₹{Math.round(calculatedTotalPayable).toLocaleString('en-IN')}</span>
+                    <div className="p-2.5 rounded-lg border-2 mt-2 flex justify-between items-center" style={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#ffffff' }}>
+                      <span className="uppercase text-[10px] font-black tracking-wider shrink-0 text-slate-300">Total Payable:</span>
+                      <span className="text-base font-black font-mono text-right text-emerald-400" style={{ textAlign: 'right' }}>₹{Math.round(calculatedTotalPayable).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 </div>
