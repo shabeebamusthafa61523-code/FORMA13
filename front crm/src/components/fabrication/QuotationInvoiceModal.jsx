@@ -22,8 +22,6 @@ import {
   DollarSign,
   ShieldCheck,
   Receipt,
-  Phone,
-  MapPin,
   Calendar,
   Sparkles,
   Layers,
@@ -594,14 +592,12 @@ const QuotationInvoiceModal = ({
                 {clientName}
               </h3>
               {phone && (
-                <p className="text-[11.5px] flex items-center gap-1.5" style={{ color: '#475569' }}>
-                  <Phone size={11} style={{ color: '#64748b' }} />
+                <p className="text-[11.5px]" style={{ color: '#475569' }}>
                   <span>{phone}</span>
                 </p>
               )}
               {siteAddress && (
-                <p className="text-[11.5px] flex items-start gap-1.5" style={{ color: '#475569' }}>
-                  <MapPin size={11} className="mt-0.5 shrink-0" style={{ color: '#64748b' }} />
+                <p className="text-[11.5px]" style={{ color: '#475569' }}>
                   <span>Site: {siteAddress}</span>
                 </p>
               )}

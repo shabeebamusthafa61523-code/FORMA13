@@ -10,9 +10,7 @@ import {
   CreditCard, 
   Hash, 
   User, 
-  Briefcase, 
-  MapPin, 
-  Phone
+  Briefcase
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 
@@ -235,14 +233,12 @@ const PaymentReceiptModal = ({
                   {job.clientName || 'Valued Client'}
                 </p>
                 {job.clientPhone && (
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                    <Phone size={12} className="text-slate-400" />
+                  <div className="text-xs text-slate-600 font-medium">
                     <span>{job.clientPhone}</span>
                   </div>
                 )}
                 {job.siteAddress && (
-                  <div className="flex items-start gap-1.5 text-xs text-slate-500">
-                    <MapPin size={12} className="text-slate-400 mt-0.5 shrink-0" />
+                  <div className="text-xs text-slate-500">
                     <span>{job.siteAddress}</span>
                   </div>
                 )}
