@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, Edit3, Trash2, Eye, X, Mail, Phone,
+  Plus, UserPlus, Search, Edit3, Trash2, Eye, X, Mail, Phone,
   Folder, User, ChevronRight, CheckCircle2, AlertTriangle,
   FileSpreadsheet, FileDown, FileText, Loader2, Calendar,
   TrendingUp, Clock, Tag, MessageSquare, Briefcase, RefreshCw, Send,
@@ -39,19 +39,27 @@ const getISTDate = () => {
 const STATUS_META = {
   'New': { label: 'New', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:bg-blue-500/20 dark:text-blue-400', dot: 'bg-blue-500' },
   'Contacted': { label: 'Contacted', color: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-400', dot: 'bg-indigo-500' },
+  'Quotation Sent': { label: 'Quotation Sent', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400', dot: 'bg-amber-500' },
+  'Confirmed': { label: 'Confirmed', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
+  'Lost': { label: 'Lost', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400', dot: 'bg-rose-500' },
+  // Backward compatibility
+  'Confirm': { label: 'Confirmed', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
+  'Converted': { label: 'Confirmed', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
   'Follow Up': { label: 'Follow Up', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400', dot: 'bg-amber-500' },
-  'Interested': { label: 'Interested', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:bg-purple-500/20 dark:text-purple-400', dot: 'bg-purple-500' },
-  'Converted': { label: 'Converted', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400', dot: 'bg-emerald-500' },
-  'Lost': { label: 'Lost', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400', dot: 'bg-rose-500' }
+  'Interested': { label: 'Interested', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:bg-purple-500/20 dark:text-purple-400', dot: 'bg-purple-500' }
 };
 
 const STATUS_COLORS = {
-  'NEW':        { bg: '#dbeafe', text: '#1d4ed8', border: '#93c5fd' },
-  'CONTACTED':  { bg: '#e0e7ff', text: '#4338ca', border: '#a5b4fc' },
-  'FOLLOW UP':  { bg: '#fef3c7', text: '#b45309', border: '#fde68a' },
-  'INTERESTED': { bg: '#f3e8ff', text: '#6b21a8', border: '#c4b5fd' },
-  'CONVERTED':  { bg: '#d1fae5', text: '#047857', border: '#6ee7b7' },
-  'LOST':       { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' }
+  'NEW':            { bg: '#dbeafe', text: '#1d4ed8', border: '#93c5fd' },
+  'CONTACTED':      { bg: '#e0e7ff', text: '#4338ca', border: '#a5b4fc' },
+  'QUOTATION SENT': { bg: '#fef3c7', text: '#b45309', border: '#fde68a' },
+  'CONFIRMED':      { bg: '#d1fae5', text: '#047857', border: '#6ee7b7' },
+  'LOST':           { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' },
+  // Backward compatibility
+  'CONFIRM':        { bg: '#d1fae5', text: '#047857', border: '#6ee7b7' },
+  'CONVERTED':      { bg: '#d1fae5', text: '#047857', border: '#6ee7b7' },
+  'FOLLOW UP':      { bg: '#fef3c7', text: '#b45309', border: '#fde68a' },
+  'INTERESTED':     { bg: '#f3e8ff', text: '#6b21a8', border: '#c4b5fd' }
 };
 
 const getStatusStyle = (value) => {
@@ -480,8 +488,11 @@ export default function ClientLeads() {
   const handleCreateLead = async (e) => {
     e.preventDefault();
     const payload = {
-      ...formData,
-      assignedTo: formData.assignedTo && formData.assignedTo.trim() ? formData.assignedTo : null
+      leadName: (formData.leadName || '').trim(),
+      companyName: (formData.companyName || formData.leadName || '').trim(),
+      phone: (formData.phone || '').trim(),
+      remarks: (formData.remarks || '').trim(),
+      status: formData.status || 'New'
     };
     try {
       const res = await fetch(getApiEndpoint('/client-leads'), {
@@ -512,8 +523,11 @@ export default function ClientLeads() {
     e.preventDefault();
     if (!selectedLead) return;
     const payload = {
-      ...formData,
-      assignedTo: formData.assignedTo && formData.assignedTo.trim() ? formData.assignedTo : null
+      leadName: (formData.leadName || '').trim(),
+      companyName: (formData.companyName || formData.leadName || '').trim(),
+      phone: (formData.phone || '').trim(),
+      remarks: (formData.remarks || '').trim(),
+      status: formData.status || selectedLead.status || 'New'
     };
     try {
       const res = await fetch(getApiEndpoint(`/client-leads/${selectedLead.id || selectedLead._id}`), {
@@ -841,28 +855,10 @@ export default function ClientLeads() {
     setSelectedLead(lead);
     setFormData({
       leadName: lead.leadName || '',
-      companyName: lead.companyName || '',
-      email: lead.email || '',
+      companyName: lead.companyName || lead.leadName || '',
       phone: lead.phone || '',
-      city: lead.city || '',
-      source: lead.source || '',
-      interestedService: lead.interestedService || '',
-      campaignName: lead.campaignName || '',
-      leadPlatform: lead.leadPlatform || '',
-      assignedTo: typeof lead.assignedTo === 'object' ? (lead.assignedTo?._id || lead.assignedTo?.id || '') : (lead.assignedTo || ''),
       status: lead.status || 'New',
-      priority: lead.priority || 'Medium',
-      clientMeetingFixed: lead.clientMeetingFixed || 'Pending',
-      clientOnboarding: lead.clientOnboarding || lead.admissionYesNo || 'Pending',
-      remarks: lead.remarks || '',
-      nextFollowUpDate: formatDateForInput(lead.nextFollowUpDate),
-      leadsReceivedDate: formatDateForInput(lead.leadsReceivedDate) || getISTDate(),
-      followUpDate1: formatDateForInput(lead.followUpDate1),
-      followUpDate2: formatDateForInput(lead.followUpDate2),
-      followUpDate3: formatDateForInput(lead.followUpDate3),
-      followUpDate4: formatDateForInput(lead.followUpDate4),
-      followUpDate5: formatDateForInput(lead.followUpDate5),
-      lostReason: lead.lostReason || ''
+      remarks: lead.remarks || ''
     });
     setIsEditOpen(true);
   };
@@ -871,27 +867,9 @@ export default function ClientLeads() {
     setFormData({
       leadName: '',
       companyName: '',
-      email: '',
       phone: '',
-      city: '',
-      source: isMarketing ? 'MARKETING' : '',
-      interestedService: '',
-      campaignName: '',
-      leadPlatform: '',
-      assignedTo: '',
       status: 'New',
-      priority: 'Medium',
-      clientMeetingFixed: 'Pending',
-      clientOnboarding: 'Pending',
-      remarks: '',
-      nextFollowUpDate: '',
-      leadsReceivedDate: getISTDate(),
-      followUpDate1: '',
-      followUpDate2: '',
-      followUpDate3: '',
-      followUpDate4: '',
-      followUpDate5: '',
-      lostReason: ''
+      remarks: ''
     });
   };
 
@@ -908,7 +886,11 @@ export default function ClientLeads() {
 
       let matchesTab = true;
       if (activeTab !== 'all') {
-        matchesTab = lead.status === activeTab;
+        if (activeTab === 'Confirmed') {
+          matchesTab = ['Confirmed', 'Confirm', 'Converted'].includes(lead.status);
+        } else {
+          matchesTab = lead.status === activeTab;
+        }
       }
 
       let matchesPriority = true;
@@ -1007,7 +989,7 @@ export default function ClientLeads() {
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{filteredLeads.length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500">New Leads</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500">New</p>
           <p className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">{leads.filter(l => l.status === 'New').length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
@@ -1015,16 +997,16 @@ export default function ClientLeads() {
           <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">{leads.filter(l => l.status === 'Contacted').length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Converted</p>
-          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{leads.filter(l => l.status === 'Converted').length}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Quotation Sent</p>
+          <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{leads.filter(l => l.status === 'Quotation Sent').length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-purple-500">Meetings Fixed</p>
-          <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">{leads.filter(l => l.clientMeetingFixed === 'Yes').length}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Confirmed (In Clients)</p>
+          <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{leads.filter(l => ['Confirmed', 'Confirm', 'Converted'].includes(l.status)).length}</p>
         </div>
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Client Onboarding</p>
-          <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{leads.filter(l => l.clientOnboarding === 'Yes').length}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-rose-500">Lost</p>
+          <p className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">{leads.filter(l => l.status === 'Lost').length}</p>
         </div>
       </div>
 
@@ -1087,9 +1069,8 @@ export default function ClientLeads() {
                 <option value="all">All Statuses</option>
                 <option value="New">New</option>
                 <option value="Contacted">Contacted</option>
-                <option value="Follow Up">Follow Up</option>
-                <option value="Interested">Interested</option>
-                <option value="Converted">Converted</option>
+                <option value="Quotation Sent">Quotation Sent</option>
+                <option value="Confirmed">Confirmed</option>
                 <option value="Lost">Lost</option>
               </select>
             </div>
@@ -1334,24 +1315,11 @@ export default function ClientLeads() {
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Lead Info</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Contact Details</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">City / Place</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Campaign/platform</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Assigned To</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 min-w-[170px]">Interest</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Source</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Leads Received</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">1st Followup</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">2nd Followup</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">3rd Followup</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">4th Followup</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">5th Followup</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Date</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Name</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Number</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Remarks</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Client Meeting</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Client Onboarding</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Created</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1369,6 +1337,12 @@ export default function ClientLeads() {
                         setIsViewOpen(true);
                       }}
                     >
+                      {/* 1. Date */}
+                      <td className="px-6 py-4.5 text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
+                        {formatDate(lead.createdAt || lead.leadsReceivedDate)}
+                      </td>
+
+                      {/* 2. Name */}
                       <td className="px-6 py-4.5">
                         <div
                           className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 cursor-pointer hover:underline"
@@ -1383,170 +1357,14 @@ export default function ClientLeads() {
                         )}
                       </td>
 
-                      <td className="px-6 py-4.5 text-xs">
+                      {/* 3. Number */}
+                      <td className="px-6 py-4.5 text-xs whitespace-nowrap">
                         <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
                           <Phone size={12} className="text-slate-400" /> {lead.phone}
                         </div>
-                        {lead.email && (
-                          <div className="flex items-center gap-1.5 text-slate-400 mt-1">
-                            <Mail size={12} className="text-slate-400" /> {lead.email}
-                          </div>
-                        )}
                       </td>
 
-                      <td className="px-6 py-4.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                        {lead.city || <span className="text-[10px] text-slate-400 italic">Not Specified</span>}
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs">
-                        <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
-                          <Tag size={12} className="text-slate-400" /> {lead.campaignName || 'No Campaign'}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
-                        {canEditLead ? (
-                          <select
-                            value={lead.status || 'New'}
-                            onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'status', e.target.value)}
-                            className="w-full min-w-[150px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
-                          >
-                            <option value="New">New</option>
-                            <option value="Contacted">Contacted</option>
-                            <option value="Follow Up">Follow Up</option>
-                            <option value="Interested">Interested</option>
-                            <option value="Converted">Converted</option>
-                            <option value="Lost">Lost</option>
-                          </select>
-                        ) : (
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta.color}`}>
-                            {statusMeta.label}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
-                        {canEditAssignedTo ? (
-                          <select
-                            value={typeof lead.assignedTo === 'object' ? (lead.assignedTo?._id || lead.assignedTo?.id || '') : (lead.assignedTo || '')}
-                            onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'assignedTo', e.target.value)}
-                            className="w-full min-w-[150px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
-                          >
-                            <option value="">Unassigned</option>
-                            {salesGrowthStaff.map(member => (
-                              <option key={member.id || member._id} value={member.id || member._id}>
-                                {member.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-200">
-                            <User size={12} className="text-slate-400" />
-                            {typeof lead.assignedTo === 'object' ? (lead.assignedTo?.name || 'Unassigned') : (staff.find(s => String(s.id || s._id) === String(lead.assignedTo))?.name || lead.assignedTo || 'Unassigned')}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
-                        {canEditLead ? (
-                          <InterestDropdown
-                            value={lead.interestedService || lead.courseIntrests || lead.courseInterests || ''}
-                            onChange={(val) => handleInlineUpdate(lead.id || lead._id, 'interestedService', val)}
-                            disabled={false}
-                          />
-                        ) : (
-                          <span
-                            className="inline-block px-3 py-1.5 rounded-lg text-xs font-bold border shadow-sm"
-                            style={getCourseInterestStyle(lead.interestedService || lead.courseIntrests || lead.courseInterests)}
-                          >
-                            {lead.interestedService || lead.courseIntrests || lead.courseInterests || '—'}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Source */}
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
-                        <select
-                          value={lead.source || ''}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'source', e.target.value)}
-                          disabled={!canEditLead}
-                          className="w-full min-w-[150px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
-                        >
-                          <option value="" disabled>Select</option>
-                          <option value="REFERENCE">REFERENCE</option>
-                          <option value="INBOUND CALLS">INBOUND CALLS</option>
-                          <option value="INBOUND MSG">INBOUND MSG</option>
-                          <option value="MARKETING">MARKETING</option>
-                        </select>
-                      </td>
-
-                      {/* Leads Received Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.leadsReceivedDate)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'leadsReceivedDate', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* 1st Followup Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.followUpDate1)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'followUpDate1', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* 2nd Followup Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.followUpDate2)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'followUpDate2', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* 3rd Followup Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.followUpDate3)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'followUpDate3', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* 4th Followup Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.followUpDate4)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'followUpDate4', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* 5th Followup Date */}
-                      <td className="px-6 py-4.5 text-xs">
-                        <input
-                          type="date"
-                          value={formatDateForInput(lead.followUpDate5)}
-                          onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'followUpDate5', e.target.value || null)}
-                          disabled={!canEditLead}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
-                      {/* Remarks */}
+                      {/* 4. Remarks */}
                       <td className="px-6 py-4.5 text-xs">
                          <textarea
                            rows={1}
@@ -1562,54 +1380,34 @@ export default function ClientLeads() {
                              }, 800);
                            }}
                            disabled={!canEditLead}
-                           className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 outline-none cursor-pointer min-w-[150px] disabled:opacity-75 disabled:cursor-not-allowed"
+                           className="w-full min-w-[200px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-75 disabled:cursor-not-allowed"
                            placeholder="Remarks..."
                          />
                       </td>
 
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
+                      {/* 5. Status */}
+                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[160px]">
                         {canEditLead ? (
                           <select
-                            value={lead.clientMeetingFixed || 'Pending'}
-                            onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'clientMeetingFixed', e.target.value)}
-                            className="w-full min-w-[150px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
+                            value={lead.status || 'New'}
+                            onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'status', e.target.value)}
+                            className="w-full min-w-[140px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
                           >
-                            <option value="Pending">Pending</option>
-                            <option value="Yes">Yes</option>
-                            <option value="No">No</option>
+                            <option value="New">New</option>
+                            <option value="Contacted">Contacted</option>
+                            <option value="Quotation Sent">Quotation Sent</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Lost">Lost</option>
                           </select>
                         ) : (
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">{lead.clientMeetingFixed || 'Pending'}</span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs font-semibold min-w-[170px]">
-                        {canEditLead ? (
-                          <select
-                            value={lead.clientOnboarding || 'Pending'}
-                            onChange={(e) => handleInlineUpdate(lead.id || lead._id, 'clientOnboarding', e.target.value)}
-                            className="w-full min-w-[150px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="Yes">Yes</option>
-                            <option value="No">No</option>
-                          </select>
-                        ) : (
-                          <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
-                            lead.clientOnboarding === 'Yes' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                            lead.clientOnboarding === 'No' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
-                            'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                          }`}>
-                            {lead.clientOnboarding || 'Pending'}
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta.color}`}>
+                            {statusMeta.label}
                           </span>
                         )}
                       </td>
 
-                      <td className="px-6 py-4.5 text-xs text-slate-400 font-medium">
-                        {formatDate(lead.createdAt)}
-                      </td>
-
-                      <td className="px-6 py-4.5 text-xs text-right">
+                      {/* 6. Actions */}
+                      <td className="px-6 py-4.5 text-xs text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => { setSelectedLead(lead); fetchLeadDetails(lead.id || lead._id); setIsViewOpen(true); }}
@@ -1619,22 +1417,13 @@ export default function ClientLeads() {
                             <Eye size={15} />
                           </button>
                           {canEditLead && (
-                            <>
-                              <button
-                                onClick={() => openEditModal(lead)}
-                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                                title="Edit Lead"
-                              >
-                                <Edit3 size={15} />
-                              </button>
-                              <button
-                                onClick={() => { setSelectedLead(lead); setIsFollowUpOpen(true); }}
-                                className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                                title="Add Follow-up"
-                              >
-                                <MessageSquare size={15} />
-                              </button>
-                            </>
+                            <button
+                              onClick={() => openEditModal(lead)}
+                              className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                              title="Edit Lead"
+                            >
+                              <Edit3 size={15} />
+                            </button>
                           )}
                           {canDeleteLead && (
                             <button
@@ -1659,320 +1448,91 @@ export default function ClientLeads() {
       {/* CREATE LEAD MODAL */}
       {isCreateOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-3xl w-full p-6 shadow-2xl my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Plus size={18} className="text-indigo-600" /> Add New Client Lead
-              </h3>
-              <button onClick={() => setIsCreateOpen(false)} className="text-slate-400 hover:text-slate-600">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-sm">
+                  <UserPlus size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Add Client Lead
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Enter lead contact details
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsCreateOpen(false)} 
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateLead} className="space-y-6">
-              {/* Section 1: Basic Information */}
+            <form onSubmit={handleCreateLead} className="space-y-4">
+              {/* Field 1: Name */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3 flex items-center gap-1.5">
-                  <User size={14} /> Basic Contact Information
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.leadName}
-                      onChange={e => setFormData({ ...formData, leadName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="Full Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Company Name</label>
-                    <input
-                      type="text"
-                      value={formData.companyName}
-                      onChange={e => setFormData({ ...formData, companyName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="Company / Organization"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Phone *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.phone}
-                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="Contact Number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={e => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="Email Address"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">City / Place</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={e => setFormData({ ...formData, city: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="City Location"
-                    />
-                  </div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Name <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="text"
+                    required
+                    value={formData.leadName}
+                    onChange={e => setFormData({ ...formData, leadName: e.target.value, companyName: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    placeholder="Enter Name"
+                  />
                 </div>
               </div>
 
-              {/* Section 2: Marketing & Source Tracking */}
+              {/* Field 2: Number */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3 flex items-center gap-1.5">
-                  <Tag size={14} /> Lead Source & Campaign
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Source</label>
-                    <select
-                      value={formData.source}
-                      onChange={e => setFormData({ ...formData, source: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="">Select Source</option>
-                      <option value="REFERENCE">REFERENCE</option>
-                      <option value="INBOUND CALLS">INBOUND CALLS</option>
-                      <option value="INBOUND MSG">INBOUND MSG</option>
-                      <option value="MARKETING">MARKETING</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Campaign Name</label>
-                    <input
-                      type="text"
-                      value={formData.campaignName}
-                      onChange={e => setFormData({ ...formData, campaignName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="e.g. Summer Outreach 2026"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Platform</label>
-                    <input
-                      type="text"
-                      value={formData.leadPlatform}
-                      onChange={e => setFormData({ ...formData, leadPlatform: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      placeholder="e.g. Facebook Ads / Website"
-                    />
-                  </div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Number <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Phone className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="tel"
+                    required
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                    placeholder="Enter Phone Number"
+                  />
                 </div>
               </div>
 
-              {/* Section 3: Status, Priority & Pipeline */}
+              {/* Field 3: Remarks */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3 flex items-center gap-1.5">
-                  <TrendingUp size={14} /> Status, Priority & Pipeline
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Status</label>
-                    <select
-                      value={formData.status}
-                      onChange={e => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="New">New</option>
-                      <option value="Contacted">Contacted</option>
-                      <option value="Follow Up">Follow Up</option>
-                      <option value="Interested">Interested</option>
-                      <option value="Converted">Converted</option>
-                      <option value="Lost">Lost</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Priority</label>
-                    <select
-                      value={formData.priority}
-                      onChange={e => setFormData({ ...formData, priority: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Interest Level</label>
-                    <select
-                      value={formData.interestedService}
-                      onChange={e => setFormData({ ...formData, interestedService: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="">Select Interest</option>
-                      <option value="HOT LEAD">HOT LEAD</option>
-                      <option value="WARM LEAD">WARM LEAD</option>
-                      <option value="COLD LEAD">COLD LEAD</option>
-                      <option value="RNT">RNT</option>
-                      <option value="SWITCHED OFF">SWITCHED OFF</option>
-                      <option value="WRONG LEAD">WRONG LEAD</option>
-                      <option value="CALL BACK">CALL BACK</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Client Meeting Fixed</label>
-                    <select
-                      value={formData.clientMeetingFixed}
-                      onChange={e => setFormData({ ...formData, clientMeetingFixed: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Client Onboarding</label>
-                    <select
-                      value={formData.clientOnboarding}
-                      onChange={e => setFormData({ ...formData, clientOnboarding: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                  {canEditAssignedTo && (
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Assigned Staff / Counselor</label>
-                      <select
-                        value={formData.assignedTo}
-                        onChange={e => setFormData({ ...formData, assignedTo: e.target.value })}
-                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      >
-                        <option value="">Unassigned</option>
-                        {salesGrowthStaff.map(s => (
-                          <option key={s.id || s._id} value={s.id || s._id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                {formData.status === 'Lost' && (
-                  <div className="mt-3">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-rose-500 mb-1">Lost Reason</label>
-                    <input
-                      type="text"
-                      value={formData.lostReason}
-                      onChange={e => setFormData({ ...formData, lostReason: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-xl text-xs outline-none focus:ring-2 focus:ring-rose-500/20"
-                      placeholder="Why was this lead lost?"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Section 4: Follow-up & Key Dates */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-3 flex items-center gap-1.5">
-                  <Calendar size={14} /> Follow-up & Key Dates
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Received Date</label>
-                    <input
-                      type="date"
-                      value={formData.leadsReceivedDate}
-                      onChange={e => setFormData({ ...formData, leadsReceivedDate: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Next Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.nextFollowUpDate}
-                      onChange={e => setFormData({ ...formData, nextFollowUpDate: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">1st Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate1}
-                      onChange={e => setFormData({ ...formData, followUpDate1: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">2nd Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate2}
-                      onChange={e => setFormData({ ...formData, followUpDate2: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">3rd Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate3}
-                      onChange={e => setFormData({ ...formData, followUpDate3: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">4th Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate4}
-                      onChange={e => setFormData({ ...formData, followUpDate4: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">5th Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate5}
-                      onChange={e => setFormData({ ...formData, followUpDate5: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 5: Remarks */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Remarks</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Remarks
+                </label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   value={formData.remarks}
                   onChange={e => setFormData({ ...formData, remarks: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  placeholder="Additional notes or meeting summary..."
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+                  placeholder="Enter remarks (if any)..."
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800 sticky bottom-0 bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsCreateOpen(false)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-500 shadow-md cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition"
                 >
                   Save Lead
                 </button>
@@ -1986,302 +1546,99 @@ export default function ClientLeads() {
       {/* EDIT LEAD MODAL */}
       {isEditOpen && selectedLead && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-3xl w-full p-6 shadow-2xl my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Edit3 size={18} className="text-blue-600" /> Edit Client Lead
-              </h3>
-              <button onClick={() => setIsEditOpen(false)} className="text-slate-400 hover:text-slate-600">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-600 text-white shadow-sm">
+                  <Edit3 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Edit Client Lead
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Update lead details & status
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsEditOpen(false)} 
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleUpdateLead} className="space-y-6">
-              {/* Section 1: Basic Contact Information */}
+            <form onSubmit={handleUpdateLead} className="space-y-4">
+              {/* Field 1: Name */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
-                  <User size={14} /> Basic Contact Information
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.leadName}
-                      onChange={e => setFormData({ ...formData, leadName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Company Name</label>
-                    <input
-                      type="text"
-                      value={formData.companyName}
-                      onChange={e => setFormData({ ...formData, companyName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Phone *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.phone}
-                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={e => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">City / Place</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={e => setFormData({ ...formData, city: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Name <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="text"
+                    required
+                    value={formData.leadName}
+                    onChange={e => setFormData({ ...formData, leadName: e.target.value, companyName: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    placeholder="Enter Name"
+                  />
                 </div>
               </div>
 
-              {/* Section 2: Marketing & Source Tracking */}
+              {/* Field 2: Number */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
-                  <Tag size={14} /> Lead Source & Campaign
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Source</label>
-                    <select
-                      value={formData.source}
-                      onChange={e => setFormData({ ...formData, source: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="">Select Source</option>
-                      <option value="REFERENCE">REFERENCE</option>
-                      <option value="INBOUND CALLS">INBOUND CALLS</option>
-                      <option value="INBOUND MSG">INBOUND MSG</option>
-                      <option value="MARKETING">MARKETING</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Campaign Name</label>
-                    <input
-                      type="text"
-                      value={formData.campaignName}
-                      onChange={e => setFormData({ ...formData, campaignName: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Platform</label>
-                    <input
-                      type="text"
-                      value={formData.leadPlatform}
-                      onChange={e => setFormData({ ...formData, leadPlatform: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Number <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Phone className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="tel"
+                    required
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
+                    placeholder="Enter Phone Number"
+                  />
                 </div>
               </div>
 
-              {/* Section 3: Status, Priority & Pipeline */}
+              {/* Field 3: Status */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
-                  <TrendingUp size={14} /> Status, Priority & Pipeline
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Status</label>
-                    <select
-                      value={formData.status}
-                      onChange={e => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="New">New</option>
-                      <option value="Contacted">Contacted</option>
-                      <option value="Follow Up">Follow Up</option>
-                      <option value="Interested">Interested</option>
-                      <option value="Converted">Converted</option>
-                      <option value="Lost">Lost</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Priority</label>
-                    <select
-                      value={formData.priority}
-                      onChange={e => setFormData({ ...formData, priority: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Interest Level</label>
-                    <select
-                      value={formData.interestedService}
-                      onChange={e => setFormData({ ...formData, interestedService: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="">Select Interest</option>
-                      <option value="HOT LEAD">HOT LEAD</option>
-                      <option value="WARM LEAD">WARM LEAD</option>
-                      <option value="COLD LEAD">COLD LEAD</option>
-                      <option value="RNT">RNT</option>
-                      <option value="SWITCHED OFF">SWITCHED OFF</option>
-                      <option value="WRONG LEAD">WRONG LEAD</option>
-                      <option value="CALL BACK">CALL BACK</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Client Meeting Fixed</label>
-                    <select
-                      value={formData.clientMeetingFixed}
-                      onChange={e => setFormData({ ...formData, clientMeetingFixed: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Client Onboarding</label>
-                    <select
-                      value={formData.clientOnboarding}
-                      onChange={e => setFormData({ ...formData, clientOnboarding: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                  {canEditAssignedTo && (
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Assigned Staff / Counselor</label>
-                      <select
-                        value={formData.assignedTo}
-                        onChange={e => setFormData({ ...formData, assignedTo: e.target.value })}
-                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                      >
-                        <option value="">Unassigned</option>
-                        {salesGrowthStaff.map(s => (
-                          <option key={s.id || s._id} value={s.id || s._id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                {(formData.status === 'Lost' || formData.lostReason) && (
-                  <div className="mt-3">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-rose-500 mb-1">Lost Reason</label>
-                    <input
-                      type="text"
-                      value={formData.lostReason}
-                      onChange={e => setFormData({ ...formData, lostReason: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-xl text-xs outline-none focus:ring-2 focus:ring-rose-500/20"
-                      placeholder="Why was this lead lost?"
-                    />
-                  </div>
-                )}
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={e => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="New">New</option>
+                  <option value="Contacted">Contacted</option>
+                  <option value="Quotation Sent">Quotation Sent</option>
+                  <option value="Confirmed">Confirmed (Adds to Clients)</option>
+                  <option value="Lost">Lost</option>
+                </select>
               </div>
 
-              {/* Section 4: Follow-up & Key Dates */}
+              {/* Field 4: Remarks */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
-                  <Calendar size={14} /> Follow-up & Key Dates
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Lead Received Date</label>
-                    <input
-                      type="date"
-                      value={formData.leadsReceivedDate}
-                      onChange={e => setFormData({ ...formData, leadsReceivedDate: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Next Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.nextFollowUpDate}
-                      onChange={e => setFormData({ ...formData, nextFollowUpDate: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">1st Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate1}
-                      onChange={e => setFormData({ ...formData, followUpDate1: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">2nd Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate2}
-                      onChange={e => setFormData({ ...formData, followUpDate2: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">3rd Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate3}
-                      onChange={e => setFormData({ ...formData, followUpDate3: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">4th Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate4}
-                      onChange={e => setFormData({ ...formData, followUpDate4: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">5th Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={formData.followUpDate5}
-                      onChange={e => setFormData({ ...formData, followUpDate5: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 5: Remarks */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Remarks</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Remarks
+                </label>
                 <textarea
                   rows={3}
                   value={formData.remarks}
                   onChange={e => setFormData({ ...formData, remarks: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
+                  placeholder="Enter remarks (if any)..."
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 sticky bottom-0 bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
                 {canDeleteLead ? (
                   <button
                     type="button"
@@ -2293,20 +1650,20 @@ export default function ClientLeads() {
                     }}
                     className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Trash2 size={14} /> Delete Lead
+                    <Trash2 size={14} /> Delete
                   </button>
                 ) : <div />}
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setIsEditOpen(false)}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 cursor-pointer"
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500 shadow-md cursor-pointer"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition"
                   >
                     Update Lead
                   </button>
@@ -2481,20 +1838,35 @@ export default function ClientLeads() {
             ) : null}
 
             <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between sticky bottom-0 bg-white dark:bg-slate-900">
-              {canDeleteLead ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const lId = selectedLeadDetails?.id || selectedLeadDetails?._id || selectedLead?.id || selectedLead?._id;
-                    const lName = selectedLeadDetails?.leadName || selectedLead?.leadName || 'Lead';
-                    setIsViewOpen(false);
-                    setDeleteConfirm({ isOpen: true, id: lId, name: lName });
-                  }}
-                  className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 size={14} /> Delete Lead
-                </button>
-              ) : <div />}
+              <div className="flex items-center gap-2">
+                {canDeleteLead && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const lId = selectedLeadDetails?.id || selectedLeadDetails?._id || selectedLead?.id || selectedLead?._id;
+                      const lName = selectedLeadDetails?.leadName || selectedLead?.leadName || 'Lead';
+                      setIsViewOpen(false);
+                      setDeleteConfirm({ isOpen: true, id: lId, name: lName });
+                    }}
+                    className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 size={14} /> Delete Lead
+                  </button>
+                )}
+                {canEditLead && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const leadToEdit = selectedLeadDetails || selectedLead;
+                      setIsViewOpen(false);
+                      openEditModal(leadToEdit);
+                    }}
+                    className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-xl text-xs font-bold hover:bg-indigo-100 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 size={14} /> Edit Lead
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setIsViewOpen(false)}
                 className="px-4 py-2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"

@@ -31,6 +31,7 @@ const ALL_SIDEBAR_ITEMS = [
 
   // --- SALES & CRM ---
   { label: 'Clients', path: '/clients', category: 'Sales & CRM', desc: 'Client directory & company profiles' },
+  { label: 'Workspace', path: '/fabrication', category: 'Operations & Works', desc: 'Workspace client jobs, quotations, daily wages, materials & payments' },
 
   // --- FINANCE & ACCOUNTS ---
   { label: 'Capital', path: '/accounts/capital', category: 'Finance & Accounts', desc: 'Capital accounts & assets' },

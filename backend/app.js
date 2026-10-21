@@ -29,6 +29,7 @@ import academyRoutes from './src/routes/academy.routes.js';
 import notificationRoutes from './src/routes/notification.routes.js';
 import leaveRoutes from './src/routes/leave.routes.js';
 import recruitmentRoutes from './src/routes/recruitment.routes.js';
+import fabricationRoutes from './src/routes/fabrication.routes.js';
 import { servePublicPdf } from './src/controllers/account.controller.js';
 import Designation from './src/models/designation.model.js';
 import Department from './src/modules/departments/department.model.js';
@@ -111,6 +112,8 @@ app.use('/v1/notifications', notificationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/api/v1/recruitment', recruitmentRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
+app.use('/api/v1/fabrication', fabricationRoutes);
+app.use('/api/fabrication', fabricationRoutes);
 
 // 4. Broad, Versioned, & Catch-all Fallbacks (Broadest matching paths go lower)
 app.use('/api/v1', studentRoutes);

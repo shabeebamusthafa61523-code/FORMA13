@@ -47,8 +47,13 @@ const clientLeadSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['New', 'Contacted', 'Follow Up', 'Interested', 'Converted', 'Lost'],
+    enum: ['New', 'Contacted', 'Quotation Sent', 'Confirmed', 'Lost', 'Follow Up', 'Interested', 'Confirm', 'Converted'],
     default: 'New'
+  },
+  convertedToClient: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client',
+    default: null
   },
   priority: {
     type: String,

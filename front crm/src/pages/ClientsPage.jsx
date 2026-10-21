@@ -1,29 +1,24 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Loader2, Plus } from 'lucide-react';
 import { getClients, deleteClient } from '../services/clientService';
 import ConfirmModal from '../components/ConfirmModal';
 import ClientTableView from '../components/clients/ClientTableView';
-import CreateClientModal from '../components/clients/CreateClientModal';
 import EditClientModal from '../components/clients/EditClientModal';
-import ClientTransactionsModal from '../components/clients/ClientTransactionsModal';
 import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
 import ExcelExportButton from '../components/ExcelExportButton';
 
 const ClientsPage = () => {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  // Modals
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // Edit Modal
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
-
-  // Transactions / Ledger modal
-  const [transactionClient, setTransactionClient] = useState(null);
-  const [isTransactionOpen, setIsTransactionOpen] = useState(false);
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
@@ -88,10 +83,10 @@ const ClientsPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Clients
+            Clients Directory
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-            Manage client directory and records
+            Manage client directory, records, quotations, and financial ledgers.
           </p>
         </div>
 
@@ -106,7 +101,7 @@ const ClientsPage = () => {
             sheetName="Clients"
           />
           <button
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => navigate('/clients/new')}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer"
           >
             <Plus size={18} />
@@ -140,32 +135,8 @@ const ClientsPage = () => {
           clients={clients}
           onEdit={handleEditClient}
           onDelete={promptDeleteClient}
-          onViewTransactions={(client) => {
-            setTransactionClient(client);
-            setIsTransactionOpen(true);
-          }}
         />
       )}
-
-      {/* Client Transactions / Ledger Modal */}
-      <ClientTransactionsModal
-        isOpen={isTransactionOpen}
-        onClose={() => {
-          setIsTransactionOpen(false);
-          setTransactionClient(null);
-        }}
-        client={transactionClient}
-      />
-
-      {/* Create Client Modal */}
-      <CreateClientModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onSuccess={() => {
-          showToast("Client created successfully!", "success");
-          fetchClientsList();
-        }}
-      />
 
       {/* Edit Client Modal */}
       <EditClientModal

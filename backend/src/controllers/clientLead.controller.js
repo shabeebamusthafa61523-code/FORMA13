@@ -1,5 +1,7 @@
 import ClientLead from '../models/clientLead.model.js';
 import User from '../models/user.model.js';
+import Client from '../models/client.model.js';
+import { generateClientId, syncLeadToClient } from '../services/client.service.js';
 
 /**
  * GET /api/v1/client-leads
@@ -50,6 +52,7 @@ export const getClientLeads = async (req, res, next) => {
       ClientLead.find(query)
         .populate('assignedTo', 'name email employeeId designation role_id department')
         .populate('createdBy', 'name email')
+        .populate('convertedToClient', 'clientId companyName clientName phone email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
@@ -83,9 +86,8 @@ export const getClientLeadStats = async (req, res, next) => {
       total,
       newCount,
       contactedCount,
-      followUpCount,
-      interestedCount,
-      convertedCount,
+      quotationSentCount,
+      confirmedCount,
       lostCount,
       pendingMeetings,
       onboardingCount
@@ -93,9 +95,8 @@ export const getClientLeadStats = async (req, res, next) => {
       ClientLead.countDocuments(),
       ClientLead.countDocuments({ status: 'New' }),
       ClientLead.countDocuments({ status: 'Contacted' }),
-      ClientLead.countDocuments({ status: 'Follow Up' }),
-      ClientLead.countDocuments({ status: 'Interested' }),
-      ClientLead.countDocuments({ status: 'Converted' }),
+      ClientLead.countDocuments({ status: 'Quotation Sent' }),
+      ClientLead.countDocuments({ status: { $in: ['Confirm', 'Confirmed', 'Converted'] } }),
       ClientLead.countDocuments({ status: 'Lost' }),
       ClientLead.countDocuments({ clientMeetingFixed: 'Yes' }),
       ClientLead.countDocuments({ clientOnboarding: 'Yes' })
@@ -107,9 +108,9 @@ export const getClientLeadStats = async (req, res, next) => {
         total,
         new: newCount,
         contacted: contactedCount,
-        followUp: followUpCount,
-        interested: interestedCount,
-        converted: convertedCount,
+        quotationSent: quotationSentCount,
+        confirmed: confirmedCount,
+        converted: confirmedCount,
         lost: lostCount,
         pendingMeetings,
         onboardingCount
@@ -128,7 +129,8 @@ export const getClientLeadById = async (req, res, next) => {
   try {
     const clientLead = await ClientLead.findById(req.params.id)
       .populate('assignedTo', 'name email employeeId designation role_id department')
-      .populate('createdBy', 'name email');
+      .populate('createdBy', 'name email')
+      .populate('convertedToClient', 'clientId companyName clientName phone email');
 
     if (!clientLead) {
       return res.status(404).json({ success: false, message: 'Client lead not found' });
@@ -146,7 +148,7 @@ export const getClientLeadById = async (req, res, next) => {
  */
 export const createClientLead = async (req, res, next) => {
   try {
-    const currentUserId = req.user.id || req.user._id;
+    const currentUserId = req.user?.id || req.user?._id;
     const userObj = await User.findById(currentUserId).populate('departmentId designationId').lean();
     const deptName = String(userObj?.department || userObj?.departmentId?.name || '').toLowerCase().trim();
     const desigName = String(userObj?.designation || userObj?.designationId?.name || '').toLowerCase().trim();
@@ -163,11 +165,23 @@ export const createClientLead = async (req, res, next) => {
       createdBy: currentUserId
     });
 
+    // Check if status is Confirm/Confirmed/Converted on creation
+    const newStatus = String(newLead.status || '').trim().toLowerCase();
+    if (['confirm', 'confirmed', 'converted'].includes(newStatus)) {
+      newLead.status = 'Confirmed';
+      const client = await syncLeadToClient(newLead, currentUserId);
+      if (client) {
+        newLead.convertedToClient = client._id;
+        newLead.convertedAt = new Date();
+      }
+    }
+
     await newLead.save();
 
     const populated = await ClientLead.findById(newLead._id)
       .populate('assignedTo', 'name email employeeId designation role_id department')
-      .populate('createdBy', 'name email');
+      .populate('createdBy', 'name email')
+      .populate('convertedToClient');
 
     return res.status(201).json({
       success: true,
@@ -185,21 +199,39 @@ export const createClientLead = async (req, res, next) => {
  */
 export const updateClientLead = async (req, res, next) => {
   try {
+    const currentUserId = req.user?.id || req.user?._id;
+    const existingLead = await ClientLead.findById(req.params.id);
+    if (!existingLead) {
+      return res.status(404).json({ success: false, message: 'Client lead not found' });
+    }
+
+    const newStatus = req.body.status;
+    const isConfirming = newStatus && ['confirm', 'confirmed', 'converted'].includes(String(newStatus).toLowerCase());
+
+    if (isConfirming) {
+      req.body.status = 'Confirmed';
+      const mergedLeadData = { ...existingLead.toObject(), ...req.body };
+      const client = await syncLeadToClient(mergedLeadData, currentUserId);
+      if (client) {
+        req.body.convertedToClient = client._id;
+        req.body.convertedAt = new Date();
+      }
+    }
+
     const updatedLead = await ClientLead.findByIdAndUpdate(
       req.params.id,
       { $set: req.body },
       { new: true, runValidators: true }
     )
       .populate('assignedTo', 'name email employeeId designation role_id department')
-      .populate('createdBy', 'name email');
-
-    if (!updatedLead) {
-      return res.status(404).json({ success: false, message: 'Client lead not found' });
-    }
+      .populate('createdBy', 'name email')
+      .populate('convertedToClient');
 
     return res.status(200).json({
       success: true,
-      message: 'Client lead updated successfully',
+      message: isConfirming 
+        ? 'Client lead confirmed and added to Clients Directory!' 
+        : 'Client lead updated successfully',
       data: updatedLead
     });
   } catch (error) {
@@ -238,7 +270,7 @@ export const importClientLeads = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid or empty leads array' });
     }
 
-    const currentUserId = req.user.id || req.user._id;
+    const currentUserId = req.user?.id || req.user?._id;
     const userObj = await User.findById(currentUserId).populate('departmentId designationId').lean();
     const deptName = String(userObj?.department || userObj?.departmentId?.name || '').toLowerCase().trim();
     const desigName = String(userObj?.designation || userObj?.designationId?.name || '').toLowerCase().trim();
@@ -263,6 +295,19 @@ export const importClientLeads = async (req, res, next) => {
     }));
 
     const inserted = await ClientLead.insertMany(formattedLeads);
+
+    // Auto-sync any imported confirmed leads to Client collection
+    for (const lead of inserted) {
+      if (['confirm', 'confirmed', 'converted'].includes(String(lead.status || '').toLowerCase())) {
+        const client = await syncLeadToClient(lead, currentUserId);
+        if (client) {
+          lead.convertedToClient = client._id;
+          lead.convertedAt = new Date();
+          lead.status = 'Confirmed';
+          await lead.save();
+        }
+      }
+    }
 
     return res.status(201).json({
       success: true,
