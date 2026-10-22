@@ -1,36 +1,66 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Printer, Download, FileText, CheckCircle2, Clock, XCircle, Loader2, Mail, Trash2 } from 'lucide-react';
+import { 
+  X, 
+  Printer, 
+  Download, 
+  Loader2, 
+  MessageCircle
+} from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import html2pdf from 'html2pdf.js';
-import { sendSalaryPayslipEmail, deleteSalaryPayment, updateSalaryPayment } from '../../services/accountsService';
+import { updateSalaryPayment } from '../../services/accountsService';
 import { useToast } from '../ToastProvider';
-import { useUser } from '../../contexts/UserContext';
-import ConfirmModal from '../ConfirmModal';
 import StatusSelectPill from './StatusSelectPill';
 import PartialPaymentModal from './PartialPaymentModal';
 
-const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved, isSmall = false }) => {
+// Number to Indian currency words
+export const convertNumberToWords = (num) => {
+  if (!num || isNaN(num) || num <= 0) return 'Zero Rupees Only';
+  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const n = ('000000000' + Math.floor(num)).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+  if (!n) return '';
+  let str = '';
+  str += (Number(n[1]) !== 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'Crore ' : '';
+  str += (Number(n[2]) !== 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'Lakh ' : '';
+  str += (Number(n[3]) !== 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'Thousand ' : '';
+  str += (Number(n[4]) !== 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'Hundred ' : '';
+  str += (Number(n[5]) !== 0) ? ((str !== '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+  
+  return str.trim() ? str.trim() + ' Rupees Only' : 'Zero Rupees Only';
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—';
+  try {
+    return new Date(dateStr).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return String(dateStr);
+  }
+};
+
+const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved }) => {
   const payslipRef = useRef(null);
   const { showToast } = useToast();
-  const { user } = useUser();
   const [downloading, setDownloading] = useState(false);
-  const [sendingEmail, setSendingEmail] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [targetEmail, setTargetEmail] = useState('');
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('PENDING');
   const [partialModalOpen, setPartialModalOpen] = useState(false);
 
   useEffect(() => {
     if (salaryRecord) {
-      const initialEmail = salaryRecord?.employee?.email || salaryRecord?.email || salaryRecord?.employeeEmail || '';
-      setTargetEmail(initialEmail);
       setCurrentStatus(salaryRecord?.status || 'PENDING');
     }
   }, [salaryRecord]);
+
+  if (!isOpen || !salaryRecord) return null;
 
   const handleStatusUpdate = async (newStatus) => {
     if (newStatus === 'PARTIALLY_PAID') {
@@ -75,81 +105,107 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved, isSmall = false 
     }
   };
 
-  if (!isOpen || !salaryRecord) return null;
-
-  const handleDelete = async () => {
-    if (!salaryRecord?._id) return;
-    setDeleteConfirmOpen(false);
-    try {
-      const res = await deleteSalaryPayment(salaryRecord._id);
-      if (res.success) {
-        if (showToast) showToast('Wage entry deleted successfully!', 'success');
-        onClose();
-        if (onSaved) onSaved();
-      }
-    } catch (err) {
-      if (showToast) showToast(err?.response?.data?.message || 'Failed to delete wage entry.', 'error');
-    }
-  };
-
   const handlePrint = () => window.print();
 
-  const empName = salaryRecord.employeeName || salaryRecord.employee?.name || 'Employee';
-  const empCode = salaryRecord.kbEmployeeId || salaryRecord.employee?.employeeId || 'KB-EMP';
-  const designation = salaryRecord.designation || salaryRecord.employee?.designationName || 'Staff Member';
-  const department = salaryRecord.department || salaryRecord.employee?.departmentId?.name || 'General';
-  const monthPeriod = salaryRecord.month || `${new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}`;
-  const paymentDateStr = salaryRecord.paymentDate
-    ? new Date(salaryRecord.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : 'N/A';
-  const dateAddedStr = salaryRecord.createdAt
-    ? new Date(salaryRecord.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : paymentDateStr;
+  // Employee details
+  const empName = salaryRecord.employeeName || salaryRecord.employee?.name || 'Staff Member';
+  const empCode = salaryRecord.kbEmployeeId || salaryRecord.employee?.employeeId || (salaryRecord._id ? `EMP-${salaryRecord._id.slice(-4).toUpperCase()}` : 'EMP-FT');
+  const designation = salaryRecord.designation || salaryRecord.employee?.designationName || 'Technician / Worker';
+  const department = salaryRecord.department || salaryRecord.employee?.departmentId?.name || 'Fabrication Operations';
+  const monthPeriod = salaryRecord.month || (salaryRecord.paymentDate ? new Date(salaryRecord.paymentDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }));
+  
+  const paymentDateStr = formatDate(salaryRecord.paymentDate || salaryRecord.createdAt);
   const paidAmount = Number(salaryRecord.paidAmount ?? salaryRecord.customNetPay ?? salaryRecord.basicSalary ?? 0);
-  const dailyRate = Number(salaryRecord.basicSalary || salaryRecord.dailyWageRate || 0);
-  const daysWorked = Number(salaryRecord.daysWorked || 1);
+  const dailyRate = Number(salaryRecord.basicSalary || salaryRecord.dailyWageRate || paidAmount);
   const paymentMode = salaryRecord.paymentMode || 'Cash';
-  const status = salaryRecord.status || 'PENDING';
   const remarks = salaryRecord.remarks || '';
+  const workerPhone = salaryRecord.employee?.phone || salaryRecord.employee?.mobile || salaryRecord.phone || '';
+  
+  // Voucher Number
+  const slipNo = salaryRecord.voucherNo || (salaryRecord._id ? `WS-${salaryRecord._id.slice(-6).toUpperCase()}` : `WS-${Date.now().toString().slice(-6)}`);
 
+  // WhatsApp Share Handler
+  const handleWhatsAppShare = () => {
+    const rawPhone = String(workerPhone || '').replace(/\D/g, '');
+    const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    const msg = `*WAGE SLIP - FABTEC WORKS*\n────────────────────\n🧾 *Slip No:* ${slipNo}\n📅 *Date:* ${paymentDateStr}\n👤 *Employee:* ${empName} (${empCode})\n💼 *Role:* ${designation}\n💰 *Daily Wage:* ₹${dailyRate.toLocaleString('en-IN')}\n💵 *Net Paid:* ₹${paidAmount.toLocaleString('en-IN')}\n💳 *Mode:* ${paymentMode}\n📌 *Status:* ${currentStatus}\n${remarks ? `📝 *Remarks:* ${remarks}\n` : ''}────────────────────\n*FABTEC WORKS & ENGINEERING*\nVengoor, Kerala • Ph: +91 81398 77848`;
+    const url = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
+  // Download PDF Handler
   const handleDownloadPDF = async () => {
     if (!payslipRef.current) return;
     setDownloading(true);
-    const filename = `Wage_Slip_${empName.replace(/\s+/g, '_')}_${paymentDateStr.replace(/\s+/g, '_')}.pdf`;
+    const cleanEmp = empName.replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanSlipNo = slipNo.replace(/[^a-zA-Z0-9-]/g, '_');
+    const filename = `Wage_Slip_${cleanSlipNo}_${cleanEmp}.pdf`;
+
+    // Helper to sanitize cloned doc styles (converts Tailwind v4 oklch colors)
+    const sanitizeClonedDocStyles = (clonedDoc) => {
+      try {
+        const replaceOklch = (str) => {
+          if (!str || typeof str !== 'string') return str;
+          return str
+            .replace(/oklch\([^)]+\)/gi, '#059669')
+            .replace(/oklab\([^)]+\)/gi, '#059669')
+            .replace(/color-mix\([^)]+\)/gi, '#059669');
+        };
+
+        const styleElements = clonedDoc.querySelectorAll('style');
+        styleElements.forEach((style) => {
+          try {
+            if (style.textContent) style.textContent = replaceOklch(style.textContent);
+          } catch (e) {}
+        });
+
+        const allElements = clonedDoc.querySelectorAll('*');
+        allElements.forEach((el) => {
+          try {
+            const inlineStyle = el.getAttribute('style');
+            if (inlineStyle && (inlineStyle.includes('oklab') || inlineStyle.includes('oklch') || inlineStyle.includes('color-mix'))) {
+              el.setAttribute('style', replaceOklch(inlineStyle));
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+    };
+
     try {
       const element = payslipRef.current.querySelector('[data-payslip-inner="true"]') || payslipRef.current;
       const canvas = await html2canvas(element, {
-        scale: 3,
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
+        onclone: sanitizeClonedDocStyles
       });
 
-      const imgData = canvas.toDataURL('image/png', 1.0);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const marginX = 10;
-      const marginY = 15;
-      const maxW = pdfWidth - (marginX * 2);
-      const renderH = (canvas.height * maxW) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-      pdf.addImage(imgData, 'PNG', marginX, marginY, maxW, renderH);
+      const margin = 8;
+      const usableWidth = pdfWidth - (margin * 2);
+      const usableHeight = pageHeight - (margin * 2);
+      const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height);
+      const renderWidth = canvas.width * ratio;
+      const renderHeight = canvas.height * ratio;
+      const xOffset = margin + (usableWidth - renderWidth) / 2;
+      const yOffset = margin;
+
+      pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderWidth, renderHeight);
       pdf.save(filename);
       if (showToast) showToast(`Downloaded ${filename} successfully!`, 'success');
     } catch (err) {
-      console.error('PDF export failed, trying fallback:', err);
+      console.error('PDF export failed:', err);
       try {
-        const opt = {
-          margin: [10, 10, 10, 10],
-          filename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        await html2pdf().set(opt).from(payslipRef.current.querySelector('[data-payslip-inner="true"]') || payslipRef.current).save();
-      } catch (fallbackErr) {
-        console.error('All PDF export failed:', fallbackErr);
+        window.print();
+      } catch (e) {
         if (showToast) showToast('Error generating PDF.', 'error');
       }
     } finally {
@@ -157,276 +213,231 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved, isSmall = false 
     }
   };
 
-  const handleSendEmail = async (emailToUse) => {
-    const finalEmail = emailToUse || targetEmail;
-    if (!salaryRecord?._id) return;
-    if (!finalEmail || !finalEmail.trim()) {
-      if (showToast) showToast('Please enter a valid recipient email.', 'error');
-      return;
-    }
-
-    setShowEmailModal(false);
-    if (onClose) onClose();
-    if (showToast) showToast(`Sending wage slip email to ${finalEmail.trim()}...`, 'info');
-
-    setSendingEmail(true);
-    try {
-      const payload = {
-        email: finalEmail.trim(),
-        brevoApiKey: import.meta.env.VITE_BREVO_API_KEY,
-        senderEmail: import.meta.env.VITE_EMAIL_SENDER_ADDRESS,
-        senderName: import.meta.env.VITE_EMAIL_SENDER_NAME
-      };
-      const res = await sendSalaryPayslipEmail(salaryRecord._id, payload);
-      if (res?.success !== false) {
-        if (showToast) showToast(`Wage slip email sent to ${finalEmail.trim()}!`, 'success');
-      } else {
-        if (showToast) showToast(res?.message || 'Failed to send email.', 'error');
-      }
-    } catch (err) {
-      console.error('Error sending wage slip email:', err);
-      if (showToast) showToast(err?.response?.data?.message || 'Error sending wage slip email.', 'error');
-    } finally {
-      setSendingEmail(false);
-    }
-  };
-
-  const renderStatusBadge = (st) => {
-    switch (st) {
-      case 'COMPLETED':
-      case 'APPROVED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-            <CheckCircle2 size={12} /> {st === 'COMPLETED' ? 'Completed' : 'Approved'}
-          </span>
-        );
-      case 'PARTIALLY_PAID':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-100 text-sky-800">
-            <Clock size={12} /> Partially Paid
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-            <Clock size={12} /> Pending
-          </span>
-        );
-    }
-  };
-
   return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 overflow-y-auto">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className={`bg-white text-slate-900 rounded-3xl shadow-2xl my-auto flex flex-col w-full overflow-hidden border border-slate-200 ${
-            isSmall ? 'max-w-md' : 'max-w-xl'
-          }`}
+          exit={{ opacity: 0, scale: 0.97 }}
+          className="bg-white rounded-2xl max-w-xl w-full flex flex-col shadow-xl border border-slate-200 overflow-hidden my-auto"
         >
-          {/* Top Action Control Bar */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50 print:hidden shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-sm">
-                <FileText size={16} />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900 tracking-tight">Official Wage Slip</h3>
-                <p className="text-[11px] text-slate-500 font-medium">{empName} — {monthPeriod}</p>
-              </div>
+          {/* Minimalist Top Control Bar */}
+          <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between bg-white print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-800 text-sm">Wage Slip</span>
+              <span className="font-mono text-xs text-slate-400">#{slipNo}</span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
+                type="button"
+                onClick={handleWhatsAppShare}
+                className="px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                title="Share via WhatsApp"
+              >
+                <MessageCircle size={14} />
+                <span className="hidden sm:inline">WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handlePrint}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
                 title="Print Wage Slip"
               >
-                <Printer size={13} /> Print
+                <Printer size={14} />
+                <span className="hidden sm:inline">Print</span>
               </button>
+
               <button
+                type="button"
                 onClick={handleDownloadPDF}
                 disabled={downloading}
-                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm disabled:opacity-50 transition flex items-center gap-1 cursor-pointer"
+                className="px-3 py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                title="Download PDF"
               >
                 {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                <span>{downloading ? 'Downloading...' : 'PDF'}</span>
+                <span>PDF</span>
               </button>
+
               <button
-                onClick={() => {
-                  const empEmail = salaryRecord?.employee?.email || salaryRecord?.email || targetEmail || '';
-                  setTargetEmail(empEmail);
-                  setShowEmailModal(true);
-                }}
-                disabled={sendingEmail}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm disabled:opacity-50 transition flex items-center gap-1 cursor-pointer"
-              >
-                {sendingEmail ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
-                <span>Email</span>
-              </button>
-              <button
-                onClick={() => setDeleteConfirmOpen(true)}
-                className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition cursor-pointer"
-                title="Delete Wage Entry"
-              >
-                <Trash2 size={14} />
-              </button>
-              <button
+                type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer ml-1"
+                title="Close"
               >
                 <X size={16} />
               </button>
             </div>
           </div>
 
-          {/* Printable Minimal Wage Slip Body */}
-          <div className="p-6 overflow-y-auto bg-slate-50 dark:bg-slate-900" ref={payslipRef}>
+          {/* Minimalist Printable Wage Slip Canvas */}
+          <div className="p-5 sm:p-7 bg-slate-50 flex justify-center" ref={payslipRef}>
             <div
-              className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5 text-slate-800"
+              className="w-full bg-white text-slate-900 p-6 sm:p-8 rounded-xl shadow-xs border border-slate-200 space-y-4"
               data-payslip-inner="true"
+              style={{
+                fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                backgroundColor: '#ffffff',
+                color: '#0f172a'
+              }}
             >
-              {/* Header: Company Name & Slip Title */}
-              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-                <div className="flex items-center gap-3">
-                  <img
-                    src="/logo3.png"
-                    alt="Logo"
-                    className="h-10 w-auto object-contain"
-                    crossOrigin="anonymous"
-                  />
-                  <div>
-                    <h2 className="text-base font-black text-slate-900 tracking-wide uppercase">KODBRAND SOLUTIONS</h2>
-                    <p className="text-[11px] text-slate-500 font-semibold">Authorized Employee Daily Wage Slip</p>
-                  </div>
+              {/* Header: Company & Slip Identity */}
+              <div className="flex items-start justify-between pb-4 border-b border-slate-200">
+                <div className="space-y-0.5">
+                  <h2 className="text-base font-black tracking-tight text-slate-900">
+                    FABTEC WORKS & ENGINEERING
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Vengoor, Kerala • Ph: +91 81398 77848, +91 77366 92975
+                  </p>
                 </div>
 
                 <div className="text-right">
-                  <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-black text-xs uppercase tracking-wider">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">
                     WAGE SLIP
                   </span>
-                  <p className="text-[11px] text-slate-400 font-bold mt-1">Date: {paymentDateStr}</p>
+                  <span className="text-xs font-mono font-semibold text-slate-700 block">
+                    {slipNo}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block">
+                    Date: {paymentDateStr}
+                  </span>
                 </div>
               </div>
 
-              {/* Employee & Payment Summary Table */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+              {/* Minimal Employee & Payment Profile */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 py-3 border-b border-slate-100 text-xs">
                 <div>
-                  <span className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Employee Name</span>
-                  <span className="text-sm font-black text-slate-900">{empName}</span>
-                  <span className="block text-[11px] text-slate-500 font-semibold mt-0.5">ID: {empCode}</span>
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Employee
+                  </span>
+                  <span className="font-bold text-slate-900 text-sm">
+                    {empName}
+                  </span>
+                  <span className="text-slate-500 font-mono text-[11px] ml-1">
+                    ({empCode})
+                  </span>
                 </div>
 
-                <div className="text-right">
-                  <span className="block text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Designation / Dept</span>
-                  <span className="text-xs font-bold text-slate-800">{designation}</span>
-                  <span className="block text-[11px] text-slate-500 font-semibold mt-0.5">{department}</span>
-                </div>
-              </div>
-
-              {/* Wage Breakup Particulars */}
-              <div className="space-y-2 text-xs">
-                <h4 className="font-extrabold uppercase tracking-wider text-[11px] text-slate-500">Wage Details</h4>
-                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
-                  <div className="flex justify-between p-2.5 bg-white font-medium">
-                    <span className="text-slate-600">Date Added</span>
-                    <span className="font-bold text-slate-900">{dateAddedStr}</span>
-                  </div>
-
-                  {dailyRate > 0 && (
-                    <div className="flex justify-between p-2.5 bg-white font-medium">
-                      <span className="text-slate-600">Daily Wage Rate × Days Worked</span>
-                      <span className="font-bold text-slate-900">₹{dailyRate} × {daysWorked} day(s)</span>
-                    </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Role / Dept
+                  </span>
+                  <span className="text-slate-800 font-medium">
+                    {designation}
+                  </span>
+                  {department && (
+                    <span className="text-slate-500"> • {department}</span>
                   )}
+                </div>
 
-                  <div className="flex justify-between p-2.5 bg-white font-medium">
-                    <span className="text-slate-600">Payment Mode</span>
-                    <span className="font-bold text-slate-900">{paymentMode}</span>
-                  </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Payment Mode & Period
+                  </span>
+                  <span className="text-slate-800 font-medium">
+                    {paymentMode}
+                  </span>
+                  <span className="text-slate-500"> ({monthPeriod})</span>
+                </div>
 
-                  <div className="flex justify-between p-2.5 bg-white font-medium items-center">
-                    <span className="text-slate-600">Status</span>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block mb-0.5">
+                    Status
+                  </span>
+                  <div className="scale-95 origin-left">
                     <StatusSelectPill
                       value={currentStatus}
                       onChange={(newStatus) => handleStatusUpdate(newStatus)}
                     />
                   </div>
-
-                  {remarks && (
-                    <div className="flex justify-between p-2.5 bg-slate-50/50 font-medium">
-                      <span className="text-slate-600">Remarks</span>
-                      <span className="font-semibold text-slate-800 max-w-[240px] text-right">{remarks}</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* Financial Summary Highlight */}
+              {/* Clean Minimal Wage Breakdown */}
+              <div className="py-2">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 text-[10px] uppercase font-semibold">
+                      <th className="text-left pb-2 font-semibold">Particulars</th>
+                      <th className="text-right pb-2 font-semibold">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-800">
+                    <tr>
+                      <td className="py-3 pr-2">
+                        <div className="font-semibold text-slate-900">Daily Wage</div>
+                        {remarks && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {remarks}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 text-right font-mono font-bold text-slate-900">
+                        ₹{dailyRate.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Minimal Net Pay Summary */}
               {currentStatus === 'PARTIALLY_PAID' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3 bg-slate-100 border border-slate-200 rounded-2xl">
-                    <span className="block text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Wage</span>
-                    <span className="text-base font-black text-slate-900">
+                <div className="py-3 border-t border-slate-200 text-xs space-y-1.5">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Total Wage Entitled:</span>
+                    <span className="font-mono font-semibold text-slate-800">
                       ₹{Number(salaryRecord.basicSalary || salaryRecord.totalEarnings || paidAmount).toLocaleString('en-IN')}
                     </span>
                   </div>
-
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                    <span className="block text-[10px] font-black uppercase text-emerald-700 tracking-wider">Paid Amount</span>
-                    <span className="text-base font-black text-emerald-700">
+                  <div className="flex justify-between text-emerald-700 font-bold">
+                    <span>Disbursed Amount:</span>
+                    <span className="font-mono text-sm">
                       ₹{paidAmount.toLocaleString('en-IN')}
                     </span>
                   </div>
-
-                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl">
-                    <span className="block text-[10px] font-black uppercase text-rose-600 tracking-wider">Remaining Balance</span>
-                    <span className="text-base font-black text-rose-700">
-                      -₹{Math.max(0, Number(salaryRecord.basicSalary || salaryRecord.totalEarnings || paidAmount) - paidAmount).toLocaleString('en-IN')}
+                  <div className="flex justify-between text-rose-600 font-bold">
+                    <span>Remaining Balance:</span>
+                    <span className="font-mono text-sm">
+                      ₹{Math.max(0, Number(salaryRecord.basicSalary || salaryRecord.totalEarnings || paidAmount) - paidAmount).toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
               ) : (
-                <div className="p-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl flex items-center justify-between shadow-md">
+                <div className="flex items-baseline justify-between pt-3 pb-1 border-t-2 border-slate-900">
                   <div>
-                    <span className="block text-[10px] font-black uppercase text-emerald-100 tracking-wider">Total Wage Amount Paid</span>
-                    <span className="text-xs text-emerald-50">Net amount disbursed to employee</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Net Wage Disbursed
+                    </span>
+                    <span className="text-[11px] text-slate-500 italic">
+                      {convertNumberToWords(paidAmount)}
+                    </span>
                   </div>
-                  <div className="text-2xl font-black tracking-tight">
+                  <div className="text-2xl font-black font-mono text-slate-900">
                     ₹{paidAmount.toLocaleString('en-IN')}
                   </div>
                 </div>
               )}
 
-              {/* Footer Signatory */}
-              <div className="flex items-end justify-between pt-6 border-t border-slate-200 text-xs">
-                <div className="text-[10px] text-slate-400 font-medium space-y-0.5">
-                  <p className="font-bold text-slate-600">KODBRAND SOLUTIONS</p>
-                  <p>3rd Floor, Aranyakam Building, Up Hill, Malappuram</p>
+              {/* Minimal Signatures Footer */}
+              <div className="pt-8 flex justify-between items-end text-xs text-slate-500">
+                <div className="text-center">
+                  <div className="w-28 border-b border-slate-300 mb-1"></div>
+                  <span className="text-[10px] text-slate-400">Worker Signature</span>
                 </div>
-
-                <div className="text-center space-y-1">
-                  <div className="h-8 border-b border-slate-300 w-32 mx-auto"></div>
-                  <span className="block text-[10px] font-bold text-slate-600">Authorized Signature</span>
+                <div className="text-center">
+                  <div className="w-28 border-b border-slate-300 mb-1"></div>
+                  <span className="text-[10px] font-semibold text-slate-700">Authorized Signatory</span>
+                  <p className="text-[9px] text-slate-400">FABTEC WORKS</p>
                 </div>
               </div>
+
             </div>
           </div>
         </motion.div>
       </div>
-
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-        onConfirm={handleDelete}
-        title="Delete Wage Record"
-        message="Are you sure you want to delete this wage record? This action cannot be undone."
-        confirmText="Delete"
-        type="danger"
-      />
 
       {/* Partial Payment Modal */}
       {partialModalOpen && (
@@ -436,42 +447,6 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved, isSmall = false 
           record={salaryRecord}
           onConfirm={handlePartialConfirm}
         />
-      )}
-
-      {/* Email Prompt Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-950/60" onClick={() => setShowEmailModal(false)} />
-          <div className="relative z-10 w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
-            <h3 className="font-bold text-slate-900 dark:text-white text-sm">Send Wage Slip via Email</h3>
-            <div>
-              <label className="block text-slate-600 dark:text-slate-300 font-semibold mb-1">Recipient Email Address</label>
-              <input
-                type="email"
-                value={targetEmail}
-                onChange={e => setTargetEmail(e.target.value)}
-                placeholder="employee@example.com"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowEmailModal(false)}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSendEmail(targetEmail)}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-              >
-                Send Email
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </AnimatePresence>,
     document.body

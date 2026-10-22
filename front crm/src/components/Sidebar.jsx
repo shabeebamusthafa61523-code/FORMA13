@@ -28,7 +28,8 @@ const accountsSubItems = [
   { label: 'Wage', path: '/accounts/salary' },
   { label: 'Ledger', path: '/accounts/ledger' },
   { label: 'Day Book', path: '/accounts/cash-book' },
-  { label: 'Profit and Loss', path: '/accounts/reports' }
+  { label: 'Profit and Loss', path: '/accounts/reports' },
+  { label: 'Share', path: '/accounts/share' }
 ];
 
 const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen }) => {
@@ -117,6 +118,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
   const showClientLeads = isSuper || hasPerm('Client Leads', '/client-leads') || hasPerm('Leads', '/client-leads') || hasPerm('Clients', '/clients');
   const showFabrication = isSuper || hasPerm('Workspace', '/fabrication') || hasPerm('Fabrication', '/fabrication') || hasPerm('Fabrication Works', '/fabrication') || !userPermissions || userPermissions.length === 0;
   const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
+  const showShare = isSuper || hasPerm('Share', '/accounts/share') || hasPerm('Share', '/share') || hasPerm('Partner Share', '/accounts/share');
   const showPermissions = isSuper || hasPerm('Sidebar Permissions', '/sidebar-permissions');
 
   const handleLogout = () => {
@@ -320,6 +322,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             </div>
           )}
 
+          {/* Share (Partner Profit & Equity Share) */}
+          {showShare && (
+            <Link
+              to="/accounts/share"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/accounts/share' || activePath === '/share'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Share' : undefined}
+            >
+              <Users size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Share</span>}
+            </Link>
+          )}
+
           {/* Sidebar Permissions */}
           {showPermissions && (
             <Link
@@ -518,6 +536,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
                 </div>
               )}
             </div>
+          )}
+
+          {/* Share (Mobile) */}
+          {showShare && (
+            <Link
+              to="/accounts/share"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/accounts/share' || activePath === '/share'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Users size={20} className="shrink-0" />
+              <span>Share</span>
+            </Link>
           )}
 
           {/* Sidebar Permissions */}

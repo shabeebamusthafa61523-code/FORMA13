@@ -11,6 +11,7 @@ import OpeningBalance from '../models/openingBalance.model.js';
 import Capital from '../models/capital.model.js';
 import OperationAccount from '../models/operationAccount.model.js';
 import Vendor from '../models/vendor.model.js';
+import FabricationJob from '../models/fabricationJob.model.js';
 import { sendEmail } from '../services/emailService.js';
 
 const DEFAULT_CATEGORIES = [
@@ -3025,3 +3026,220 @@ export const deleteVendor = async (req, res) => {
 
 
 
+
+
+// ==========================================
+// ── Partner Profit Share & Drawings Controllers ──
+// ==========================================
+
+export const getPartnerShareSummary = async (req, res) => {
+  try {
+    // 1. Fetch all fabrication job orders (excluding global system config)
+    const jobs = await FabricationJob.find({ jobId: { $ne: 'FAB-GLOBAL-CONFIG' } }).sort({ createdAt: -1 });
+
+    let totalQuotationRevenue = 0;
+    let totalDirectCosts = 0;
+    let totalNetWorkProfit = 0;
+    let totalAmountReceived = 0;
+    let totalRealizedProfit = 0;
+
+    const jobProfitsList = jobs.map(j => {
+      const fin = j.financials || {};
+      const rev = Number(fin.totalQuotation || j.quotationValue || 0);
+      const mat = Number(fin.totalPurchases || fin.materialCost || 0);
+      const wag = Number(fin.totalWages || fin.laborCost || 0);
+      const exp = Number(fin.totalExpenses || fin.otherCost || 0);
+      const directCost = mat + wag + exp;
+      const netProfit = rev - directCost;
+      const recv = Number(fin.totalAmountReceived || 0);
+      const realizedProfit = recv - directCost;
+      const margin = rev > 0 ? Number(((netProfit / rev) * 100).toFixed(1)) : 0;
+
+      totalQuotationRevenue += rev;
+      totalDirectCosts += directCost;
+      totalNetWorkProfit += netProfit;
+      totalAmountReceived += recv;
+      totalRealizedProfit += realizedProfit;
+
+      return {
+        _id: j._id,
+        jobId: j.jobId,
+        jobNumber: j.jobNumber || j.jobId,
+        clientName: j.clientName || 'Valued Client',
+        jobTitle: j.jobTitle || (j.quotationItems && j.quotationItems.length > 0 ? j.quotationItems.map(i => i.description).join(', ') : 'Fabrication Work Order'),
+        status: j.status || 'Active',
+        quotationRevenue: rev,
+        materialCost: mat,
+        laborCost: wag,
+        otherCost: exp,
+        directCost: directCost,
+        amountReceived: recv,
+        balanceDue: Number(fin.balanceDue !== undefined ? fin.balanceDue : Math.max(0, rev - recv)),
+        netProfit: netProfit,
+        realizedProfit: realizedProfit,
+        margin: margin
+      };
+    });
+
+    // 2. Fetch all partner drawings from existing Expense collection
+    const drawingExpenses = await Expense.find({
+      $or: [
+        { categoryName: { $regex: /owner drawing|partner drawing/i } },
+        { description: { $regex: /\[Owner (1|2)\]/i } }
+      ]
+    }).sort({ date: -1, createdAt: -1 });
+
+    const drawings = drawingExpenses.map(d => {
+      const isOwner2 = /owner\s*2|partner\s*2/i.test(d.paidTo || '') || /\[Owner 2\]/i.test(d.description || '');
+      const partnerKey = isOwner2 ? 'Owner 2' : 'Owner 1';
+      return {
+        _id: d._id,
+        drawingId: d.invoiceNo || `DRW-${d._id.toString().slice(-6).toUpperCase()}`,
+        partner: partnerKey,
+        partnerName: d.paidTo || partnerKey,
+        amount: Number(d.amount) || 0,
+        date: d.date ? new Date(d.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        paymentMode: d.paymentMode || 'Bank Transfer',
+        reason: (d.description || '').replace(/^\[Owner [12]\]\s*/i, '') || 'Partner Profit Withdrawal',
+        status: d.status || 'APPROVED',
+        recordedBy: d.addedByName || 'Admin',
+        createdAt: d.createdAt
+      };
+    });
+
+    const owner1Drawings = drawings.filter(d => d.partner === 'Owner 1');
+    const owner2Drawings = drawings.filter(d => d.partner === 'Owner 2');
+
+    const totalOwner1Withdrawn = owner1Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+    const totalOwner2Withdrawn = owner2Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+
+    // 3. 50/50 Dual-Owner Split Calculation based on RECEIVED AMOUNT (instead of profit)
+    const grossOwner1Share = totalAmountReceived / 2;
+    const grossOwner2Share = totalAmountReceived / 2;
+
+    const netOwner1Balance = grossOwner1Share - totalOwner1Withdrawn;
+    const netOwner2Balance = grossOwner2Share - totalOwner2Withdrawn;
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        totalJobs: jobs.length,
+        totalQuotationRevenue,
+        totalDirectCosts,
+        totalNetWorkProfit,
+        totalAmountReceived,
+        totalRealizedProfit,
+        splitBase: 'amountReceived',
+        halfReceivedShare: totalAmountReceived / 2,
+        owner1: {
+          partner: 'Owner 1',
+          name: 'Owner 1',
+          splitPercentage: 50,
+          grossShare: grossOwner1Share,
+          totalWithdrawn: totalOwner1Withdrawn,
+          netBalance: netOwner1Balance
+        },
+        owner2: {
+          partner: 'Owner 2',
+          name: 'Owner 2',
+          splitPercentage: 50,
+          grossShare: grossOwner2Share,
+          totalWithdrawn: totalOwner2Withdrawn,
+          netBalance: netOwner2Balance
+        }
+      },
+      jobs: jobProfitsList,
+      drawings: drawings
+    });
+  } catch (error) {
+    console.error('getPartnerShareSummary Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createPartnerDrawing = async (req, res) => {
+  try {
+    const { partner, partnerName, amount, date, paymentMode, reason, referenceNo, notes } = req.body;
+    if (!partner || !amount) {
+      return res.status(400).json({ success: false, message: 'Partner and Amount are required.' });
+    }
+
+    const drawingId = `DRW-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const isOwner2 = partner === 'Owner 2' || /owner\s*2/i.test(partner) || /owner\s*2/i.test(partnerName || '');
+    const partnerKey = isOwner2 ? 'Owner 2' : 'Owner 1';
+    const displayPartnerName = partnerName || partnerKey;
+
+    // Allowed payment modes in Expense model: ['Cash', 'Bank', 'UPI', 'Bank Transfer', 'Cheque', 'Credit/Pay Later']
+    const allowedModes = ['Cash', 'Bank', 'UPI', 'Bank Transfer', 'Cheque', 'Credit/Pay Later'];
+    let safePaymentMode = 'Bank Transfer';
+    if (paymentMode && allowedModes.includes(paymentMode)) {
+      safePaymentMode = paymentMode;
+    } else if (paymentMode?.toLowerCase().includes('cash')) {
+      safePaymentMode = 'Cash';
+    } else if (paymentMode?.toLowerCase().includes('upi')) {
+      safePaymentMode = 'UPI';
+    }
+
+    const parsedAmount = Math.max(0, parseFloat(amount) || 0);
+
+    const newDrawingExpense = await Expense.create({
+      date: date ? new Date(date) : new Date(),
+      categoryName: 'Owner Drawing',
+      paidTo: displayPartnerName,
+      amount: parsedAmount,
+      totalAmount: parsedAmount,
+      paymentMode: safePaymentMode,
+      description: `[${partnerKey}] ${reason || 'Partner Profit Withdrawal'}${referenceNo ? ` (Ref: ${referenceNo})` : ''}`,
+      invoiceNo: drawingId,
+      status: 'APPROVED',
+      addedByName: req.user?.name || 'Admin',
+      type: 'Expense',
+      syncSource: {
+        module: 'Manual',
+        isAutoSynced: false
+      }
+    });
+
+    const formattedDrawing = {
+      _id: newDrawingExpense._id,
+      drawingId: newDrawingExpense.invoiceNo,
+      partner: partnerKey,
+      partnerName: displayPartnerName,
+      amount: newDrawingExpense.amount,
+      date: newDrawingExpense.date ? new Date(newDrawingExpense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      paymentMode: newDrawingExpense.paymentMode,
+      reason: reason || 'Partner Profit Withdrawal',
+      status: 'APPROVED',
+      recordedBy: newDrawingExpense.addedByName
+    };
+
+    return res.status(201).json({
+      success: true,
+      data: formattedDrawing,
+      message: 'Owner withdrawal recorded successfully.'
+    });
+  } catch (error) {
+    console.error('createPartnerDrawing Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deletePartnerDrawing = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const drawingExpense = await Expense.findById(id);
+    if (!drawingExpense) {
+      return res.status(404).json({ success: false, message: 'Drawing record not found.' });
+    }
+
+    await Expense.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Drawing record deleted successfully.'
+    });
+  } catch (error) {
+    console.error('deletePartnerDrawing Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

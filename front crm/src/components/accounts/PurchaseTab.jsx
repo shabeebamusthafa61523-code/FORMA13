@@ -664,7 +664,16 @@ const PurchaseTab = () => {
                   ) : (
                     filteredPurchases.map((p) => (
                       <tr key={p._id || p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="py-3 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">{p.billNo || `PO-PUR-${p._id.slice(-4)}`}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">
+                          <div className="flex flex-col gap-0.5">
+                            <span>{p.billNo || (p._id ? `PO-PUR-${String(p._id).slice(-4)}` : 'PO-PUR-0000')}</span>
+                            {(p.syncSource?.module === 'Fabrication' || p.categoryName?.includes('Fabrication')) && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 w-fit">
+                                ⚙️ Fabrication
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">{p.paidTo || 'Vendor'}</td>
                         <td className="py-3 px-3">{p.description || 'Equipment Purchase'}</td>
                         <td className="py-3 px-3 text-slate-500">{new Date(p.date || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
@@ -688,13 +697,7 @@ const PurchaseTab = () => {
                             >
                               <Eye size={15} />
                             </button>
-                            <button
-                              onClick={() => handleDeletePurchase(p._id || p.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                              title="Delete Purchase Record"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            
                           </div>
                         </td>
                       </tr>

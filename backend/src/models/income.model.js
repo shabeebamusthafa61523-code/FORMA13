@@ -8,7 +8,13 @@ const incomeSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   referenceNo: { type: String, default: '' },
   description: { type: String, default: '' },
-  sourceType: { type: String, enum: ['Academy', 'Client', 'General'], default: 'General' },
+  sourceType: { type: String, enum: ['Academy', 'Client', 'General', 'Fabrication'], default: 'General' },
+  syncSource: {
+    module: { type: String, enum: ['Manual', 'Fabrication', 'Academy', 'General'], default: 'Manual' },
+    fabricationJobId: { type: String, default: null, index: true },
+    fabricationItemId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    isAutoSynced: { type: Boolean, default: false }
+  },
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
   clientName: { type: String, default: '' },
   taxOption: { type: String, default: 'No GST' },

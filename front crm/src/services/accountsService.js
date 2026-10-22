@@ -272,3 +272,19 @@ export const deleteVendor = async (id) => {
   return response.data;
 };
 
+
+// ── Partner Profit Share & Drawings Service ──
+export const getPartnerShareSummary = async () => {
+  const response = await safeGet('/partner-share');
+  return response.data;
+};
+
+export const createPartnerDrawing = async (data) => {
+  const response = await safePost('/partner-share/drawings', data);
+  return response.data;
+};
+
+export const deletePartnerDrawing = async (id) => {
+  const response = await safeDelete(`/partner-share/drawings/${id}`);
+  return response.data;
+};

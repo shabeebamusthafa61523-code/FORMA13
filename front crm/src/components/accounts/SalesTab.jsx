@@ -297,7 +297,7 @@ const SalesTab = () => {
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Client, Product, Invoice..."
+              placeholder="Search Client, Work / Item, Invoice..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-8 pr-3 py-1 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-lg text-xs outline-none focus:border-blue-500"
@@ -462,7 +462,7 @@ const SalesTab = () => {
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block font-bold text-slate-500">Product / Service Sold *</label>
+                  <label className="block font-bold text-slate-500">Work / Item Description *</label>
                   <button
                     type="button"
                     onClick={() => setIsAddItemModalOpen(true)}
@@ -470,7 +470,7 @@ const SalesTab = () => {
                     title="Manage products and services"
                   >
                     <PlusCircle size={13} />
-                    <span>+ Manage Products</span>
+                    <span>+ Manage Items</span>
                   </button>
                 </div>
                 {itemOptions.length > 0 && (
@@ -483,7 +483,7 @@ const SalesTab = () => {
                     }}
                     className="w-full mb-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none font-bold text-slate-800 dark:text-slate-100 text-xs cursor-pointer"
                   >
-                    <option value="">-- Select Registered Product / Service --</option>
+                    <option value="">-- Select Registered Work / Item --</option>
                     {itemOptions.map((opt, i) => (
                       <option key={i} value={opt}>
                         {opt}
@@ -621,7 +621,7 @@ const SalesTab = () => {
               <tr>
                 <th className="py-2.5 px-3">Invoice No</th>
                 <th className="py-2.5 px-3">Client / Organization</th>
-                <th className="py-2.5 px-3">Product / Service</th>
+                <th className="py-2.5 px-3">Work / Item Description</th>
                 <th className="py-2.5 px-3">Sale Date</th>
                 <th className="py-2.5 px-3">Status</th>
                 <th className="py-2.5 px-3 text-right">Amount (₹)</th>
@@ -636,9 +636,33 @@ const SalesTab = () => {
               ) : (
                 filteredSales.map((s) => (
                   <tr key={s._id || s.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">{s.referenceNo || s.invoiceNo || s.orderNumber || (s._id ? `INV-SL-${String(s._id).slice(-4)}` : 'N/A')}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                      <div className="flex flex-col gap-0.5">
+                        <span>{s.referenceNo || s.invoiceNo || s.orderNumber || (s._id ? `INV-SL-${String(s._id).slice(-4)}` : 'N/A')}</span>
+                        {(s.syncSource?.module === 'Fabrication' || s.department === 'Fabrication') && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 w-fit">
+                            ⚙️ Fabrication
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">{s.clientName || (typeof s.client === 'object' && (s.client?.companyName || s.client?.clientName || s.client?.name)) || 'N/A'}</td>
-                    <td className="py-3 px-3">{s.title || 'Product Sale'}</td>
+                    <td className="py-3 px-3 max-w-[280px]">
+                      {s.lineItems && s.lineItems.length > 0 ? (
+                        <div className="space-y-0.5">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 line-clamp-2" title={s.lineItems.map(i => i.description).join(', ')}>
+                            {s.lineItems.map(i => i.description).join(', ')}
+                          </div>
+                          {s.lineItems.length > 1 && (
+                            <span className="inline-block text-[10px] text-slate-400 font-bold uppercase">
+                              {s.lineItems.length} items
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{s.title || 'Work / Scope'}</span>
+                      )}
+                    </td>
                     <td className="py-3 px-3 text-slate-500">{new Date(s.date || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
@@ -660,13 +684,7 @@ const SalesTab = () => {
                         >
                           <Eye size={15} />
                         </button>
-                        <button
-                          onClick={() => handleDeleteSale(s._id || s.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                          title="Delete Sale Record"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        
                       </div>
                     </td>
                   </tr>
@@ -701,10 +719,31 @@ const SalesTab = () => {
                   <span className="text-slate-400 font-bold uppercase">Client</span>
                   <span className="font-bold text-slate-900 dark:text-white">{selectedSale.clientName || (typeof selectedSale.client === 'object' && (selectedSale.client?.companyName || selectedSale.client?.clientName || selectedSale.client?.name)) || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-bold uppercase">Product / Service</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedSale.title || 'N/A'}</span>
-                </div>
+                {/* Work / Item Description & Individual Amounts */}
+                {selectedSale.lineItems && selectedSale.lineItems.length > 0 ? (
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider block">
+                      Work / Item Description ({selectedSale.lineItems.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {selectedSale.lineItems.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40 last:border-0 text-xs">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 pr-2">
+                            {item.description}
+                          </span>
+                          <span className="font-mono font-bold text-slate-900 dark:text-white shrink-0">
+                            ₹{(Number(item.amount) || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-slate-400 font-bold uppercase">Work / Item Description</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedSale.title || 'N/A'}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-bold uppercase">Sale Date</span>
                   <span>{new Date(selectedSale.date || Date.now()).toLocaleDateString('en-IN')}</span>

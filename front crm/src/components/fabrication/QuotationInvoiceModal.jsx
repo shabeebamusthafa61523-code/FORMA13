@@ -26,9 +26,20 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
-  Wallet
+  Wallet,
+  Database
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import {
+  getQuotationTerms,
+  createQuotationTerm,
+  updateQuotationTerm,
+  deleteQuotationTerm,
+  resetQuotationTerms,
+  updateJobTerms
+} from '../../services/fabricationService';
 
 // Convert number to Indian currency words
 export const convertNumberToWords = (num) => {
@@ -78,6 +89,15 @@ export const DEFAULT_INVOICE_TERMS = [
 
 const LOCAL_STORAGE_TERMS_KEY = 'crm_fab_invoice_terms_list';
 
+// Normalize term helper for consistent handling across DB & localStorage
+const normalizeTerm = (t, index = 0) => ({
+  id: t._id || t.id || `term-${index}-${Date.now()}`,
+  _id: t._id || t.id,
+  text: t.text || '',
+  enabled: t.enabled !== undefined ? Boolean(t.enabled) : true,
+  order: t.order !== undefined ? t.order : index + 1
+});
+
 const QuotationInvoiceModal = ({
   isOpen,
   onClose,
@@ -93,65 +113,182 @@ const QuotationInvoiceModal = ({
   // Overall Financial View toggle (default OFF per user preference)
   const [showOverallSummary, setShowOverallSummary] = useState(false);
 
-  // Terms and Conditions State
+  // Terms and Conditions State (MongoDB backend with localStorage fallback)
   const [terms, setTerms] = useState(() => {
+    if (job?.terms && Array.isArray(job.terms) && job.terms.length > 0) {
+      return job.terms.map(normalizeTerm);
+    }
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_TERMS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(normalizeTerm);
       }
     } catch (e) {}
-    return DEFAULT_INVOICE_TERMS;
+    return DEFAULT_INVOICE_TERMS.map(normalizeTerm);
   });
 
+  const [loadingTerms, setLoadingTerms] = useState(false);
+  const [isSavingDb, setIsSavingDb] = useState(false);
   const [isManagingTerms, setIsManagingTerms] = useState(false);
   const [newTermText, setNewTermText] = useState('');
   const [editingTermId, setEditingTermId] = useState(null);
   const [editingTermText, setEditingTermText] = useState('');
 
-  // Persist terms to localStorage
+  // Fetch Master Terms from MongoDB on modal open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let isMounted = true;
+    const fetchDbTerms = async () => {
+      // If job already has saved snapshot terms, use them
+      if (job?.terms && Array.isArray(job.terms) && job.terms.length > 0) {
+        setTerms(job.terms.map(normalizeTerm));
+        return;
+      }
+
+      try {
+        setLoadingTerms(true);
+        const res = await getQuotationTerms();
+        if (isMounted && res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          const normalized = res.data.map(normalizeTerm);
+          setTerms(normalized);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_TERMS_KEY, JSON.stringify(normalized));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('Could not fetch terms from MongoDB, using cached fallback:', err);
+      } finally {
+        if (isMounted) setLoadingTerms(false);
+      }
+    };
+
+    fetchDbTerms();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, job?._id]);
+
+  // Persist terms to state, localStorage & job document
   const persistTerms = (list) => {
-    setTerms(list);
+    const normalized = list.map(normalizeTerm);
+    setTerms(normalized);
     try {
-      localStorage.setItem(LOCAL_STORAGE_TERMS_KEY, JSON.stringify(list));
+      localStorage.setItem(LOCAL_STORAGE_TERMS_KEY, JSON.stringify(normalized));
     } catch (e) {}
+
+    // If active job exists, save snapshot to this job in DB
+    if (job?._id) {
+      updateJobTerms(job._id, normalized).catch(err => {
+        console.warn('Failed to sync terms snapshot to job:', err);
+      });
+    }
   };
 
-  const toggleTerm = (id) => {
-    const updated = terms.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t);
+  const toggleTerm = async (id) => {
+    const target = terms.find(t => (t._id || t.id) === id);
+    if (!target) return;
+    const newEnabled = !target.enabled;
+
+    const updated = terms.map(t => (t._id || t.id) === id ? { ...t, enabled: newEnabled } : t);
     persistTerms(updated);
+
+    // Sync toggle to MongoDB master collection if it has a MongoDB _id
+    if (target._id && String(target._id).length === 24) {
+      try {
+        setIsSavingDb(true);
+        await updateQuotationTerm(target._id, { enabled: newEnabled });
+      } catch (e) {
+        console.error('Failed to sync toggle to DB:', e);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleAddTerm = (e) => {
+  const handleAddTerm = async (e) => {
     if (e) e.preventDefault();
     const trimmed = newTermText.trim();
     if (!trimmed) return;
-    const newEntry = {
-      id: `term-${Date.now()}`,
-      text: trimmed,
-      enabled: true
-    };
-    persistTerms([...terms, newEntry]);
-    setNewTermText('');
+
+    try {
+      setIsSavingDb(true);
+      const res = await createQuotationTerm({ text: trimmed, enabled: true });
+      if (res?.success && res.data) {
+        const newEntry = normalizeTerm(res.data);
+        const updated = [...terms, newEntry];
+        persistTerms(updated);
+      } else {
+        const fallbackEntry = normalizeTerm({ id: `term-${Date.now()}`, text: trimmed, enabled: true });
+        persistTerms([...terms, fallbackEntry]);
+      }
+    } catch (err) {
+      console.warn('DB create term error, falling back locally:', err);
+      const fallbackEntry = normalizeTerm({ id: `term-${Date.now()}`, text: trimmed, enabled: true });
+      persistTerms([...terms, fallbackEntry]);
+    } finally {
+      setIsSavingDb(false);
+      setNewTermText('');
+    }
   };
 
-  const handleSaveEditTerm = (id) => {
+  const handleSaveEditTerm = async (id) => {
     const trimmed = editingTermText.trim();
     if (!trimmed) return;
-    const updated = terms.map(t => t.id === id ? { ...t, text: trimmed } : t);
+
+    const target = terms.find(t => (t._id || t.id) === id);
+    const updated = terms.map(t => (t._id || t.id) === id ? { ...t, text: trimmed } : t);
     persistTerms(updated);
     setEditingTermId(null);
     setEditingTermText('');
+
+    if (target && target._id && String(target._id).length === 24) {
+      try {
+        setIsSavingDb(true);
+        await updateQuotationTerm(target._id, { text: trimmed });
+      } catch (err) {
+        console.error('Failed to update term in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleDeleteTerm = (id) => {
-    const updated = terms.filter(t => t.id !== id);
+  const handleDeleteTerm = async (id) => {
+    const target = terms.find(t => (t._id || t.id) === id);
+    const updated = terms.filter(t => (t._id || t.id) !== id);
     persistTerms(updated);
+
+    if (target && target._id && String(target._id).length === 24) {
+      try {
+        setIsSavingDb(true);
+        await deleteQuotationTerm(target._id);
+      } catch (err) {
+        console.error('Failed to delete term in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleResetTerms = () => {
-    persistTerms(DEFAULT_INVOICE_TERMS);
+  const handleResetTerms = async () => {
+    try {
+      setIsSavingDb(true);
+      const res = await resetQuotationTerms();
+      if (res?.success && Array.isArray(res.data)) {
+        const normalized = res.data.map(normalizeTerm);
+        persistTerms(normalized);
+      } else {
+        persistTerms(DEFAULT_INVOICE_TERMS.map(normalizeTerm));
+      }
+    } catch (err) {
+      console.warn('DB reset error, resetting to local defaults:', err);
+      persistTerms(DEFAULT_INVOICE_TERMS.map(normalizeTerm));
+    } finally {
+      setIsSavingDb(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -219,25 +356,56 @@ const QuotationInvoiceModal = ({
         } catch (e) {}
       };
 
-      const opt = {
-        margin: [6, 6, 6, 6],
-        filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
+      // 1-page guaranteed rendering using html2canvas & jsPDF:
+      try {
+        const canvas = await html2canvas(element, {
           scale: 2,
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
           onclone: sanitizeClonedDocStyles
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
+        });
 
-      const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
-      if (typeof html2pdfFunc === 'function') {
-        await html2pdfFunc().set(opt).from(element).save();
-      } else {
-        window.print();
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        // Fit into exactly 1 single page with a clean 5mm margin
+        const margin = 5;
+        const usableWidth = pdfWidth - (margin * 2);
+        const usableHeight = pageHeight - (margin * 2);
+        const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height);
+        const renderWidth = canvas.width * ratio;
+        const renderHeight = canvas.height * ratio;
+        const xOffset = margin + (usableWidth - renderWidth) / 2;
+        const yOffset = margin;
+
+        pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderWidth, renderHeight);
+        pdf.save(filename);
+      } catch (directErr) {
+        console.warn('Direct jsPDF 1-page render failed, trying html2pdf fallback:', directErr);
+        const opt = {
+          margin: [4, 4, 4, 4],
+          filename,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            onclone: sanitizeClonedDocStyles
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+
+        const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
+        if (typeof html2pdfFunc === 'function') {
+          await html2pdfFunc().set(opt).from(element).save();
+        } else {
+          window.print();
+        }
       }
     } catch (err) {
       console.error('Failed to generate PDF:', err);
@@ -389,18 +557,35 @@ const QuotationInvoiceModal = ({
         {/* TERMS & CONDITIONS MANAGEMENT DRAWER (COLLAPSIBLE) */}
         {isManagingTerms && (
           <div className="bg-indigo-50/60 p-4 sm:p-5 border-b border-indigo-100 space-y-3.5 shrink-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <SlidersHorizontal size={15} className="text-indigo-600" />
                 <span className="text-xs font-bold text-slate-900 tracking-wide">
-                  Terms & Conditions Management (Check to include on invoice • Add or edit custom clauses)
+                  Terms & Conditions Management
                 </span>
+                <span className="flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 shadow-2xs">
+                  <Database size={11} />
+                  <span>MongoDB Synced</span>
+                </span>
+                {isSavingDb && (
+                  <span className="flex items-center gap-1 text-[10.5px] text-amber-600 font-semibold animate-pulse">
+                    <Loader2 size={11} className="animate-spin" />
+                    <span>Saving...</span>
+                  </span>
+                )}
+                {loadingTerms && (
+                  <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
+                    <Loader2 size={11} className="animate-spin" />
+                    <span>Loading DB...</span>
+                  </span>
+                )}
               </div>
               <button
                 type="button"
                 onClick={handleResetTerms}
-                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-indigo-600 cursor-pointer transition-colors"
-                title="Reset to standard workshop defaults"
+                disabled={isSavingDb}
+                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-indigo-600 cursor-pointer transition-colors disabled:opacity-50"
+                title="Reset to standard workshop defaults in MongoDB"
               >
                 <RotateCcw size={12} />
                 <span>Reset Standard Defaults</span>
@@ -512,21 +697,46 @@ const QuotationInvoiceModal = ({
           {/* Printable Invoice Container (Strict A4 Canvas Styling) */}
           <div 
             ref={invoiceRef}
-            className="w-full max-w-[820px] bg-white text-slate-900 p-8 sm:p-12 rounded-2xl shadow-xl border border-slate-200 space-y-6 relative overflow-hidden h-fit"
+            id="printable-quotation-invoice"
+            className="w-full max-w-[800px] bg-white text-slate-900 px-6 sm:px-8 py-5 sm:py-6 rounded-2xl shadow-xl border border-slate-200 space-y-3 relative overflow-hidden h-fit"
             style={{ 
               fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
               backgroundColor: '#ffffff',
               color: '#0f172a'
             }}
           >
-            {/* Top Luxury Gradient Hairline */}
+            {/* Print Stylesheet for exact 1-page output */}
+            <style>{`
+              @media print {
+                body * { visibility: hidden !important; }
+                #printable-quotation-invoice, #printable-quotation-invoice * { visibility: visible !important; }
+                #printable-quotation-invoice {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 16px 20px !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+                @page {
+                  size: A4 portrait;
+                  margin: 6mm;
+                }
+              }
+            `}</style>
+
+            {/* Top Luxury Accent Line */}
             <div 
-              style={{ height: '4px', background: 'linear-gradient(90deg, #1e1b4b 0%, #4338ca 35%, #0284c7 70%, #059669 100%)' }} 
+              style={{ height: '3px', backgroundColor: '#0f172a' }} 
               className="w-full rounded-full" 
             />
 
             {/* Header: Company Logo & Document Metadata */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b" style={{ borderColor: '#e2e8f0' }}>
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: '#e2e8f0' }}>
               <div className="flex flex-col items-start space-y-1">
                 {/* Official Company Logo */}
                 {logoLoaded ? (
@@ -534,75 +744,67 @@ const QuotationInvoiceModal = ({
                     src="/logo3.png" 
                     alt="FABTEC Logo" 
                     onError={() => setLogoLoaded(false)}
-                    className="h-16 w-auto max-w-[240px] object-contain shrink-0" 
+                    className="h-13 w-auto max-w-[200px] object-contain shrink-0" 
                   />
                 ) : (
-                  <div className="h-14 px-4 rounded-xl bg-slate-900 text-white flex items-center gap-2 font-black text-xl shadow-sm shrink-0">
-                    <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-base">F</span>
+                  <div className="h-12 px-4 rounded-xl bg-slate-900 text-white flex items-center gap-2 font-black text-lg shadow-sm shrink-0">
+                    <span className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-sm">F</span>
                     <span>FABTEC</span>
                   </div>
                 )}
 
                 {/* Company Address & Phone Details */}
-                <div className="text-[11px] leading-tight space-y-0.5 pt-1 font-medium" style={{ color: '#475569' }}>
+                <div className="text-[10.5px] leading-tight space-y-0.5 pt-0.5 font-medium" style={{ color: '#475569' }}>
                   <p>Vengoor</p>
                   <p>8139877848, 7736692975</p>
                 </div>
               </div>
 
               {/* Document Meta Block */}
-              <div className="flex flex-col sm:items-end space-y-2">
+              <div className="flex flex-col sm:items-end space-y-1.5">
                 <div 
-                  style={{ letterSpacing: '2.5px', backgroundColor: '#0f172a', color: '#ffffff' }}
-                  className="inline-block px-3.5 py-1 text-[11px] font-black uppercase rounded-md shadow-xs"
+                  style={{ letterSpacing: '2px', backgroundColor: '#0f172a', color: '#ffffff' }}
+                  className="inline-block px-3 py-0.5 text-[10.5px] font-black uppercase rounded-md shadow-xs"
                 >
                   OFFICIAL QUOTATION
                 </div>
-                <div className="sm:text-right space-y-1 text-xs">
-                  <p className="font-mono font-bold text-sm tracking-tight" style={{ color: '#0f172a' }}>
+                <div className="sm:text-right space-y-0.5 text-xs">
+                  <p className="font-mono font-bold text-xs tracking-tight" style={{ color: '#0f172a' }}>
                     {invoiceNumber}
                   </p>
-                  <div className="flex items-center sm:justify-end gap-3 text-[11.5px]" style={{ color: '#475569' }}>
+                  <div className="flex items-center sm:justify-end gap-2 text-[11px]" style={{ color: '#475569' }}>
                     <span>Date: <strong style={{ color: '#0f172a' }}>{issueDate}</strong></span>
                   </div>
-                  {job?.status && (
-                    <div className="pt-0.5">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Status: {job.status}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
 
             {/* Client Bill-To Card */}
             <div 
-              className="p-4 rounded-xl border space-y-1.5 text-xs"
+              className="p-2.5 sm:p-3 rounded-xl border space-y-1 text-xs"
               style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
             >
-              <div className="flex items-center gap-1.5 border-b pb-2 mb-1" style={{ borderColor: '#e2e8f0' }}>
-                <Building2 size={13} style={{ color: '#4338ca' }} />
-                <span style={{ letterSpacing: '1px', color: '#64748b' }} className="text-[10px] font-extrabold uppercase">
+              <div className="flex items-center gap-1.5 border-b pb-1 mb-1" style={{ borderColor: '#e2e8f0' }}>
+                <Building2 size={12} style={{ color: '#4338ca' }} />
+                <span style={{ letterSpacing: '1px', color: '#64748b' }} className="text-[9.5px] font-extrabold uppercase">
                   QUOTED TO (CLIENT)
                 </span>
               </div>
-              <h3 className="text-sm font-black tracking-tight" style={{ color: '#0f172a' }}>
+              <h3 className="text-xs font-black tracking-tight" style={{ color: '#0f172a' }}>
                 {clientName}
               </h3>
               {phone && (
-                <p className="text-[11.5px]" style={{ color: '#475569' }}>
+                <p className="text-[11px]" style={{ color: '#475569' }}>
                   <span>{phone}</span>
                 </p>
               )}
               {siteAddress && (
-                <p className="text-[11.5px]" style={{ color: '#475569' }}>
+                <p className="text-[11px]" style={{ color: '#475569' }}>
                   <span>Site: {siteAddress}</span>
                 </p>
               )}
               {gstNumber && (
-                <p className="text-[10.5px] font-mono font-medium pt-0.5" style={{ color: '#64748b' }}>
+                <p className="text-[10px] font-mono font-medium pt-0.5" style={{ color: '#64748b' }}>
                   GSTIN: <strong style={{ color: '#0f172a' }}>{gstNumber}</strong>
                 </p>
               )}
@@ -614,19 +816,19 @@ const QuotationInvoiceModal = ({
                 <thead>
                   <tr 
                     style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                    className="font-bold uppercase text-[10px] tracking-wider"
+                    className="font-bold uppercase text-[9.5px] tracking-wider"
                   >
-                    <th className="py-3 px-3 w-10 text-center" style={{ color: '#ffffff' }}>#</th>
-                    <th className="py-3 px-3" style={{ color: '#ffffff' }}>Description of Work / Specifications</th>
-                    <th className="py-3 px-3 text-center w-20" style={{ color: '#ffffff' }}>Unit</th>
-                    <th className="py-3 px-3 text-right w-24" style={{ color: '#ffffff', textAlign: 'right' }}>Measurements</th>
-                    <th className="py-3 px-3 text-right w-28" style={{ color: '#ffffff', textAlign: 'right' }}>Amount (₹)</th>
+                    <th className="py-2 px-2.5 w-10 text-center" style={{ color: '#ffffff' }}>#</th>
+                    <th className="py-2 px-2.5" style={{ color: '#ffffff' }}>Description of Work / Specifications</th>
+                    <th className="py-2 px-2.5 text-center w-20" style={{ color: '#ffffff' }}>Unit</th>
+                    <th className="py-2 px-2.5 text-right w-24" style={{ color: '#ffffff', textAlign: 'right' }}>Measurements</th>
+                    <th className="py-2 px-2.5 text-right w-28" style={{ color: '#ffffff', textAlign: 'right' }}>Amount (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y" style={{ borderColor: '#f1f5f9' }}>
                   {quotationItems.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                      <td colSpan={5} className="py-6 text-center text-slate-400 italic">
                         No itemized quotation items recorded for this client.
                       </td>
                     </tr>
@@ -637,27 +839,27 @@ const QuotationInvoiceModal = ({
                         style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fcfdfd' }}
                         className="transition-colors hover:bg-slate-50/80"
                       >
-                        <td className="py-3 px-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
-                        <td className="py-3 px-3">
+                        <td className="py-1.5 px-2.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                        <td className="py-1.5 px-2.5">
                           <div className="font-bold text-slate-900 text-xs">{item.description}</div>
                           {item.material && (
-                            <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
+                            <div className="text-[9.5px] font-semibold text-indigo-600 mt-0.5">
                               Material: {item.material}
                             </div>
                           )}
                           {item.notes && (
-                            <div className="text-[11px] text-slate-500 italic mt-0.5">
+                            <div className="text-[10.5px] text-slate-500 italic mt-0.5">
                               {item.notes}
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-3 text-center font-medium text-slate-700 text-xs">
+                        <td className="py-1.5 px-2.5 text-center font-medium text-slate-700 text-xs">
                           {item.unit}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-medium text-slate-800">
+                        <td className="py-1.5 px-2.5 text-right font-mono font-medium text-slate-800">
                           {item.quantity}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 text-xs">
+                        <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs">
                           {formatCurrency(item.amount)}
                         </td>
                       </tr>
@@ -723,15 +925,15 @@ const QuotationInvoiceModal = ({
             )}
 
             {/* Financial Summary & Amount in Words */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start pt-0.5">
               {/* Left Column: Words & Terms */}
-              <div className="sm:col-span-7 space-y-3">
+              <div className="sm:col-span-7 space-y-2">
                 {/* Total Quoted in Words Card */}
                 <div 
-                  className="p-3.5 rounded-xl border space-y-1"
+                  className="p-2.5 rounded-lg border space-y-0.5"
                   style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
                 >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 block">
                     TOTAL QUOTED AMOUNT IN WORDS:
                   </span>
                   <p className="text-xs font-bold italic tracking-tight" style={{ color: '#0f172a' }}>
@@ -741,22 +943,22 @@ const QuotationInvoiceModal = ({
 
                 {/* Selected Terms & Conditions Card */}
                 <div 
-                  className="p-3.5 rounded-xl border text-[11px] space-y-2"
+                  className="p-2.5 rounded-lg border text-[10.5px] space-y-1"
                   style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#334155' }}
                 >
-                  <div className="flex items-center justify-between pb-1.5 border-b" style={{ borderColor: '#e2e8f0' }}>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                  <div className="flex items-center justify-between pb-1 border-b" style={{ borderColor: '#e2e8f0' }}>
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 block">
                       Terms & Conditions:
                     </span>
-                    <span className="text-[10px] text-slate-400 font-medium">
+                    <span className="text-[9.5px] text-slate-400 font-medium">
                       {activeTerms.length} clauses specified
                     </span>
                   </div>
                   {activeTerms.length === 0 ? (
-                    <p className="text-slate-400 italic">No specific terms selected for this quotation.</p>
+                    <p className="text-slate-400 italic text-[10px]">No specific terms selected for this quotation.</p>
                   ) : (
                     activeTerms.map((term, i) => (
-                      <p key={term.id} className="leading-relaxed flex items-start gap-1.5">
+                      <p key={term.id} className="leading-snug flex items-start gap-1.5 text-[10px]">
                         <span className="font-bold text-slate-900 shrink-0">{i + 1}.</span>
                         <span>{term.text}</span>
                       </p>
@@ -767,12 +969,12 @@ const QuotationInvoiceModal = ({
 
               {/* Right Column: Executive Totals Ledger */}
               <div 
-                className="sm:col-span-5 p-4 rounded-xl border space-y-2.5 text-xs"
+                className="sm:col-span-5 p-3 rounded-xl border space-y-1.5 text-xs"
                 style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}
               >
                 <div className="flex justify-between items-center text-slate-600">
                   <span>Gross Quoted Total:</span>
-                  <span className="font-mono font-bold text-slate-900 text-sm">{formatCurrency(grossTotal)}</span>
+                  <span className="font-mono font-bold text-slate-900 text-xs">{formatCurrency(grossTotal)}</span>
                 </div>
 
                 {discountAmount > 0 && (
@@ -785,7 +987,7 @@ const QuotationInvoiceModal = ({
                 )}
 
                 {discountAmount > 0 && (
-                  <div className="flex justify-between items-center text-slate-900 font-bold pt-1.5 border-t" style={{ borderColor: '#e2e8f0' }}>
+                  <div className="flex justify-between items-center text-slate-900 font-bold pt-1 border-t" style={{ borderColor: '#e2e8f0' }}>
                     <span>Net Quoted Total:</span>
                     <span className="font-mono">{formatCurrency(totalQuoted)}</span>
                   </div>
@@ -800,24 +1002,39 @@ const QuotationInvoiceModal = ({
 
                 {/* Final Net Balance Due Standout Box */}
                 <div 
-                  className="p-3 rounded-lg border-2 mt-2 flex justify-between items-center"
-                  style={{ backgroundColor: '#0f172a', borderColor: '#1e293b', color: '#ffffff' }}
+                  className="p-2.5 rounded-lg border mt-1 flex justify-between items-center"
+                  style={{ backgroundColor: '#0f172a', borderColor: '#0f172a', color: '#ffffff' }}
                 >
-                  <span className="font-black text-[11px] uppercase tracking-wider text-slate-300">
+                  <span className="font-bold text-[10.5px] uppercase tracking-wider" style={{ color: '#ffffff' }}>
                     Net Balance Due:
                   </span>
-                  <span className="font-mono font-black text-lg text-emerald-400">
+                  <span className="font-mono font-black text-base" style={{ color: '#34d399' }}>
                     {formatCurrency(balanceDue)}
                   </span>
                 </div>
               </div>
             </div>
 
+            {/* Approved FORM13 Signature Area */}
+            <div className="pt-4 border-t flex justify-end" style={{ borderColor: '#e2e8f0' }}>
+              <div className="text-right space-y-1 shrink-0">
+                <div className="h-9 flex items-end justify-end">
+                  <div style={{ width: '180px', borderBottom: '1.5px dashed #64748b' }} />
+                </div>
+                <p className="font-bold text-[11px] uppercase tracking-wider" style={{ color: '#0f172a' }}>
+                  Approved FORM13 Signature
+                </p>
+                <p className="text-[10px]" style={{ color: '#64748b' }}>
+                  Authorized Signatory
+                </p>
+              </div>
+            </div>
+
 
             {/* Document Verification & Security Footnote */}
-            <div className="pt-4 border-t flex items-center justify-between text-[10px] text-slate-400" style={{ borderColor: '#f1f5f9' }}>
+            <div className="pt-2 border-t flex items-center justify-between text-[9px] text-slate-400" style={{ borderColor: '#f1f5f9' }}>
               <div className="flex items-center gap-1.5 font-medium">
-                <ShieldCheck size={14} className="text-slate-400" />
+                <ShieldCheck size={13} className="text-slate-400" />
                 <span>Official Computer Generated Fabrication Quotation</span>
               </div>
               <div className="font-mono">

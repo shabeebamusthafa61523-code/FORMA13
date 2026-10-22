@@ -307,13 +307,7 @@ const SalaryPaymentTab = () => {
                           >
                             <Edit size={14} />
                           </button>
-                          <button
-                            onClick={() => handleDeleteSalary(p._id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="Delete Record"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          
                         </div>
                       </td>
                     </tr>

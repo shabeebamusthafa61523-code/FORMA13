@@ -22,7 +22,11 @@ import {
   deletePurchaseExpense,
   addClientPayment,
   updateClientPayment,
-  deleteClientPayment
+  deleteClientPayment,
+  getFabricationWorkScopes,
+  getFabricationItemPresets,
+  getFabricationVendors,
+  getFabricationExpenseCategories
 } from '../services/fabricationService';
 import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
@@ -210,6 +214,38 @@ const ClientDetailsPage = () => {
   const handleWorkScopesChanged = (newList) => {
     setWorkScopeDescriptions(newList);
   };
+
+  // Live sync configuration lists from MongoDB on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveConfig = async () => {
+      try {
+        const [scopeRes, descRes, venRes, catRes] = await Promise.allSettled([
+          getFabricationWorkScopes(),
+          getFabricationItemPresets(),
+          getFabricationVendors(),
+          getFabricationExpenseCategories()
+        ]);
+        if (!isMounted) return;
+        if (scopeRes.status === 'fulfilled' && scopeRes.value?.success && Array.isArray(scopeRes.value.data)) {
+          setWorkScopeDescriptions(scopeRes.value.data.map(s => s.title));
+        }
+        if (descRes.status === 'fulfilled' && descRes.value?.success && Array.isArray(descRes.value.data)) {
+          setSavedDescriptions(descRes.value.data.map(d => d.description));
+        }
+        if (venRes.status === 'fulfilled' && venRes.value?.success && Array.isArray(venRes.value.data)) {
+          setSavedVendors(venRes.value.data);
+        }
+        if (catRes.status === 'fulfilled' && catRes.value?.success && Array.isArray(catRes.value.data)) {
+          setCategoriesList(catRes.value.data.map(c => c.name));
+        }
+      } catch (e) {
+        console.warn('Error fetching live fabrication configs from DB:', e);
+      }
+    };
+    fetchLiveConfig();
+    return () => { isMounted = false; };
+  }, []);
 
   const openItemDescriptionModal = () => {
     setDescVendorModalTab('descriptions');

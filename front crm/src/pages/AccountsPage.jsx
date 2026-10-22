@@ -14,6 +14,7 @@ import OperationTab from '../components/accounts/OperationTab';
 import LedgerHubTab from '../components/accounts/LedgerHubTab';
 import LedgerTab from '../components/accounts/LedgerTab';
 import EmployeeLedgerTab from '../components/accounts/EmployeeLedgerTab';
+import ShareTab from '../components/accounts/ShareTab';
 
 const tabs = [
   { id: 'capital', label: 'Capital', path: '/accounts/capital' },
@@ -24,7 +25,8 @@ const tabs = [
   { id: 'salary', label: 'Wage', path: '/accounts/salary' },
   { id: 'ledger', label: 'Ledger', path: '/accounts/ledger' },
   { id: 'cash-book', label: 'Day Book', path: '/accounts/cash-book' },
-  { id: 'reports', label: 'Profit & Loss', path: '/accounts/reports' }
+  { id: 'reports', label: 'Profit & Loss', path: '/accounts/reports' },
+  { id: 'share', label: 'Share', path: '/accounts/share' }
 ];
 
 const AccountsPage = () => {
@@ -44,6 +46,7 @@ const AccountsPage = () => {
     if (path.includes('/accounts/cash-book')) return 'cash-book';
     if (path.includes('/accounts/operation')) return 'operation';
     if (path.includes('/accounts/reports')) return 'reports';
+    if (path.includes('/accounts/share') || path === '/share') return 'share';
     return 'cash-book';
   };
 
@@ -106,6 +109,7 @@ const AccountsPage = () => {
         {activeTab === 'reports' && <ExpenseReportsTab />}
         {activeTab === 'create-invoice' && <CreateInvoiceTab />}
         {activeTab === 'ledger' && <LedgerHubTab />}
+        {activeTab === 'share' && <ShareTab />}
       </div>
     </div>
   );

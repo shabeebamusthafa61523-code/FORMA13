@@ -26,9 +26,15 @@ const expenseSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Bank', 'UPI', 'Bank Transfer'],
+    enum: ['Cash', 'Bank', 'UPI', 'Bank Transfer', 'Cheque', 'Credit/Pay Later'],
     default: 'Cash',
     required: true
+  },
+  syncSource: {
+    module: { type: String, enum: ['Manual', 'Fabrication', 'Academy', 'General'], default: 'Manual' },
+    fabricationJobId: { type: String, default: null, index: true },
+    fabricationItemId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    isAutoSynced: { type: Boolean, default: false }
   },
   paidTo: {
     type: String,
