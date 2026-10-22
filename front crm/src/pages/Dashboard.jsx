@@ -31,7 +31,15 @@ import {
   BookOpen,
   UserCheck,
   Calendar,
-  Layers
+  Layers,
+  Hammer,
+  Coins,
+  Wallet,
+  CreditCard,
+  ArrowRight,
+  Sparkles,
+  Receipt,
+  PackageCheck
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AiAnalyzeModal } from '../components/AiAnalyzeModal';
@@ -63,6 +71,18 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
   const [leavesData, setLeavesData] = useState([]);
   const [dailyOpsData, setDailyOpsData] = useState([]);
   const [calendarWorkData, setCalendarWorkData] = useState([]);
+  const [financialMetrics, setFinancialMetrics] = useState({
+    capital: { amount: 0, count: 0, formatted: '₹0', subtext: 'Assets & Capital Equity' },
+    sales: { amount: 0, count: 0, pending: 0, formatted: '₹0', subtext: '0 Fabrication Orders' },
+    income: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Receipts Received' },
+    purchase: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Raw Material Vouchers' },
+    categories: { count: 0, obAmount: 0 },
+    expenses: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Operational Vouchers' },
+    wage: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Wage Disbursements' },
+    ledger: { turnover: 0, count: 0, netBalance: 0, formatted: '₹0', subtext: '0 Ledger Transactions' },
+    dayBook: { closingBalance: 0, count: 0, inflow: 0, outflow: 0, formatted: '₹0', subtext: 'Daily Cash In Hand' },
+    profitAndLoss: { netProfit: 0, isProfit: true, margin: '0%', formatted: '₹0', subtext: 'Operational P&L Statement' }
+  });
   const [accountsCounts, setAccountsCounts] = useState({
     capital: 0,
     sales: 0,
@@ -75,6 +95,8 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     cashBook: 0,
     reports: 0
   });
+  const [fabricationJobs, setFabricationJobs] = useState([]);
+  const [fabricationStats, setFabricationStats] = useState({ total: 0, active: 0, completed: 0, totalValue: 0 });
 
   // Filters & Search
   const [userSearch, setUserSearch] = useState("");
@@ -152,18 +174,19 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
         // Fetch Admin specific stats in parallel safely
         const [
           taskRes, userRes, summaryRes, clientsRes,
-          capRes, incRes, expRes, catRes, salRes, cbRes
+          capRes, incRes, expRes, catRes, salRes, cbRes, fabRes
         ] = await Promise.all([
           fetchSafe(`${API_BASE}/tasks/all`),
           fetchSafe(`${API_BASE}/v1/users`),
           fetchSafe(`${API_BASE}/v1/analytics/summary${deptParam}`),
           fetchSafe(`${API_BASE}/v1/clients?limit=10&sortBy=createdAt&sortOrder=desc`),
-          fetchSafe(`${API_BASE}/v1/accounts/capitals`),
-          fetchSafe(`${API_BASE}/v1/accounts/incomes`),
+          fetchSafe(`${API_BASE}/v1/accounts/capital`),
+          fetchSafe(`${API_BASE}/v1/accounts/income`),
           fetchSafe(`${API_BASE}/v1/accounts/expenses`),
           fetchSafe(`${API_BASE}/v1/accounts/categories`),
           fetchSafe(`${API_BASE}/v1/accounts/salary-payments`),
-          fetchSafe(`${API_BASE}/v1/accounts/cash-book`)
+          fetchSafe(`${API_BASE}/v1/accounts/cash-book`),
+          fetchSafe(`${API_BASE}/v1/fabrication/jobs`)
         ]);
 
         // TASKS
@@ -202,26 +225,239 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           }
         }
 
-        // ACCOUNTS NUMERIC METRICS
-        let cCap = 0, cInc = 0, cExp = 0, cCat = 0, cSal = 0, cCb = 0;
-        if (capRes.ok) { const d = await capRes.json().catch(() => null); cCap = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
-        if (incRes.ok) { const d = await incRes.json().catch(() => null); cInc = Array.isArray(d) ? d.length : (d?.data?.length || d?.incomes?.length || 0); }
-        if (expRes.ok) { const d = await expRes.json().catch(() => null); cExp = Array.isArray(d) ? d.length : (d?.data?.length || d?.expenses?.length || 0); }
-        if (catRes.ok) { const d = await catRes.json().catch(() => null); cCat = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
-        if (salRes.ok) { const d = await salRes.json().catch(() => null); cSal = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
-        if (cbRes.ok) { const d = await cbRes.json().catch(() => null); cCb = Array.isArray(d) ? d.length : (d?.data?.length || 0); }
+        // FABRICATION JOBS
+        if (fabRes && fabRes.ok) {
+          const fabData = await fabRes.json().catch(() => null);
+          const rawJobs = Array.isArray(fabData)
+            ? fabData
+            : (Array.isArray(fabData?.data)
+              ? fabData.data
+              : (fabData?.data?.jobs || []));
+          setFabricationJobs(rawJobs);
+          const fabMetrics = fabData?.data?.metrics || {};
+          const activeJobs = rawJobs.filter(j => !['completed', 'delivered', 'cancelled'].includes(String(j.status || '').toLowerCase()));
+          const completedJobs = rawJobs.filter(j => ['completed', 'delivered'].includes(String(j.status || '').toLowerCase()));
+          const totalVal = fabMetrics.totalQuoted !== undefined
+            ? Number(fabMetrics.totalQuoted)
+            : rawJobs.reduce((s, j) => s + Number(j.financials?.totalQuotation || j.quotationValue || 0), 0);
+          setFabricationStats({
+            total: fabMetrics.totalJobs !== undefined ? Number(fabMetrics.totalJobs) : rawJobs.length,
+            active: fabMetrics.activeJobs !== undefined ? Number(fabMetrics.activeJobs) : activeJobs.length,
+            completed: fabMetrics.completedJobs !== undefined ? Number(fabMetrics.completedJobs) : completedJobs.length,
+            totalValue: totalVal,
+            totalReceived: Number(fabMetrics.totalReceived || 0),
+            totalDirectCost: Number(fabMetrics.totalDirectCost || 0),
+            totalBalanceDue: Number(fabMetrics.totalBalanceDue || 0),
+            netProfit: Number(fabMetrics.totalNetProfit || 0)
+          });
+        }
+
+        // ACCOUNTS FINANCIAL & OPERATIONAL ANALYTICS
+        let rawCapitals = [];
+        if (capRes.ok) {
+          const d = await capRes.json().catch(() => null);
+          rawCapitals = Array.isArray(d) ? d : (d?.data || []);
+        }
+        if (rawCapitals.length === 0) {
+          try {
+            const savedCap = localStorage.getItem('crm_capital_records');
+            if (savedCap) rawCapitals = JSON.parse(savedCap);
+          } catch (e) {}
+        }
+
+        let rawIncomes = [];
+        let incomeSummary = null;
+        if (incRes.ok) {
+          const d = await incRes.json().catch(() => null);
+          rawIncomes = Array.isArray(d) ? d : (d?.data || d?.incomes || []);
+          incomeSummary = d?.summary || null;
+        }
+
+        let rawExpenses = [];
+        if (expRes.ok) {
+          const d = await expRes.json().catch(() => null);
+          rawExpenses = Array.isArray(d) ? d : (d?.data || d?.expenses || []);
+        }
+
+        let rawCategories = [];
+        if (catRes.ok) {
+          const d = await catRes.json().catch(() => null);
+          rawCategories = Array.isArray(d) ? d : (d?.data || []);
+        }
+
+        let rawSalaries = [];
+        if (salRes.ok) {
+          const d = await salRes.json().catch(() => null);
+          rawSalaries = Array.isArray(d) ? d : (d?.data || []);
+        }
+
+        let rawCashBook = null;
+        if (cbRes.ok) {
+          rawCashBook = await cbRes.json().catch(() => null);
+        }
+
+        const formatINR = (amt) => '₹' + Math.round(Number(amt) || 0).toLocaleString('en-IN');
+
+        // 1. CAPITAL
+        const totalCapitalVal = rawCapitals.reduce((sum, c) => {
+          return sum + (Number(c.totalCapital || 0) || (Number(c.amount || 0) + Number(c.openingBalance || 0)));
+        }, 0);
+
+        // 2. SALES (Fabrication Orders & Quoted Invoices)
+        const totalSalesVolume = rawIncomes.reduce((sum, inc) => {
+          return sum + (Number(inc.totalAmount !== undefined && inc.totalAmount !== null ? inc.totalAmount : inc.amount) || 0);
+        }, 0);
+        const totalReceivedSales = rawIncomes.reduce((sum, inc) => {
+          if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+            return sum + inc.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          }
+          if (inc.status === 'Paid') {
+            return sum + (Number(inc.totalAmount !== undefined && inc.totalAmount !== null ? inc.totalAmount : inc.amount) || 0);
+          }
+          return sum + (Number(inc.receiptAmount) || 0);
+        }, 0);
+        const pendingSalesVal = Math.max(0, totalSalesVolume - totalReceivedSales);
+
+        // 3. INCOME (Realized Revenue Inflow)
+        const totalIncomeVal = (incomeSummary && typeof incomeSummary.totalIncome === 'number' && incomeSummary.totalIncome > 0)
+          ? incomeSummary.totalIncome
+          : totalReceivedSales;
+
+        // 4. PURCHASE (Raw Materials & Inventory Procurement)
+        const purchaseExpenses = rawExpenses.filter(e => {
+          const cat = String(e.categoryName || e.category || '').toLowerCase();
+          return e.isPurchase === true || cat.includes('purchase') || cat.includes('material') || cat.includes('inventory') || cat.includes('vendor');
+        });
+        const totalPurchaseVal = purchaseExpenses.reduce((sum, p) => {
+          return sum + (Number(p.totalAmount || p.amount) || 0);
+        }, 0);
+
+        // 5. OPERATIONAL EXPENSES (General site & fabrication overheads excluding purchases)
+        const generalExpenses = rawExpenses.filter(e => {
+          const cat = String(e.categoryName || e.category || '').toLowerCase();
+          return !e.isPurchase && !cat.includes('purchase') && !cat.includes('material') && !cat.includes('inventory') && !cat.includes('vendor');
+        });
+        const totalGeneralExpenseVal = generalExpenses.reduce((sum, e) => {
+          return sum + (Number(e.totalAmount || e.amount) || 0);
+        }, 0);
+        const totalAllExpensesVal = totalPurchaseVal + totalGeneralExpenseVal;
+
+        // EXPENSE CATEGORIES
+        const totalCategoryOb = rawCategories.reduce((sum, c) => sum + (Number(c.openingBalance) || 0), 0);
+
+        // 6. WAGE (Staff & Worker Salary Disbursements)
+        const totalWagesVal = rawSalaries.reduce((sum, p) => {
+          const net = p.paidAmount !== undefined
+            ? p.paidAmount
+            : (p.customNetPay !== undefined
+              ? p.customNetPay
+              : (p.totalEarnings ? Math.max(0, (p.totalEarnings || 0) - (p.totalDeductions || 0)) : (p.basicSalary || 0)));
+          return sum + Number(net || 0);
+        }, 0);
+
+        // 7. LEDGER (Combined movement & transaction turnover)
+        const totalLedgerTurnover = totalSalesVolume + totalAllExpensesVal + totalWagesVal;
+        const totalLedgerCount = rawIncomes.length + rawExpenses.length + rawSalaries.length;
+        const netLedgerBalance = totalIncomeVal - (totalAllExpensesVal + totalWagesVal);
+
+        // 8. DAY BOOK (Cash Book Balance & Volume)
+        const cbSummary = rawCashBook?.summary || {};
+        const dayBookClosing = cbSummary.closingBalance !== undefined
+          ? cbSummary.closingBalance
+          : (cbSummary.netBalance !== undefined
+            ? cbSummary.netBalance
+            : (totalIncomeVal - (totalAllExpensesVal + totalWagesVal)));
+        const dayBookInflow = cbSummary.totalIncome !== undefined ? cbSummary.totalIncome : totalIncomeVal;
+        const dayBookOutflow = cbSummary.totalExpense !== undefined ? cbSummary.totalExpense : (totalAllExpensesVal + totalWagesVal);
+        const dayBookCount = Array.isArray(rawCashBook?.data)
+          ? rawCashBook.data.length
+          : (cbSummary.totalEntries || (rawIncomes.length + rawExpenses.length));
+
+        // 9. PROFIT AND LOSS
+        const totalOutflows = totalPurchaseVal + totalGeneralExpenseVal + totalWagesVal;
+        const netProfitVal = totalIncomeVal - totalOutflows;
+        const isProfit = netProfitVal >= 0;
+        const marginPct = totalSalesVolume > 0
+          ? ((netProfitVal / totalSalesVolume) * 100).toFixed(1)
+          : (totalIncomeVal > 0 ? ((netProfitVal / totalIncomeVal) * 100).toFixed(1) : '0.0');
+
+        setFinancialMetrics({
+          capital: {
+            amount: totalCapitalVal,
+            count: rawCapitals.length,
+            formatted: formatINR(totalCapitalVal),
+            subtext: `${rawCapitals.length} Assets • Capital Equity`
+          },
+          sales: {
+            amount: totalSalesVolume,
+            count: rawIncomes.length,
+            pending: pendingSalesVal,
+            formatted: formatINR(totalSalesVolume),
+            subtext: `${formatINR(pendingSalesVal)} Pending • ${rawIncomes.length} Orders`
+          },
+          income: {
+            amount: totalIncomeVal,
+            count: rawIncomes.length,
+            formatted: formatINR(totalIncomeVal),
+            subtext: `${rawIncomes.length} Receipts • Realized Revenue`
+          },
+          purchase: {
+            amount: totalPurchaseVal,
+            count: purchaseExpenses.length,
+            formatted: formatINR(totalPurchaseVal),
+            subtext: `${purchaseExpenses.length} Vouchers • Material Purchases`
+          },
+          categories: {
+            count: rawCategories.length,
+            obAmount: totalCategoryOb
+          },
+          expenses: {
+            amount: totalGeneralExpenseVal,
+            count: generalExpenses.length,
+            formatted: formatINR(totalGeneralExpenseVal),
+            subtext: `${generalExpenses.length} Vouchers • Operating Costs`
+          },
+          wage: {
+            amount: totalWagesVal,
+            count: rawSalaries.length,
+            formatted: formatINR(totalWagesVal),
+            subtext: `${rawSalaries.length} Slips • Staff Wages Disbursed`
+          },
+          ledger: {
+            turnover: totalLedgerTurnover,
+            count: totalLedgerCount,
+            netBalance: netLedgerBalance,
+            formatted: formatINR(totalLedgerTurnover),
+            subtext: `${totalLedgerCount} Records • Gross Turnover`
+          },
+          dayBook: {
+            closingBalance: dayBookClosing,
+            count: dayBookCount,
+            inflow: dayBookInflow,
+            outflow: dayBookOutflow,
+            formatted: (dayBookClosing < 0 ? '-' : '') + formatINR(Math.abs(dayBookClosing)),
+            subtext: `Inflow ${formatINR(dayBookInflow)} • Outflow ${formatINR(dayBookOutflow)}`
+          },
+          profitAndLoss: {
+            netProfit: netProfitVal,
+            isProfit,
+            margin: `${marginPct}%`,
+            formatted: (isProfit ? '+' : '-') + formatINR(Math.abs(netProfitVal)),
+            subtext: `Margin: ${marginPct}% • Operational Net P&L`
+          }
+        });
 
         setAccountsCounts({
-          capital: cCap,
-          sales: cInc,
-          income: cInc,
-          purchase: cExp,
-          categories: cCat,
-          expenses: cExp,
-          salary: cSal,
-          ledger: cInc + cExp,
-          cashBook: cCb,
-          reports: cInc + cExp
+          capital: rawCapitals.length,
+          sales: rawIncomes.length,
+          income: rawIncomes.length,
+          purchase: purchaseExpenses.length,
+          categories: rawCategories.length,
+          expenses: generalExpenses.length,
+          salary: rawSalaries.length,
+          ledger: totalLedgerCount,
+          cashBook: dayBookCount,
+          reports: rawIncomes.length + rawExpenses.length
         });
 
       } else {
@@ -1109,32 +1345,34 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
                           normalizedDept.includes("sales");
 
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10 pb-24 pt-4 max-w-7xl mx-auto px-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5 pb-16 pt-1 max-w-7xl mx-auto px-4">
         
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        {/* MINIMAL HEADER */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                Interiors Architecture & Operations HQ
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                FABTEC <span className="text-amber-500 font-bold">Operations</span>
+              </h1>
+              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+                Live
               </span>
             </div>
-            <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-              FORMA13 <span className="text-indigo-600 dark:text-lime-400">Operations</span>
-            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Fabrication production, accounts and financial overview
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={handleSync}
-              className="px-5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 transition-all active:scale-95 shadow-sm cursor-pointer"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
+              title="Sync System"
             >
               <RefreshCw size={14} />
-              <span>Sync System</span>
             </button>
-            <div className="px-5 py-3 bg-indigo-600/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">
-              {currentTime.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })}
+            <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 font-mono">
+              {currentTime.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
             </div>
           </div>
         </div>
@@ -1143,17 +1381,17 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           isOpen={isAiModalOpen}
           onClose={() => setIsAiModalOpen(false)}
           contextData={aiModalContext}
-          title="FORMA13 AI Space Operations Analysis"
+          title="FABTEC AI Operations Analysis"
         />
 
-        {/* DEPARTMENT & EXECUTIVE VIEW FILTER PILLS */}
-        <div className="flex items-center gap-2.5 overflow-x-auto pb-3.5 scrollbar-none border-b border-slate-100 dark:border-slate-800/80">
+        {/* MINIMAL DEPARTMENT FILTER PILLS */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setGlobalDepartment("all")}
-            className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               globalDepartment === "all"
-                ? "bg-indigo-700 text-white shadow-md shadow-indigo-600/20"
-                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700"
+                ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
             Overview
@@ -1164,10 +1402,10 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             <>
               <button
                 onClick={() => setGlobalDepartment("Academy")}
-                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                   globalDepartment.toLowerCase() === "academy"
-                    ? "bg-indigo-700 text-white shadow-md shadow-indigo-600/20"
-                    : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700"
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
                 Academy
@@ -1175,10 +1413,10 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
 
               <button
                 onClick={() => setGlobalDepartment("HR Analytics")}
-                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                   globalDepartment.toLowerCase() === "hr analytics" || globalDepartment.toLowerCase() === "hr/admin" || globalDepartment.toLowerCase() === "hr"
-                    ? "bg-indigo-700 text-white shadow-md shadow-indigo-600/20"
-                    : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700"
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
                 HR Analytics
@@ -1186,10 +1424,10 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
 
               <button
                 onClick={() => setGlobalDepartment("Daily Task Tracker")}
-                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                   globalDepartment.toLowerCase() === "daily task tracker"
-                    ? "bg-indigo-700 text-white shadow-md shadow-indigo-600/20"
-                    : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700"
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
                 Daily Task Tracker
@@ -1197,263 +1435,322 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             </>
           )}
 
-          {uniqueDepartments
-            .map(dept => (
+          {uniqueDepartments.map(dept => (
+            <button
+              key={dept}
+              onClick={() => setGlobalDepartment(dept)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                globalDepartment.toLowerCase() === dept.toLowerCase()
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+            >
+              {dept}
+            </button>
+          ))}
+        </div>
+
+        {/* MINIMAL FINANCIAL & OPERATIONS METRICS GRID */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {/* 1. FABRICATION */}
+          <StatCard
+            label="Fabrication"
+            badge={`${fabricationStats.total} Jobs`}
+            value={fabricationStats.total}
+            icon={Hammer}
+            color="text-amber-600 dark:text-amber-400"
+            subtext={`${fabricationStats.active} Active • ${fabricationStats.completed} Done`}
+            onClick={() => navigate('/fabrication')}
+          />
+
+          {/* 2. SALES */}
+          <StatCard
+            label="Sales"
+            badge={`${financialMetrics.sales.count} Orders`}
+            value={financialMetrics.sales.formatted}
+            icon={TrendingUp}
+            color="text-teal-600 dark:text-teal-400"
+            subtext={financialMetrics.sales.subtext}
+            onClick={() => navigate('/accounts/sales')}
+          />
+
+          {/* 3. INCOME */}
+          <StatCard
+            label="Income"
+            badge={`${financialMetrics.income.count} Receipts`}
+            value={financialMetrics.income.formatted}
+            icon={FileText}
+            color="text-cyan-600 dark:text-cyan-400"
+            subtext={financialMetrics.income.subtext}
+            onClick={() => navigate('/accounts/income')}
+          />
+
+          {/* 4. PROFIT AND LOSS */}
+          <StatCard
+            label="Profit and Loss"
+            badge={financialMetrics.profitAndLoss.isProfit ? "Profit" : "Deficit"}
+            value={financialMetrics.profitAndLoss.formatted}
+            icon={BarChart2}
+            color={financialMetrics.profitAndLoss.isProfit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
+            subtext={financialMetrics.profitAndLoss.subtext}
+            onClick={() => navigate('/accounts/reports')}
+          />
+
+          {/* 5. PURCHASE */}
+          <StatCard
+            label="Purchase"
+            badge={`${financialMetrics.purchase.count} Vouchers`}
+            value={financialMetrics.purchase.formatted}
+            icon={Building}
+            color="text-sky-600 dark:text-sky-400"
+            subtext={financialMetrics.purchase.subtext}
+            onClick={() => navigate('/accounts/purchase')}
+          />
+
+          {/* 6. EXPENSE */}
+          <StatCard
+            label="Expense"
+            badge={`${financialMetrics.expenses.count} Vouchers`}
+            value={financialMetrics.expenses.formatted}
+            icon={Activity}
+            color="text-fuchsia-600 dark:text-fuchsia-400"
+            subtext={financialMetrics.expenses.subtext}
+            onClick={() => navigate('/accounts/expenses')}
+          />
+
+          {/* 7. WAGE */}
+          <StatCard
+            label="Wage"
+            badge={`${financialMetrics.wage.count} Slips`}
+            value={financialMetrics.wage.formatted}
+            icon={ListChecks}
+            color="text-amber-600 dark:text-amber-400"
+            subtext={financialMetrics.wage.subtext}
+            onClick={() => navigate('/accounts/salary')}
+          />
+
+          {/* 8. DAY BOOK */}
+          <StatCard
+            label="Day Book"
+            badge={`${financialMetrics.dayBook.count} Entries`}
+            value={financialMetrics.dayBook.formatted}
+            icon={Clock}
+            color={financialMetrics.dayBook.closingBalance >= 0 ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}
+            subtext={financialMetrics.dayBook.subtext}
+            onClick={() => navigate('/accounts/cash-book')}
+          />
+
+          {/* 9. CAPITAL */}
+          <StatCard
+            label="Capital"
+            badge={`${financialMetrics.capital.count} Assets`}
+            value={financialMetrics.capital.formatted}
+            icon={Briefcase}
+            color="text-emerald-600 dark:text-emerald-400"
+            subtext={financialMetrics.capital.subtext}
+            onClick={() => navigate('/accounts/capital')}
+          />
+
+          {/* 10. LEDGER */}
+          <StatCard
+            label="Ledger"
+            badge={`${financialMetrics.ledger.count} Entries`}
+            value={financialMetrics.ledger.formatted}
+            icon={BookOpen}
+            color="text-orange-600 dark:text-orange-400"
+            subtext={financialMetrics.ledger.subtext}
+            onClick={() => navigate('/accounts/ledger')}
+          />
+
+          {/* 11. CLIENTS */}
+          <StatCard
+            label="Clients"
+            badge={`${clientsData.stats?.total || clientsData.clients?.length || 0}`}
+            value={clientsData.stats?.total || clientsData.clients?.length || 0}
+            icon={Building}
+            color="text-blue-600 dark:text-blue-400"
+            subtext={`${clientsData.stats?.active || 0} Active Accounts`}
+            onClick={() => navigate('/clients')}
+          />
+
+          {/* 12. EMPLOYEES */}
+          <StatCard
+            label="Employees"
+            badge={`${allUsers.length} Total`}
+            value={allUsers.length}
+            icon={Users}
+            color="text-indigo-600 dark:text-indigo-400"
+            subtext={`${activeStaffCount} Active On Duty`}
+            onClick={() => navigate('/users')}
+          />
+        </div>
+
+        {/* MINIMAL FABRICATION JOB ORDERS */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-2xs">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Hammer size={15} className="text-amber-500" />
+                Fabrication Job Orders
+              </h2>
+              <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold">
+                {fabricationStats.total}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                key={dept}
-                onClick={() => setGlobalDepartment(dept)}
-                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-                  globalDepartment.toLowerCase() === dept.toLowerCase()
-                    ? "bg-indigo-700 text-white shadow-md shadow-indigo-800/20"
-                    : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-350 dark:hover:border-slate-700"
-                }`}
+                onClick={() => navigate("/accounts/share")}
+                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 transition-colors flex items-center gap-1 cursor-pointer"
+                title="View Partner Profit Sharing & Equity"
               >
-                {dept}
+                <Users size={13} />
+                <span>Partner Share</span>
               </button>
-            ))}
-        </div>
-
-        {/* METRICS GRID - EXCLUSIVELY SIDEBAR PAGES */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-              <Shield size={14} className="text-indigo-500" />
-              Fabrication & Accounts Operations Console
-            </h2>
-            <span className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
-              12 Active Modules
-            </span>
+              <button
+                onClick={() => navigate("/fabrication")}
+                className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                View All <ChevronRight size={13} />
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {/* 1. EMPLOYEES (/users) */}
-            <StatCard
-              label="Employees"
-              value={allUsers.length}
-              icon={Users}
-              color="text-indigo-600 dark:text-indigo-400"
-              borderColor="bg-indigo-600"
-              bgColor="bg-indigo-50 dark:bg-indigo-950/20"
-              subtext={`${activeStaffCount} Active Industrial & Shop Staff`}
-              onClick={() => navigate('/users')}
-            />
-
-            {/* 2. CLIENTS (/clients) */}
-            <StatCard
-              label="Clients"
-              value={clientsData.stats?.total || clientsData.clients?.length || 0}
-              icon={Building}
-              color="text-blue-600 dark:text-blue-400"
-              borderColor="bg-blue-600"
-              bgColor="bg-blue-50 dark:bg-blue-950/20"
-              subtext={`${clientsData.stats?.active || 0} Industrial Accounts`}
-              onClick={() => navigate('/clients')}
-            />
-
-            {/* 3. CAPITAL (/accounts/capital) */}
-            <StatCard
-              label="Capital"
-              value={accountsCounts.capital}
-              icon={Briefcase}
-              color="text-emerald-600 dark:text-emerald-400"
-              borderColor="bg-emerald-500"
-              bgColor="bg-emerald-50 dark:bg-emerald-950/20"
-              subtext="Equipment & Capital Assets"
-              onClick={() => navigate('/accounts/capital')}
-            />
-
-            {/* 4. SALES (/accounts/sales) */}
-            <StatCard
-              label="Sales"
-              value={accountsCounts.sales}
-              icon={TrendingUp}
-              color="text-teal-600 dark:text-teal-400"
-              borderColor="bg-teal-500"
-              bgColor="bg-teal-50 dark:bg-teal-950/20"
-              subtext="Fabrication Sales Orders"
-              onClick={() => navigate('/accounts/sales')}
-            />
-
-            {/* 5. INCOME (/accounts/income) */}
-            <StatCard
-              label="Income"
-              value={accountsCounts.income}
-              icon={FileText}
-              color="text-cyan-600 dark:text-cyan-400"
-              borderColor="bg-cyan-500"
-              bgColor="bg-cyan-50 dark:bg-cyan-950/20"
-              subtext="Commercial Invoices & Receipts"
-              onClick={() => navigate('/accounts/income')}
-            />
-
-            {/* 6. PURCHASE (/accounts/purchase) */}
-            <StatCard
-              label="Purchase"
-              value={accountsCounts.purchase}
-              icon={Building}
-              color="text-sky-600 dark:text-sky-400"
-              borderColor="bg-sky-500"
-              bgColor="bg-sky-50 dark:bg-sky-950/20"
-              subtext="Raw Material Purchases"
-              onClick={() => navigate('/accounts/purchase')}
-            />
-
-            {/* 7. EXPENSE CATEGORIES (/accounts/categories) */}
-            <StatCard
-              label="Expense Categories"
-              value={accountsCounts.categories}
-              icon={Layers}
-              color="text-purple-600 dark:text-purple-400"
-              borderColor="bg-purple-600"
-              bgColor="bg-purple-50 dark:bg-purple-950/20"
-              subtext="Category Rules & Allocation"
-              onClick={() => navigate('/accounts/categories')}
-            />
-
-            {/* 8. EXPENSE (/accounts/expenses) */}
-            <StatCard
-              label="Expense"
-              value={accountsCounts.expenses}
-              icon={Activity}
-              color="text-fuchsia-600 dark:text-fuchsia-400"
-              borderColor="bg-fuchsia-500"
-              bgColor="bg-fuchsia-50 dark:bg-fuchsia-950/20"
-              subtext="Operational Expenses"
-              onClick={() => navigate('/accounts/expenses')}
-            />
-
-            {/* 9. WAGE (/accounts/salary) */}
-            <StatCard
-              label="Wage"
-              value={accountsCounts.salary}
-              icon={ListChecks}
-              color="text-amber-600 dark:text-amber-400"
-              borderColor="bg-amber-500"
-              bgColor="bg-amber-50 dark:bg-amber-950/20"
-              subtext="Staff Wages & Salaries"
-              onClick={() => navigate('/accounts/salary')}
-            />
-
-            {/* 10. LEDGER (/accounts/ledger) */}
-            <StatCard
-              label="Ledger"
-              value={accountsCounts.ledger}
-              icon={BookOpen}
-              color="text-orange-600 dark:text-orange-400"
-              borderColor="bg-orange-500"
-              bgColor="bg-orange-50 dark:bg-orange-950/20"
-              subtext="General Ledger Transactions"
-              onClick={() => navigate('/accounts/ledger')}
-            />
-
-            {/* 11. DAY BOOK (/accounts/cash-book) */}
-            <StatCard
-              label="Day Book"
-              value={accountsCounts.cashBook}
-              icon={Clock}
-              color="text-rose-600 dark:text-rose-400"
-              borderColor="bg-rose-500"
-              bgColor="bg-rose-50 dark:bg-rose-950/20"
-              subtext="Daily Cash Book Records"
-              onClick={() => navigate('/accounts/cash-book')}
-            />
-
-            {/* 12. PROFIT AND LOSS (/accounts/reports) */}
-            <StatCard
-              label="Profit and Loss"
-              value={accountsCounts.reports}
-              icon={BarChart2}
-              color="text-lime-600 dark:text-lime-400"
-              borderColor="bg-lime-500"
-              bgColor="bg-lime-50 dark:bg-lime-950/20"
-              subtext="P&L Statements & Reports"
-              onClick={() => navigate('/accounts/reports')}
-            />
-          </div>
+          {fabricationJobs && fabricationJobs.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-400">
+                    <th className="text-left pb-2.5 pr-3">Job ID</th>
+                    <th className="text-left pb-2.5 pr-3">Client</th>
+                    <th className="text-left pb-2.5 pr-3">Scope</th>
+                    <th className="text-right pb-2.5 pr-3">Quotation (₹)</th>
+                    <th className="text-right pb-2.5 pr-3">Received (₹)</th>
+                    <th className="text-right pb-2.5 pr-3">Balance (₹)</th>
+                    <th className="text-center pb-2.5 pr-3">Status</th>
+                    <th className="text-right pb-2.5">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+                  {fabricationJobs.slice(0, 6).map((j) => {
+                    const fin = j.financials || {};
+                    const quoteVal = Number(fin.totalQuotation || j.quotationValue || 0);
+                    const recvVal = Number(fin.totalAmountReceived || 0);
+                    const balVal = Number(fin.balanceDue !== undefined ? fin.balanceDue : Math.max(0, quoteVal - recvVal));
+                    return (
+                      <tr key={j._id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition">
+                        <td className="py-2.5 pr-3 font-mono font-bold text-slate-900 dark:text-slate-100">
+                          #{j.jobNumber || j.jobId || 'FAB'}
+                        </td>
+                        <td className="py-2.5 pr-3 font-semibold text-slate-800 dark:text-slate-200">
+                          {j.clientName || 'Client'}
+                        </td>
+                        <td className="py-2.5 pr-3 text-slate-500 max-w-[200px] truncate">
+                          {j.jobTitle || (j.quotationItems && j.quotationItems.length > 0 ? j.quotationItems.map(i => i.description).join(', ') : 'Fabrication Work Order')}
+                        </td>
+                        <td className="py-2.5 pr-3 text-right font-mono font-bold text-slate-900 dark:text-slate-100">
+                          ₹{quoteVal.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2.5 pr-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          ₹{recvVal.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2.5 pr-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                          ₹{balVal.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2.5 pr-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                            ['completed', 'delivered'].includes(String(j.status || '').toLowerCase())
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              : ['in progress', 'active', 'confirmed / in progress'].includes(String(j.status || '').toLowerCase())
+                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                              : 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                          }`}>
+                            {j.status || 'Active'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <button
+                            onClick={() => navigate(`/fabrication/${j._id}`)}
+                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                          >
+                            Details →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No fabrication jobs recorded yet
+            </div>
+          )}
         </div>
 
-        {/* CLIENTS SECTION */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 italic uppercase tracking-tight flex items-center gap-2">
-                <Building size={20} className="text-blue-500" />
+        {/* MINIMAL CLIENTS SECTION */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-2xs">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Building size={15} className="text-blue-500" />
                 Clients
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-450 font-medium mt-0.5">Active accounts and client overview</p>
+              <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold">
+                {clientsData.stats?.total || clientsData.clients?.length || 0}
+              </span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex gap-4 text-[11px] font-black uppercase tracking-wider">
-                <span className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-500/20">
-                  Total: {clientsData.stats?.total || clientsData.clients?.length || 0}
-                </span>
-                <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
-                  Active: {clientsData.stats?.active || 0}
-                </span>
-              </div>
-              <button
-                onClick={() => navigate("/clients")}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/20 active:scale-95 flex items-center gap-1.5"
-              >
-                View All <ChevronRight size={12} />
-              </button>
-            </div>
+            <button
+              onClick={() => navigate("/clients")}
+              className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              View All <ChevronRight size={13} />
+            </button>
           </div>
 
           {clientsData.clients && clientsData.clients.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">#</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Client Name</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Type</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Status</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3 pr-4">Priority</th>
-                    <th className="text-left font-black uppercase tracking-wider text-slate-400 pb-3">Contact</th>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-400">
+                    <th className="text-left pb-2.5 pr-3">Client</th>
+                    <th className="text-left pb-2.5 pr-3">Type</th>
+                    <th className="text-left pb-2.5 pr-3">Status</th>
+                    <th className="text-left pb-2.5">Contact</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {clientsData.clients.slice(0, 8).map((c, i) => (
-                    <tr key={c._id || i} className="hover:bg-slate-50 dark:hover:bg-slate-950/30 transition-colors">
-                      <td className="py-3 pr-4 font-black text-slate-400">{i + 1}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-800 dark:text-slate-200">{c.name || c.clientName || '—'}</td>
-                      <td className="py-3 pr-4 font-bold text-slate-500">{c.clientType || c.type || '—'}</td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+                  {clientsData.clients.slice(0, 6).map((c, i) => (
+                    <tr key={c._id || i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition">
+                      <td className="py-2.5 pr-3 font-semibold text-slate-800 dark:text-slate-200">
+                        {c.name || c.clientName || '—'}
+                      </td>
+                      <td className="py-2.5 pr-3 text-slate-500">
+                        {c.clientType || c.type || 'Standard'}
+                      </td>
+                      <td className="py-2.5 pr-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                           String(c.status || '').toLowerCase() === 'active'
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                            : String(c.status || '').toLowerCase() === 'inactive'
-                            ? 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                         }`}>
-                          {c.status || '—'}
+                          {c.status || 'Active'}
                         </span>
                       </td>
-                      <td className="py-3 pr-4">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
-                          String(c.priority || '').toLowerCase() === 'high'
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                            : String(c.priority || '').toLowerCase() === 'medium'
-                            ? 'bg-amber-500/10 text-amber-600'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        }`}>
-                          {c.priority || '—'}
-                        </span>
+                      <td className="py-2.5 text-slate-500 font-mono text-[11px]">
+                        {c.email || c.contactEmail || c.phone || '—'}
                       </td>
-                      <td className="py-3 font-medium text-slate-500">{c.email || c.contactEmail || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div className="py-10 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-950/40">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No clients registered yet</p>
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No clients registered yet
             </div>
           )}
         </div>
-
 
       </motion.div>
     );
@@ -1589,41 +1886,40 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
   return renderAdminView();
 };
 
-const StatCard = ({ label, value, icon: Icon, color, borderColor, bgColor, trend, subtext, onClick }) => (
+const StatCard = ({ label, value, badge, icon: Icon, color, subtext, onClick }) => (
   <div 
     onClick={onClick}
-    className={`bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/50 p-6 rounded-[2rem] relative overflow-hidden group shadow-sm hover:shadow-md transition-all hover:border-slate-350 dark:hover:border-slate-700 ${
-      onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]' : ''
+    className={`bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl relative overflow-hidden group shadow-2xs hover:shadow-xs transition-all hover:border-slate-350 dark:hover:border-slate-700 flex flex-col justify-between ${
+      onClick ? 'cursor-pointer hover:translate-y-[-2px] active:translate-y-0' : ''
     }`}
   >
-    <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${borderColor}`} />
+    <div className="flex justify-between items-start mb-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+          {label}
+        </span>
+        {badge && (
+          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            {badge}
+          </span>
+        )}
+      </div>
+      {Icon && (
+        <div className={`p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 ${color || 'text-slate-600 dark:text-slate-400'} shrink-0`}>
+          <Icon size={14} />
+        </div>
+      )}
+    </div>
 
-    <div className="flex justify-between items-start">
-      <div className="space-y-1">
-        <p className="text-[10px] font-black text-slate-555 dark:text-slate-455 uppercase tracking-[0.15em] mb-1">{label}</p>
-        <h3 className={`text-3xl font-black italic tracking-tight ${color}`}>{value}</h3>
-        {trend !== undefined && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className={`flex items-center text-[9px] font-black px-1.5 py-0.5 rounded ${
-              trend >= 0 
-                ? "text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" 
-                : "text-rose-500 bg-rose-500/5 border border-rose-500/10"
-            }`}>
-              {trend >= 0 ? <ArrowUpRight size={10} className="mr-0.5" /> : <ArrowDownRight size={10} className="mr-0.5" />}
-              {Math.abs(trend)}%
-            </span>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">VS 24H AGO</span>
-          </div>
-        )}
-        {subtext && (
-          <p className="text-[9px] text-slate-400 dark:text-slate-450 font-bold uppercase tracking-wide">
-            {subtext}
-          </p>
-        )}
-      </div>
-      <div className={`p-3.5 rounded-2xl ${bgColor} ${color} border border-slate-100 dark:border-slate-800/60 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3`}>
-        <Icon size={20} />
-      </div>
+    <div>
+      <h3 className={`text-xl sm:text-2xl font-black font-mono tracking-tight ${color || 'text-slate-900 dark:text-white'}`}>
+        {value}
+      </h3>
+      {subtext && (
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium truncate">
+          {subtext}
+        </p>
+      )}
     </div>
   </div>
 );

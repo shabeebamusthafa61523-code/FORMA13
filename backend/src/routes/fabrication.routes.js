@@ -36,4 +36,45 @@ router.post('/jobs/:id/payments', fabricationController.addClientPayment);
 router.put('/jobs/:id/payments/:paymentId', fabricationController.updateClientPayment);
 router.delete('/jobs/:id/payments/:paymentId', fabricationController.deleteClientPayment);
 
+// 6. Quotation Terms & Conditions Management
+router.get('/terms', fabricationController.getQuotationTerms);
+router.post('/terms', fabricationController.createQuotationTerm);
+router.put('/terms/:id', fabricationController.updateQuotationTerm);
+router.delete('/terms/:id', fabricationController.deleteQuotationTerm);
+router.post('/terms/reset', fabricationController.resetQuotationTerms);
+
+// 7. Job-specific Terms Snapshot
+router.put('/jobs/:id/terms', fabricationController.updateJobTerms);
+
+// 8. Fabrication Raw Materials Management
+router.get('/materials', fabricationController.getFabricationMaterials);
+router.post('/materials', fabricationController.createFabricationMaterial);
+router.put('/materials/:id', fabricationController.updateFabricationMaterial);
+router.delete('/materials/:id', fabricationController.deleteFabricationMaterial);
+router.post('/materials/reset', fabricationController.resetFabricationMaterials);
+
+// 9. Fabrication Work Scope Templates Management
+router.get('/work-scopes', fabricationController.getFabricationWorkScopes);
+router.post('/work-scopes', fabricationController.createFabricationWorkScope);
+router.put('/work-scopes/:id', fabricationController.updateFabricationWorkScope);
+router.delete('/work-scopes/:id', fabricationController.deleteFabricationWorkScope);
+router.post('/work-scopes/reset', fabricationController.resetFabricationWorkScopes);
+
+// 10. Fabrication Purchase Item Presets Management
+router.get('/item-presets', fabricationController.getFabricationItemPresets);
+router.post('/item-presets', fabricationController.createFabricationItemPreset);
+router.put('/item-presets/:id', fabricationController.updateFabricationItemPreset);
+router.delete('/item-presets/:id', fabricationController.deleteFabricationItemPreset);
+router.post('/item-presets/reset', fabricationController.resetFabricationItemPresets);
+
+// 11. Fabrication Vendors Directory (MongoDB)
+router.get('/vendors', fabricationController.getFabricationVendors);
+router.post('/vendors', fabricationController.createFabricationVendor);
+
+// 12. Fabrication Expense Categories (MongoDB)
+router.get('/expense-categories', fabricationController.getFabricationExpenseCategories);
+
+// 13. Retroactive Sync Route to Accounts
+router.post('/sync-to-accounts', fabricationController.syncAllFabricationToAccounts);
+
 export default router;

@@ -123,3 +123,129 @@ export const deleteClientPayment = async (jobId, paymentId) => {
   const response = await axios.delete(`${getBaseUrl()}/jobs/${jobId}/payments/${paymentId}`, getAuthHeaders());
   return response.data;
 };
+
+// 6. Quotation Terms & Conditions CRUD (MongoDB)
+export const getQuotationTerms = async () => {
+  const response = await axios.get(`${getBaseUrl()}/terms`, getAuthHeaders());
+  return response.data;
+};
+
+export const createQuotationTerm = async (termData) => {
+  const response = await axios.post(`${getBaseUrl()}/terms`, termData, getAuthHeaders());
+  return response.data;
+};
+
+export const updateQuotationTerm = async (id, termData) => {
+  const response = await axios.put(`${getBaseUrl()}/terms/${id}`, termData, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteQuotationTerm = async (id) => {
+  const response = await axios.delete(`${getBaseUrl()}/terms/${id}`, getAuthHeaders());
+  return response.data;
+};
+
+export const resetQuotationTerms = async () => {
+  const response = await axios.post(`${getBaseUrl()}/terms/reset`, {}, getAuthHeaders());
+  return response.data;
+};
+
+export const updateJobTerms = async (jobId, terms) => {
+  const response = await axios.put(`${getBaseUrl()}/jobs/${jobId}/terms`, { terms }, getAuthHeaders());
+  return response.data;
+};
+
+// 7. Quotation Materials Management (MongoDB)
+export const getFabricationMaterials = async () => {
+  const response = await axios.get(`${getBaseUrl()}/materials`, getAuthHeaders());
+  return response.data;
+};
+
+export const createFabricationMaterial = async (data) => {
+  const response = await axios.post(`${getBaseUrl()}/materials`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const updateFabricationMaterial = async (id, data) => {
+  const response = await axios.put(`${getBaseUrl()}/materials/${id}`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteFabricationMaterial = async (id) => {
+  const response = await axios.delete(`${getBaseUrl()}/materials/${id}`, getAuthHeaders());
+  return response.data;
+};
+
+export const resetFabricationMaterials = async () => {
+  const response = await axios.post(`${getBaseUrl()}/materials/reset`, {}, getAuthHeaders());
+  return response.data;
+};
+
+// 8. Quotation Work Scope Templates Management (MongoDB)
+export const getFabricationWorkScopes = async () => {
+  const response = await axios.get(`${getBaseUrl()}/work-scopes`, getAuthHeaders());
+  return response.data;
+};
+
+export const createFabricationWorkScope = async (data) => {
+  const response = await axios.post(`${getBaseUrl()}/work-scopes`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const updateFabricationWorkScope = async (id, data) => {
+  const response = await axios.put(`${getBaseUrl()}/work-scopes/${id}`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteFabricationWorkScope = async (id) => {
+  const response = await axios.delete(`${getBaseUrl()}/work-scopes/${id}`, getAuthHeaders());
+  return response.data;
+};
+
+export const resetFabricationWorkScopes = async () => {
+  const response = await axios.post(`${getBaseUrl()}/work-scopes/reset`, {}, getAuthHeaders());
+  return response.data;
+};
+
+// 9. Purchase Item Presets Management (MongoDB)
+export const getFabricationItemPresets = async () => {
+  const response = await axios.get(`${getBaseUrl()}/item-presets`, getAuthHeaders());
+  return response.data;
+};
+
+export const createFabricationItemPreset = async (data) => {
+  const response = await axios.post(`${getBaseUrl()}/item-presets`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const updateFabricationItemPreset = async (id, data) => {
+  const response = await axios.put(`${getBaseUrl()}/item-presets/${id}`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteFabricationItemPreset = async (id) => {
+  const response = await axios.delete(`${getBaseUrl()}/item-presets/${id}`, getAuthHeaders());
+  return response.data;
+};
+
+export const resetFabricationItemPresets = async () => {
+  const response = await axios.post(`${getBaseUrl()}/item-presets/reset`, {}, getAuthHeaders());
+  return response.data;
+};
+
+// 10. Fabrication Vendors (MongoDB)
+export const getFabricationVendors = async () => {
+  const response = await axios.get(`${getBaseUrl()}/vendors`, getAuthHeaders());
+  return response.data;
+};
+
+export const createFabricationVendor = async (data) => {
+  const response = await axios.post(`${getBaseUrl()}/vendors`, data, getAuthHeaders());
+  return response.data;
+};
+
+// 11. Fabrication Expense Categories (MongoDB)
+export const getFabricationExpenseCategories = async () => {
+  const response = await axios.get(`${getBaseUrl()}/expense-categories`, getAuthHeaders());
+  return response.data;
+};

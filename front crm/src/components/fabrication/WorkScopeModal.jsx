@@ -9,9 +9,18 @@ import {
   Edit3, 
   Trash2, 
   Check, 
-  RotateCcw
+  RotateCcw,
+  Database,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import {
+  getFabricationWorkScopes,
+  createFabricationWorkScope,
+  updateFabricationWorkScope,
+  deleteFabricationWorkScope,
+  resetFabricationWorkScopes
+} from '../../services/fabricationService';
 
 export const DEFAULT_WORK_SCOPE_DESCRIPTIONS = [
   'Main Gate MS Tubular Frame with CNC Laser Sheet Design',
@@ -52,26 +61,65 @@ const WorkScopeModal = ({
     return DEFAULT_WORK_SCOPE_DESCRIPTIONS;
   });
 
+  const [dbWorkScopes, setDbWorkScopes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isSavingDb, setIsSavingDb] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [newDescriptionText, setNewDescriptionText] = useState('');
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingText, setEditingText] = useState('');
 
+  // Fetch work scopes from MongoDB on open
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    let isMounted = true;
+    const fetchScopes = async () => {
       try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_WORK_SCOPES_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setDescriptions(parsed);
+        setLoading(true);
+        const res = await getFabricationWorkScopes();
+        if (isMounted && res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          setDbWorkScopes(res.data);
+          const titles = res.data.map(s => s.title);
+          setDescriptions(titles);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_WORK_SCOPES_KEY, JSON.stringify(titles));
+          } catch (e) {}
+          if (onDescriptionsChanged) onDescriptionsChanged(titles);
+
+          // Auto-migrate any custom scopes from localStorage to MongoDB
+          try {
+            const localStored = localStorage.getItem(LOCAL_STORAGE_WORK_SCOPES_KEY);
+            if (localStored) {
+              const parsed = JSON.parse(localStored);
+              if (Array.isArray(parsed)) {
+                for (const locTitle of parsed) {
+                  if (locTitle && !titles.some(t => t.toLowerCase() === locTitle.toLowerCase())) {
+                    await createFabricationWorkScope({ title: locTitle });
+                  }
+                }
+              }
+            }
+          } catch (mErr) {
+            console.warn('Auto-migration error for work scopes:', mErr);
           }
         }
-      } catch (e) {}
-      setSearchQuery('');
-      setNewDescriptionText('');
-      setEditingIndex(null);
-    }
+      } catch (err) {
+        console.warn('Could not fetch work scopes from MongoDB, using cached fallback:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchScopes();
+    setSearchQuery('');
+    setNewDescriptionText('');
+    setEditingIndex(null);
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen]);
 
   const saveToStorage = (updated) => {
@@ -86,7 +134,7 @@ const WorkScopeModal = ({
     }
   };
 
-  const handleAddDescription = (e) => {
+  const handleAddDescription = async (e) => {
     e.preventDefault();
     const trimmed = newDescriptionText.trim();
     if (!trimmed) {
@@ -107,6 +155,19 @@ const WorkScopeModal = ({
     if (onSelectDescription) {
       onSelectDescription(trimmed);
     }
+
+    // Sync to MongoDB
+    try {
+      setIsSavingDb(true);
+      const res = await createFabricationWorkScope({ title: trimmed });
+      if (res?.success && res.data) {
+        setDbWorkScopes(prev => [...prev, res.data]);
+      }
+    } catch (err) {
+      console.error('Failed to create work scope in DB:', err);
+    } finally {
+      setIsSavingDb(false);
+    }
   };
 
   const handleStartEdit = (idx, text) => {
@@ -114,7 +175,7 @@ const WorkScopeModal = ({
     setEditingText(text);
   };
 
-  const handleSaveEdit = (idx) => {
+  const handleSaveEdit = async (idx) => {
     const trimmed = editingText.trim();
     if (!trimmed) {
       showToast('Description cannot be empty', 'error');
@@ -137,9 +198,23 @@ const WorkScopeModal = ({
     if (selectedDescription === oldName && onSelectDescription) {
       onSelectDescription(trimmed);
     }
+
+    // Find MongoDB ID and sync edit
+    const dbItem = dbWorkScopes.find(s => s.title.toLowerCase() === oldName.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await updateFabricationWorkScope(dbItem._id, { title: trimmed });
+        setDbWorkScopes(prev => prev.map(s => s._id === dbItem._id ? { ...s, title: trimmed } : s));
+      } catch (err) {
+        console.error('Failed to update work scope in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleDeleteDescription = (idx) => {
+  const handleDeleteDescription = async (idx) => {
     const toDelete = descriptions[idx];
     if (descriptions.length <= 1) {
       showToast('You must have at least one description option', 'error');
@@ -153,11 +228,38 @@ const WorkScopeModal = ({
     if (selectedDescription === toDelete && onSelectDescription) {
       onSelectDescription('');
     }
+
+    // Find MongoDB ID and sync delete
+    const dbItem = dbWorkScopes.find(s => s.title.toLowerCase() === toDelete.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await deleteFabricationWorkScope(dbItem._id);
+        setDbWorkScopes(prev => prev.filter(s => s._id !== dbItem._id));
+      } catch (err) {
+        console.error('Failed to delete work scope in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleResetDefaults = () => {
-    if (window.confirm('Reset work scope descriptions back to standard fabrication list?')) {
+  const handleResetDefaults = async () => {
+    if (window.confirm('Reset work scope descriptions back to standard fabrication list in MongoDB?')) {
       saveToStorage(DEFAULT_WORK_SCOPE_DESCRIPTIONS);
+      try {
+        setIsSavingDb(true);
+        const res = await resetFabricationWorkScopes();
+        if (res?.success && Array.isArray(res.data)) {
+          setDbWorkScopes(res.data);
+          const titles = res.data.map(s => s.title);
+          saveToStorage(titles);
+        }
+      } catch (err) {
+        console.error('Failed to reset work scopes in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
       showToast('Work scope descriptions reset to defaults', 'info');
     }
   };
@@ -185,11 +287,27 @@ const WorkScopeModal = ({
                 <FileText size={20} />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                   <span>Work Scope Descriptions</span>
                   <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
                     {descriptions.length}
                   </span>
+                  <span className="flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                    <Database size={10} />
+                    <span>MongoDB Synced</span>
+                  </span>
+                  {isSavingDb && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-amber-600 font-semibold animate-pulse">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Saving...</span>
+                    </span>
+                  )}
+                  {loading && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Loading...</span>
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-slate-500">
                   Manage preset descriptions for quotations & work measurements

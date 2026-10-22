@@ -11,7 +11,8 @@ import {
   Check, 
   Loader2, 
   Layers,
-  Sparkles
+  Sparkles,
+  Database
 } from 'lucide-react';
 import { 
   getExpenseCategories, 
@@ -19,6 +20,7 @@ import {
   updateExpenseCategory, 
   deleteExpenseCategory 
 } from '../../services/accountsService';
+import { getFabricationExpenseCategories } from '../../services/fabricationService';
 import { useToast } from '../ToastProvider';
 import ConfirmModal from '../ConfirmModal';
 
@@ -89,10 +91,14 @@ const ExpenseCategoryModal = ({
       console.warn('Failed to read categories from localStorage', e);
     }
 
-    // 2. Fetch from backend API
+    // 2. Fetch from backend API (with Fabrication DB seeding)
     try {
-      const res = await getExpenseCategories();
-      const backendCats = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
+      let res = await getFabricationExpenseCategories();
+      let backendCats = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
+      if (!backendCats || backendCats.length === 0) {
+        res = await getExpenseCategories();
+        backendCats = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
+      }
       
       if (Array.isArray(backendCats) && backendCats.length > 0) {
         // Merge backend categories with defaults and loaded
@@ -328,10 +334,14 @@ const ExpenseCategoryModal = ({
                 <Layers size={20} />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2 flex-wrap">
                   <span>Manage Expense Categories</span>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-bold">
                     {categories.length}
+                  </span>
+                  <span className="flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                    <Database size={10} />
+                    <span>MongoDB Synced</span>
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">

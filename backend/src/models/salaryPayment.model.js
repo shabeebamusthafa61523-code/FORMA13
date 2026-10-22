@@ -4,7 +4,8 @@ const salaryPaymentSchema = new mongoose.Schema({
   employee: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false,
+    default: null
   },
   employeeName: {
     type: String,
@@ -30,9 +31,15 @@ const salaryPaymentSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Bank', 'UPI'],
+    enum: ['Cash', 'Bank', 'UPI', 'Cheque', 'Bank Transfer'],
     default: 'Bank',
     required: true
+  },
+  syncSource: {
+    module: { type: String, enum: ['Manual', 'Fabrication', 'Academy', 'General'], default: 'Manual' },
+    fabricationJobId: { type: String, default: null, index: true },
+    fabricationItemId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    isAutoSynced: { type: Boolean, default: false }
   },
   remarks: {
     type: String,

@@ -10,9 +10,18 @@ import {
   Trash2, 
   Check, 
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Database,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '../ToastProvider';
+import {
+  getFabricationMaterials,
+  createFabricationMaterial,
+  updateFabricationMaterial,
+  deleteFabricationMaterial,
+  resetFabricationMaterials
+} from '../../services/fabricationService';
 
 export const DEFAULT_FABRICATION_MATERIALS = [
   'Mild Steel (MS)',
@@ -50,26 +59,65 @@ const QuotationMaterialModal = ({
     return DEFAULT_FABRICATION_MATERIALS;
   });
 
+  const [dbMaterials, setDbMaterials] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isSavingDb, setIsSavingDb] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [newMaterialName, setNewMaterialName] = useState('');
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingText, setEditingText] = useState('');
 
+  // Fetch materials from MongoDB on modal open
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    let isMounted = true;
+    const fetchMaterials = async () => {
       try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_MATERIALS_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMaterials(parsed);
+        setLoading(true);
+        const res = await getFabricationMaterials();
+        if (isMounted && res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          setDbMaterials(res.data);
+          const names = res.data.map(m => m.name);
+          setMaterials(names);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_MATERIALS_KEY, JSON.stringify(names));
+          } catch (e) {}
+          if (onMaterialsChanged) onMaterialsChanged(names);
+
+          // Auto-migrate any custom materials found in user's localStorage to MongoDB
+          try {
+            const localStored = localStorage.getItem(LOCAL_STORAGE_MATERIALS_KEY);
+            if (localStored) {
+              const parsed = JSON.parse(localStored);
+              if (Array.isArray(parsed)) {
+                for (const locName of parsed) {
+                  if (locName && !names.some(n => n.toLowerCase() === locName.toLowerCase())) {
+                    await createFabricationMaterial({ name: locName });
+                  }
+                }
+              }
+            }
+          } catch (migrateErr) {
+            console.warn('Auto-migration error for materials:', migrateErr);
           }
         }
-      } catch (e) {}
-      setSearchQuery('');
-      setNewMaterialName('');
-      setEditingIndex(null);
-    }
+      } catch (err) {
+        console.warn('Could not fetch materials from MongoDB, using cached fallback:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchMaterials();
+    setSearchQuery('');
+    setNewMaterialName('');
+    setEditingIndex(null);
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen]);
 
   const saveToStorage = (updated) => {
@@ -84,7 +132,7 @@ const QuotationMaterialModal = ({
     }
   };
 
-  const handleAddMaterial = (e) => {
+  const handleAddMaterial = async (e) => {
     e.preventDefault();
     const trimmed = newMaterialName.trim();
     if (!trimmed) {
@@ -105,6 +153,19 @@ const QuotationMaterialModal = ({
     if (onSelectMaterial) {
       onSelectMaterial(trimmed);
     }
+
+    // Sync to MongoDB
+    try {
+      setIsSavingDb(true);
+      const res = await createFabricationMaterial({ name: trimmed });
+      if (res?.success && res.data) {
+        setDbMaterials(prev => [...prev, res.data]);
+      }
+    } catch (err) {
+      console.error('Failed to create material in DB:', err);
+    } finally {
+      setIsSavingDb(false);
+    }
   };
 
   const handleStartEdit = (idx, text) => {
@@ -112,7 +173,7 @@ const QuotationMaterialModal = ({
     setEditingText(text);
   };
 
-  const handleSaveEdit = (idx) => {
+  const handleSaveEdit = async (idx) => {
     const trimmed = editingText.trim();
     if (!trimmed) {
       showToast('Material name cannot be empty', 'error');
@@ -135,9 +196,23 @@ const QuotationMaterialModal = ({
     if (selectedMaterial === oldName && onSelectMaterial) {
       onSelectMaterial(trimmed);
     }
+
+    // Find MongoDB ID and sync edit
+    const dbItem = dbMaterials.find(m => m.name.toLowerCase() === oldName.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await updateFabricationMaterial(dbItem._id, { name: trimmed });
+        setDbMaterials(prev => prev.map(m => m._id === dbItem._id ? { ...m, name: trimmed } : m));
+      } catch (err) {
+        console.error('Failed to update material in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleDeleteMaterial = (idx) => {
+  const handleDeleteMaterial = async (idx) => {
     const toDelete = materials[idx];
     if (materials.length <= 1) {
       showToast('You must have at least one material option', 'error');
@@ -151,11 +226,38 @@ const QuotationMaterialModal = ({
     if (selectedMaterial === toDelete && onSelectMaterial) {
       onSelectMaterial('');
     }
+
+    // Find MongoDB ID and sync delete
+    const dbItem = dbMaterials.find(m => m.name.toLowerCase() === toDelete.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await deleteFabricationMaterial(dbItem._id);
+        setDbMaterials(prev => prev.filter(m => m._id !== dbItem._id));
+      } catch (err) {
+        console.error('Failed to delete material in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleResetDefaults = () => {
-    if (window.confirm('Reset material options back to the default fabrication list?')) {
+  const handleResetDefaults = async () => {
+    if (window.confirm('Reset material options back to the default fabrication list in MongoDB?')) {
       saveToStorage(DEFAULT_FABRICATION_MATERIALS);
+      try {
+        setIsSavingDb(true);
+        const res = await resetFabricationMaterials();
+        if (res?.success && Array.isArray(res.data)) {
+          setDbMaterials(res.data);
+          const names = res.data.map(m => m.name);
+          saveToStorage(names);
+        }
+      } catch (err) {
+        console.error('Failed to reset materials in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
       showToast('Materials reset to defaults', 'info');
     }
   };
@@ -183,11 +285,27 @@ const QuotationMaterialModal = ({
                 <Layers size={20} />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                   <span>Fabrication Materials</span>
                   <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
                     {materials.length}
                   </span>
+                  <span className="flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                    <Database size={10} />
+                    <span>MongoDB Synced</span>
+                  </span>
+                  {isSavingDb && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-amber-600 font-semibold animate-pulse">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Saving...</span>
+                    </span>
+                  )}
+                  {loading && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Loading...</span>
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-slate-500">
                   Manage material options for quotation items and work measurements

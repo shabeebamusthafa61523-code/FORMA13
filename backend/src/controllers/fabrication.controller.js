@@ -1,6 +1,109 @@
+import {
+  syncQuotationToSales,
+  syncClientPaymentToIncome,
+  deleteClientPaymentFromIncome,
+  syncPurchaseOrExpense,
+  deletePurchaseOrExpense,
+  syncWageToSalaryAndExpense,
+  deleteWageFromSalaryAndExpense,
+  deleteEntireJobFinancials,
+  syncEntireJob,
+  syncAllJobsToAccounts
+} from '../services/fabricationAccountsSync.service.js';
 import FabricationJob from '../models/fabricationJob.model.js';
 import User from '../models/user.model.js';
 import Client from '../models/client.model.js';
+import QuotationTerm from '../models/quotationTerm.model.js';
+import FabricationMaterial from '../models/fabricationMaterial.model.js';
+import FabricationWorkScope from '../models/fabricationWorkScope.model.js';
+import FabricationItemPreset from '../models/fabricationItemPreset.model.js';
+import Vendor from '../models/vendor.model.js';
+import ExpenseCategory from '../models/expenseCategory.model.js';
+
+export const DEFAULT_INVOICE_TERMS = [
+  { text: '50% advance payment required with confirmed work order to procure raw materials.', enabled: true, order: 1, isDefault: true },
+  { text: 'Balance payable upon delivery / site erection completion and final inspection.', enabled: true, order: 2, isDefault: true },
+  { text: 'Extra scope, design alterations or dimensions beyond quoted measurements will be billed extra.', enabled: true, order: 3, isDefault: true },
+  { text: 'GST & taxes applicable as per standard government tax rates.', enabled: true, order: 4, isDefault: true },
+  { text: 'Delivery & installation timeline: within 10–15 business days from advance confirmation.', enabled: false, order: 5, isDefault: true },
+  { text: 'Electricity & site water supply for installation to be provided by client.', enabled: false, order: 6, isDefault: true }
+];
+
+export const DEFAULT_FABRICATION_MATERIALS = [
+  { name: 'Mild Steel (MS)', order: 1, isDefault: true },
+  { name: 'Stainless Steel (SS 304)', order: 2, isDefault: true },
+  { name: 'Stainless Steel (SS 316)', order: 3, isDefault: true },
+  { name: 'Galvanized Iron (GI)', order: 4, isDefault: true },
+  { name: 'Aluminum', order: 5, isDefault: true },
+  { name: 'Cast Iron', order: 6, isDefault: true },
+  { name: 'Structural Steel (IS 2062)', order: 7, isDefault: true },
+  { name: 'Carbon Steel', order: 8, isDefault: true },
+  { name: 'Brass', order: 9, isDefault: true },
+  { name: 'Copper', order: 10, isDefault: true },
+  { name: 'Wrought Iron', order: 11, isDefault: true },
+  { name: 'Sheet Metal', order: 12, isDefault: true }
+];
+
+export const DEFAULT_WORK_SCOPE_DESCRIPTIONS = [
+  { title: 'Main Gate MS Tubular Frame with CNC Laser Sheet Design', defaultUnit: 'Nos', order: 1, isDefault: true },
+  { title: 'Sliding Main Gate with Heavy Duty Track & Roller Wheels', defaultUnit: 'Nos', order: 2, isDefault: true },
+  { title: 'Stainless Steel (SS 304) Staircase Railing with Toughened Glass', defaultUnit: 'Feet', order: 3, isDefault: true },
+  { title: 'MS Window Safety Grill with Primer & Enamel Coating', defaultUnit: 'Sq.Ft', order: 4, isDefault: true },
+  { title: 'Industrial Truss Roofing with Color Coated Sheets', defaultUnit: 'Sq.Ft', order: 5, isDefault: true },
+  { title: 'Spiral Staircase with Checker Plate Steps & Handrail', defaultUnit: 'Nos', order: 6, isDefault: true },
+  { title: 'Balcony Safety Railing with Glass Clamps', defaultUnit: 'Feet', order: 7, isDefault: true },
+  { title: 'Heavy Duty Rolling Shutter with Spring & Pulley System', defaultUnit: 'Sq.Ft', order: 8, isDefault: true },
+  { title: 'Compound Wall Security Spikes & Chainlink Fencing', defaultUnit: 'Feet', order: 9, isDefault: true },
+  { title: 'Portico Canopy / Shed with Polycarbonate Roofing Sheet', defaultUnit: 'Sq.Ft', order: 10, isDefault: true },
+  { title: 'Structural Steel Mezzanine Floor with I-Beam Columns', defaultUnit: 'Sq.Ft', order: 11, isDefault: true },
+  { title: 'Fire Exit Heavy Duty Steel Single Door with Push Bar', defaultUnit: 'Nos', order: 12, isDefault: true },
+  { title: 'MS Pergola / Gazebo Structure with Powder Coating', defaultUnit: 'Nos', order: 13, isDefault: true },
+  { title: 'Rolling Shutter Grill with Motorized Drive Option', defaultUnit: 'Sq.Ft', order: 14, isDefault: true },
+  { title: 'Steel Water Tank Overhead Support Stand Structure', defaultUnit: 'Nos', order: 15, isDefault: true }
+];
+
+export const DEFAULT_ITEM_PRESETS = [
+  { description: 'MS Square Pipe 2x2 inch (16 gauge)', category: 'Raw Material', defaultUnit: 'Lengths', order: 1, isDefault: true },
+  { description: 'MS Round Pipe 1.5 inch', category: 'Raw Material', defaultUnit: 'Lengths', order: 2, isDefault: true },
+  { description: 'CR Sheet 1.2mm (8x4 ft)', category: 'Plates & Sheets', defaultUnit: 'Nos', order: 3, isDefault: true },
+  { description: 'HR Sheet 2mm (8x4 ft)', category: 'Plates & Sheets', defaultUnit: 'Nos', order: 4, isDefault: true },
+  { description: 'MS Flat 50x6 mm', category: 'Raw Material', defaultUnit: 'Lengths', order: 5, isDefault: true },
+  { description: 'MS Angle 40x40x5 mm', category: 'Raw Material', defaultUnit: 'Lengths', order: 6, isDefault: true },
+  { description: 'Welding Electrodes 6013 (ESAB / Advani)', category: 'Consumables', defaultUnit: 'Box', order: 7, isDefault: true },
+  { description: 'Cutting Wheels 4 inch & 14 inch', category: 'Consumables', defaultUnit: 'Nos', order: 8, isDefault: true },
+  { description: 'Grinding Wheels 4 inch', category: 'Consumables', defaultUnit: 'Nos', order: 9, isDefault: true },
+  { description: 'Industrial Oxygen Cylinder Refill', category: 'Industrial Gas', defaultUnit: 'Nos', order: 10, isDefault: true },
+  { description: 'Industrial CO2 / Argon Gas Cylinder Refill', category: 'Industrial Gas', defaultUnit: 'Nos', order: 11, isDefault: true },
+  { description: 'Fasteners & Anchor Bolts (10mm/12mm)', category: 'Hardware', defaultUnit: 'Box', order: 12, isDefault: true },
+  { description: 'Red Oxide Primer (20 Litres)', category: 'Paints & Coating', defaultUnit: 'Litres', order: 13, isDefault: true },
+  { description: 'Epoxy Primer & Thinner', category: 'Paints & Coating', defaultUnit: 'Litres', order: 14, isDefault: true },
+  { description: 'Crane & Loading Charges', category: 'Transport & Freight', defaultUnit: 'Lumpsum', order: 15, isDefault: true }
+];
+
+export const DEFAULT_FABRICATION_VENDORS = [
+  { name: 'Jindal Steel Distributors', phone: '9845012345', notes: 'Raw steel & pipes' },
+  { name: 'Tata Steel Yard', phone: '9845067890', notes: 'Plates & sheets' },
+  { name: 'Krishna Steels & Hardware', phone: '9845054321', notes: 'Structural MS & hardware' },
+  { name: 'National Industrial Gas Agency', phone: '9845098765', notes: 'Oxygen & CO2 cylinders' },
+  { name: 'Sai Welding Consumables & Tools', phone: '9845011223', notes: 'Welding rods & cutting wheels' },
+  { name: 'Bhavani Paints & Coatings', phone: '9845033445', notes: 'Red oxide primer & thinners' }
+];
+
+export const DEFAULT_FABRICATION_EXPENSE_CATEGORIES = [
+  'Raw Material (MS/SS Steel)',
+  'Pipes & Tubes',
+  'Plates & Sheets',
+  'Consumables (Welding Rods/Grinding)',
+  'Industrial Gas (Oxygen/CO2/Argon)',
+  'Fasteners & Hardware (Nuts/Bolts)',
+  'Paints & Primers / Coating',
+  'Crane / Forklift Rental',
+  'Transport & Freight Charges',
+  'Site Installation Expense',
+  'Equipment Rental & Fuel',
+  'Refreshments & Food for Labor',
+  'Miscellaneous Fabrication Supplies'
+];
 
 // Generate incremental Job ID like FAB-2026-0001
 const generateJobId = async () => {
@@ -17,7 +120,7 @@ export const getFabricationJobs = async (req, res) => {
   try {
     const { search, status, page = 1, limit = 50 } = req.query;
 
-    const query = {};
+    const query = { jobId: { $nin: ['FAB-GLOBAL-CONFIG', 'FAB-CONFIG-MASTER'] } };
 
     if (status && status !== 'All') {
       query.status = status;
@@ -43,7 +146,7 @@ export const getFabricationJobs = async (req, res) => {
         .limit(parseInt(limit, 10))
         .lean(),
       FabricationJob.countDocuments(query),
-      FabricationJob.find({}, 'status financials').lean()
+      FabricationJob.find({ jobId: { $nin: ['FAB-GLOBAL-CONFIG', 'FAB-CONFIG-MASTER'] } }, 'status financials').lean()
     ]);
 
     // Aggregate overall KPI metrics across all jobs
@@ -214,6 +317,7 @@ export const createFabricationJob = async (req, res) => {
     });
 
     await newJob.save();
+    try { await syncQuotationToSales(newJob); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -264,10 +368,12 @@ export const updateFabricationJob = async (req, res) => {
     if (startDate !== undefined) job.startDate = startDate;
     if (deliveryDate !== undefined) job.deliveryDate = deliveryDate;
     if (notes !== undefined) job.notes = notes;
+    if (req.body.terms !== undefined) job.terms = req.body.terms;
     if (req.body.quotationDiscount !== undefined) job.quotationDiscount = req.body.quotationDiscount;
     job.updatedBy = req.user?._id || undefined;
 
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -294,6 +400,8 @@ export const deleteFabricationJob = async (req, res) => {
         message: 'Fabrication job not found'
       });
     }
+
+    try { await deleteEntireJobFinancials(deleted.jobId); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -358,6 +466,7 @@ export const addQuotationItem = async (req, res) => {
     });
 
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -402,6 +511,7 @@ export const updateQuotationItem = async (req, res) => {
     }
 
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -432,6 +542,7 @@ export const updateQuotationDiscount = async (req, res) => {
 
     job.updatedBy = req.user?._id || undefined;
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -452,6 +563,7 @@ export const deleteQuotationItem = async (req, res) => {
 
     job.quotationItems.pull(itemId);
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -508,6 +620,10 @@ export const addDailyWage = async (req, res) => {
     });
 
     await job.save();
+    try {
+      const addedWage = job.dailyWages[job.dailyWages.length - 1];
+      await syncWageToSalaryAndExpense(job, addedWage);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -559,6 +675,10 @@ export const updateDailyWage = async (req, res) => {
     }
 
     await job.save();
+    try {
+      const updatedWage = job.dailyWages.id(wageId);
+      await syncWageToSalaryAndExpense(job, updatedWage);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -579,6 +699,7 @@ export const deleteDailyWage = async (req, res) => {
 
     job.dailyWages.pull(wageId);
     await job.save();
+    try { await deleteWageFromSalaryAndExpense(wageId); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -648,6 +769,10 @@ export const addPurchaseExpense = async (req, res) => {
     });
 
     await job.save();
+    try {
+      const addedItem = job.purchasesAndExpenses[job.purchasesAndExpenses.length - 1];
+      await syncPurchaseOrExpense(job, addedItem);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -705,6 +830,10 @@ export const updatePurchaseExpense = async (req, res) => {
     }
 
     await job.save();
+    try {
+      const updatedItem = job.purchasesAndExpenses.id(expenseId);
+      await syncPurchaseOrExpense(job, updatedItem);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -725,6 +854,7 @@ export const deletePurchaseExpense = async (req, res) => {
 
     job.purchasesAndExpenses.pull(expenseId);
     await job.save();
+    try { await deletePurchaseOrExpense(expenseId); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -769,6 +899,10 @@ export const addClientPayment = async (req, res) => {
     });
 
     await job.save();
+    try {
+      const addedPayment = job.clientPayments[job.clientPayments.length - 1];
+      await syncClientPaymentToIncome(job, addedPayment);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -800,6 +934,10 @@ export const updateClientPayment = async (req, res) => {
     if (notes !== undefined) payment.notes = notes;
 
     await job.save();
+    try {
+      const updatedPayment = job.clientPayments.id(paymentId);
+      await syncClientPaymentToIncome(job, updatedPayment);
+    } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -820,6 +958,7 @@ export const deleteClientPayment = async (req, res) => {
 
     job.clientPayments.pull(paymentId);
     await job.save();
+    try { await deleteClientPaymentFromIncome(paymentId, job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -829,5 +968,504 @@ export const deleteClientPayment = async (req, res) => {
   } catch (error) {
     console.error('Error deleting client payment:', error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// =========================================================================
+// Master Fabrication Catalog Store (MongoDB backed inside fabricationjobs)
+// =========================================================================
+
+const getMasterConfig = async () => {
+  let config = await FabricationJob.findOne({ jobId: 'FAB-GLOBAL-CONFIG' });
+  if (!config) {
+    config = new FabricationJob({
+      jobId: 'FAB-GLOBAL-CONFIG',
+      jobTitle: 'Master Fabrication Configuration',
+      clientName: 'System Master Config',
+      clientPhone: '0000000000',
+      status: 'On Hold',
+      terms: DEFAULT_INVOICE_TERMS,
+      materials: DEFAULT_FABRICATION_MATERIALS,
+      workScopes: DEFAULT_WORK_SCOPE_DESCRIPTIONS,
+      itemPresets: DEFAULT_ITEM_PRESETS
+    });
+    await config.save();
+  } else {
+    let changed = false;
+    if (!config.terms || config.terms.length === 0) {
+      config.terms = DEFAULT_INVOICE_TERMS;
+      changed = true;
+    }
+    if (!config.materials || config.materials.length === 0) {
+      config.materials = DEFAULT_FABRICATION_MATERIALS;
+      changed = true;
+    }
+    if (!config.workScopes || config.workScopes.length === 0) {
+      config.workScopes = DEFAULT_WORK_SCOPE_DESCRIPTIONS;
+      changed = true;
+    }
+    if (!config.itemPresets || config.itemPresets.length === 0) {
+      config.itemPresets = DEFAULT_ITEM_PRESETS;
+      changed = true;
+    }
+    if (changed) await config.save();
+  }
+  return config;
+};
+
+// ==========================================
+// 6. Quotation Terms & Conditions Management
+// ==========================================
+export const getQuotationTerms = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    const sorted = [...(config.terms || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return res.status(200).json({ success: true, data: sorted });
+  } catch (error) {
+    console.error('Error fetching quotation terms:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createQuotationTerm = async (req, res) => {
+  try {
+    const { text, enabled = true } = req.body;
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ success: false, message: 'Term text is required' });
+    }
+    const config = await getMasterConfig();
+    const maxOrder = (config.terms || []).reduce((max, t) => Math.max(max, t.order || 0), 0);
+    const newTerm = {
+      text: String(text).trim(),
+      enabled: Boolean(enabled),
+      order: maxOrder + 1,
+      isDefault: false
+    };
+    config.terms.push(newTerm);
+    await config.save();
+    const created = config.terms[config.terms.length - 1];
+    return res.status(201).json({ success: true, message: 'Quotation clause created successfully', data: created });
+  } catch (error) {
+    console.error('Error creating quotation term:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateQuotationTerm = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text, enabled, order } = req.body;
+    const config = await getMasterConfig();
+    const term = config.terms.id(id);
+    if (!term) return res.status(404).json({ success: false, message: 'Quotation clause not found' });
+    if (text !== undefined) term.text = String(text).trim();
+    if (enabled !== undefined) term.enabled = Boolean(enabled);
+    if (order !== undefined) term.order = Number(order);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Quotation clause updated successfully', data: term });
+  } catch (error) {
+    console.error('Error updating quotation term:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteQuotationTerm = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = await getMasterConfig();
+    const term = config.terms.id(id);
+    if (!term) return res.status(404).json({ success: false, message: 'Quotation clause not found' });
+    config.terms.pull(id);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Quotation clause deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting quotation term:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const resetQuotationTerms = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    config.terms = DEFAULT_INVOICE_TERMS;
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Reset quotation clauses to standard defaults', data: config.terms });
+  } catch (error) {
+    console.error('Error resetting quotation terms:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateJobTerms = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { terms } = req.body;
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+    job.terms = Array.isArray(terms) ? terms : [];
+    job.updatedBy = req.user?._id || undefined;
+    await job.save();
+    return res.status(200).json({ success: true, message: 'Job quotation terms updated successfully', data: job.terms });
+  } catch (error) {
+    console.error('Error updating job terms:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 7. Fabrication Raw Materials Management
+// ==========================================
+export const getFabricationMaterials = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    const sorted = [...(config.materials || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return res.status(200).json({ success: true, data: sorted });
+  } catch (error) {
+    console.error('Error fetching materials:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createFabricationMaterial = async (req, res) => {
+  try {
+    const { name, description = '', density = 0 } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Material name is required' });
+    }
+    const cleanName = String(name).trim();
+    const config = await getMasterConfig();
+    const existing = config.materials.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing) {
+      return res.status(200).json({ success: true, data: existing, message: 'Material already exists' });
+    }
+    const maxOrder = (config.materials || []).reduce((max, m) => Math.max(max, m.order || 0), 0);
+    const newMaterial = {
+      name: cleanName,
+      description: String(description || '').trim(),
+      density: Number(density) || 0,
+      order: maxOrder + 1,
+      isDefault: false
+    };
+    config.materials.push(newMaterial);
+    await config.save();
+    const created = config.materials[config.materials.length - 1];
+    return res.status(201).json({ success: true, message: 'Material created successfully', data: created });
+  } catch (error) {
+    console.error('Error creating material:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateFabricationMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, density, order } = req.body;
+    const config = await getMasterConfig();
+    const material = config.materials.id(id);
+    if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+    if (name !== undefined) material.name = String(name).trim();
+    if (description !== undefined) material.description = String(description).trim();
+    if (density !== undefined) material.density = Number(density);
+    if (order !== undefined) material.order = Number(order);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Material updated successfully', data: material });
+  } catch (error) {
+    console.error('Error updating material:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteFabricationMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = await getMasterConfig();
+    const material = config.materials.id(id);
+    if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+    config.materials.pull(id);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Material deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting material:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const resetFabricationMaterials = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    config.materials = DEFAULT_FABRICATION_MATERIALS;
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Reset materials to standard defaults', data: config.materials });
+  } catch (error) {
+    console.error('Error resetting materials:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 8. Fabrication Work Scope Templates Management
+// ==========================================
+export const getFabricationWorkScopes = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    const sorted = [...(config.workScopes || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return res.status(200).json({ success: true, data: sorted });
+  } catch (error) {
+    console.error('Error fetching work scopes:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createFabricationWorkScope = async (req, res) => {
+  try {
+    const { title, defaultUnit = 'Nos', category = 'General' } = req.body;
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ success: false, message: 'Work scope title is required' });
+    }
+    const cleanTitle = String(title).trim();
+    const config = await getMasterConfig();
+    const existing = config.workScopes.find(s => s.title.toLowerCase() === cleanTitle.toLowerCase());
+    if (existing) {
+      return res.status(200).json({ success: true, data: existing, message: 'Work scope template already exists' });
+    }
+    const maxOrder = (config.workScopes || []).reduce((max, s) => Math.max(max, s.order || 0), 0);
+    const newScope = {
+      title: cleanTitle,
+      defaultUnit,
+      category,
+      order: maxOrder + 1,
+      isDefault: false
+    };
+    config.workScopes.push(newScope);
+    await config.save();
+    const created = config.workScopes[config.workScopes.length - 1];
+    return res.status(201).json({ success: true, message: 'Work scope template created successfully', data: created });
+  } catch (error) {
+    console.error('Error creating work scope:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateFabricationWorkScope = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, defaultUnit, category, order } = req.body;
+    const config = await getMasterConfig();
+    const scope = config.workScopes.id(id);
+    if (!scope) return res.status(404).json({ success: false, message: 'Work scope not found' });
+    if (title !== undefined) scope.title = String(title).trim();
+    if (defaultUnit !== undefined) scope.defaultUnit = defaultUnit;
+    if (category !== undefined) scope.category = category;
+    if (order !== undefined) scope.order = Number(order);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Work scope updated successfully', data: scope });
+  } catch (error) {
+    console.error('Error updating work scope:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteFabricationWorkScope = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = await getMasterConfig();
+    const scope = config.workScopes.id(id);
+    if (!scope) return res.status(404).json({ success: false, message: 'Work scope not found' });
+    config.workScopes.pull(id);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Work scope deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting work scope:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const resetFabricationWorkScopes = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    config.workScopes = DEFAULT_WORK_SCOPE_DESCRIPTIONS;
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Reset work scopes to standard defaults', data: config.workScopes });
+  } catch (error) {
+    console.error('Error resetting work scopes:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 9. Fabrication Purchase Item Presets Management
+// ==========================================
+export const getFabricationItemPresets = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    const sorted = [...(config.itemPresets || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return res.status(200).json({ success: true, data: sorted });
+  } catch (error) {
+    console.error('Error fetching item presets:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createFabricationItemPreset = async (req, res) => {
+  try {
+    const { description, category = 'Raw Material', defaultUnit = 'Nos' } = req.body;
+    if (!description || !String(description).trim()) {
+      return res.status(400).json({ success: false, message: 'Item description is required' });
+    }
+    const cleanDesc = String(description).trim();
+    const config = await getMasterConfig();
+    const existing = config.itemPresets.find(p => p.description.toLowerCase() === cleanDesc.toLowerCase());
+    if (existing) {
+      return res.status(200).json({ success: true, data: existing, message: 'Item preset already exists' });
+    }
+    const maxOrder = (config.itemPresets || []).reduce((max, p) => Math.max(max, p.order || 0), 0);
+    const newPreset = {
+      description: cleanDesc,
+      category,
+      defaultUnit,
+      order: maxOrder + 1,
+      isDefault: false
+    };
+    config.itemPresets.push(newPreset);
+    await config.save();
+    const created = config.itemPresets[config.itemPresets.length - 1];
+    return res.status(201).json({ success: true, message: 'Item preset created successfully', data: created });
+  } catch (error) {
+    console.error('Error creating item preset:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateFabricationItemPreset = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { description, category, defaultUnit, order } = req.body;
+    const config = await getMasterConfig();
+    const preset = config.itemPresets.id(id);
+    if (!preset) return res.status(404).json({ success: false, message: 'Item preset not found' });
+    if (description !== undefined) preset.description = String(description).trim();
+    if (category !== undefined) preset.category = category;
+    if (defaultUnit !== undefined) preset.defaultUnit = defaultUnit;
+    if (order !== undefined) preset.order = Number(order);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Item preset updated successfully', data: preset });
+  } catch (error) {
+    console.error('Error updating item preset:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteFabricationItemPreset = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = await getMasterConfig();
+    const preset = config.itemPresets.id(id);
+    if (!preset) return res.status(404).json({ success: false, message: 'Item preset not found' });
+    config.itemPresets.pull(id);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Item preset deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting item preset:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const resetFabricationItemPresets = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    config.itemPresets = DEFAULT_ITEM_PRESETS;
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Reset item presets to standard defaults', data: config.itemPresets });
+  } catch (error) {
+    console.error('Error resetting item presets:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 10. Fabrication Vendors Management (MongoDB)
+// ==========================================
+export const getFabricationVendors = async (req, res) => {
+  try {
+    let vendors = await Vendor.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
+    if (!vendors || vendors.length === 0) {
+      await Vendor.insertMany(DEFAULT_FABRICATION_VENDORS.map(v => ({ ...v, isActive: true })));
+      vendors = await Vendor.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
+    }
+    return res.status(200).json({ success: true, data: vendors });
+  } catch (error) {
+    console.error('Error fetching fabrication vendors:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createFabricationVendor = async (req, res) => {
+  try {
+    const { name, phone = '', notes = '', email = '', address = '', gstin = '' } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Vendor name is required' });
+    }
+    const cleanName = String(name).trim();
+    let vendor = await Vendor.findOne({ name: { $regex: new RegExp(`^${cleanName}$`, 'i') } });
+    if (vendor) {
+      if (phone && !vendor.phone) vendor.phone = phone;
+      if (notes && !vendor.notes) vendor.notes = notes;
+      vendor.isActive = true;
+      await vendor.save();
+      return res.status(200).json({ success: true, message: 'Vendor already exists', data: vendor });
+    }
+    vendor = new Vendor({
+      name: cleanName,
+      phone: String(phone || '').trim(),
+      notes: String(notes || '').trim(),
+      email: String(email || '').trim(),
+      address: String(address || '').trim(),
+      gstin: String(gstin || '').trim(),
+      isActive: true,
+      createdBy: req.user?._id || undefined
+    });
+    await vendor.save();
+    return res.status(201).json({ success: true, message: 'Vendor created successfully', data: vendor });
+  } catch (error) {
+    console.error('Error creating vendor:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 11. Fabrication Expense Categories Management (MongoDB)
+// ==========================================
+export const getFabricationExpenseCategories = async (req, res) => {
+  try {
+    let categories = await ExpenseCategory.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
+    if (!categories || categories.length === 0) {
+      await ExpenseCategory.insertMany(
+        DEFAULT_FABRICATION_EXPENSE_CATEGORIES.map(c => ({ name: c, isActive: true, isSystemDefault: true }))
+      );
+      categories = await ExpenseCategory.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean();
+    }
+    return res.status(200).json({ success: true, data: categories });
+  } catch (error) {
+    console.error('Error fetching expense categories:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+// 13. Retroactive Sync All Fabrication Jobs to Accounts
+export const syncAllFabricationToAccounts = async (req, res) => {
+  try {
+    const result = await syncAllJobsToAccounts();
+    return res.status(200).json({
+      success: true,
+      message: 'Fabrication records synchronized to Accounts successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error syncing fabrication to accounts:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync fabrication to accounts'
+    });
   }
 };

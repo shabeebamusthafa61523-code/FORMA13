@@ -49,7 +49,10 @@ import {
   updateVendor,
   deleteVendor,
   uploadPublicPdf,
-  servePublicPdf
+  servePublicPdf,
+  getPartnerShareSummary,
+  createPartnerDrawing,
+  deletePartnerDrawing
 } from '../controllers/account.controller.js';
 import protectRoute from '../middleware/auth.middleware.js';
 import upload from '../middleware/upload.middleware.js';
@@ -69,6 +72,7 @@ router.post('/income/upload-pdf', uploadPublicPdf);
 
 // ── Capital Accounts Routes ──
 router.get('/capital', getCapitals);
+router.get('/capitals', getCapitals);
 router.post('/capital', createCapital);
 router.put('/capital/:id', updateCapital);
 router.delete('/capital/:id', deleteCapital);
@@ -81,6 +85,7 @@ router.put('/opening-balance', setOpeningBalance);
 
 // ── Income Routes ──
 router.get('/income', getIncomes);
+router.get('/incomes', getIncomes);
 router.post('/income', createIncome);
 
 // Specific sub-resource payment routes with :paymentId (MUST be declared first)
@@ -112,6 +117,7 @@ router.delete('/categories/:id', deleteCategory);
 
 // ── Expenses Routes ──
 router.get('/expenses', getExpenses);
+router.get('/expense', getExpenses);
 router.post('/expenses', upload.single('attachment'), createExpense);
 router.put('/expenses/:id/action', approveOrRejectExpense);
 router.put('/expenses/:id', upload.single('attachment'), updateExpense);
@@ -119,6 +125,7 @@ router.delete('/expenses/:id', deleteExpense);
 
 // ── Salary Payments Routes ──
 router.get('/salary-payments', getSalaryPayments);
+router.get('/salary', getSalaryPayments);
 router.post('/salary-payments', createSalaryPayment);
 router.post('/salary-payments/:id/send-email', sendSalaryPayslipEmail);
 router.put('/salary-payments/approve-all', approveAllSalaryPayments);
@@ -146,5 +153,13 @@ router.get('/vendors', getVendors);
 router.post('/vendors', createVendor);
 router.put('/vendors/:id', updateVendor);
 router.delete('/vendors/:id', deleteVendor);
+
+// ── Partner Profit Share & Drawings Routes ──
+router.get('/partner-share', getPartnerShareSummary);
+router.get('/share', getPartnerShareSummary);
+router.post('/partner-share/drawings', createPartnerDrawing);
+router.post('/partner-drawings', createPartnerDrawing);
+router.delete('/partner-share/drawings/:id', deletePartnerDrawing);
+router.delete('/partner-drawings/:id', deletePartnerDrawing);
 
 export default router;

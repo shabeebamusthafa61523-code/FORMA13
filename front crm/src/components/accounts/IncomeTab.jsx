@@ -35,7 +35,7 @@ import { useToast } from '../ToastProvider';
 import { getClients } from '../../services/clientService';
 import { getOpeningBalance, setOpeningBalance as saveOpeningBalanceApi } from '../../services/accountsService';
 import ConfirmModal from '../ConfirmModal';
-import IncomeInvoiceModal from './IncomeInvoiceModal';
+import PaymentReceiptModal from '../fabrication/PaymentReceiptModal';
 import ExcelExportButton from '../ExcelExportButton';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
@@ -58,7 +58,8 @@ const DEFAULT_DEPARTMENTS = [
   'HR & Admin',
   'Accounts & Finance',
   'Sales & CRM',
-  'Operations'
+  'Operations',
+  'Fabrication'
 ];
 
 const PAYMENT_METHODS = [
@@ -197,9 +198,8 @@ const IncomeTab = ({ mode = 'sales' }) => {
   // Edit Income State
   const [editingIncome, setEditingIncome] = useState(null);
 
-  // View Invoice Modal State
-  const [selectedInvoiceRecord, setSelectedInvoiceRecord] = useState(null);
-  const [invoiceModalMode, setInvoiceModalMode] = useState('invoice');
+  // View Payment Receipt Modal State
+  const [selectedPaymentReceipt, setSelectedPaymentReceipt] = useState(null);
 
   const getAuthHeaders = useCallback(() => {
     const rawToken = localStorage.getItem('token');
@@ -744,7 +744,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
     }
   };
 
-  const handleOpenDocumentModal = async (inc, mode = 'invoice') => {
+  const handleOpenDocumentModal = async (inc) => {
     if (inc && inc._id) {
       try {
         const res = await fetch(getApiEndpoint(`/accounts/income/${inc._id}`), {
@@ -753,26 +753,19 @@ const IncomeTab = ({ mode = 'sales' }) => {
         if (res.ok) {
           const data = await res.json();
           if (data.data) {
-            setSelectedInvoiceRecord(data.data);
-            setInvoiceModalMode(mode);
+            setSelectedPaymentReceipt(data.data);
             return;
           }
         }
       } catch (err) {
-        console.warn('Error fetching full invoice details:', err);
+        console.warn('Error fetching full income record:', err);
       }
     }
-    setSelectedInvoiceRecord(inc);
-    setInvoiceModalMode(mode);
+    setSelectedPaymentReceipt(inc);
   };
 
   const handleOpenReceipt = async (inc) => {
-    const isPaidStatus = inc.status === 'Paid' || inc.status === 'Partially Paid' || !!inc.receiptNo;
-    if (!isPaidStatus) {
-      showToast('Invoice is unpaid. Only paid or partially paid invoices generate receipts.', 'info');
-      return;
-    }
-    await handleOpenDocumentModal(inc, 'receipt');
+    await handleOpenDocumentModal(inc);
   };
 
   // Soft Delete Handler (Opens Modal to move to Inactive tab)
@@ -1400,7 +1393,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
                   <tr>
                     <th className="py-3 px-4">Receipt No. & Date</th>
                     <th className="py-3 px-4">Company / Client</th>
-                    <th className="py-3 px-4">Invoice No.</th>
+                    <th className="py-3 px-4">Ref / Order No.</th>
                     <th className="py-3 px-4">Way of Income</th>
                     <th className="py-3 px-4 text-right">Amount Paid (₹)</th>
                     <th className="py-3 px-4 text-right">Action</th>
@@ -1457,7 +1450,7 @@ const IncomeTab = ({ mode = 'sales' }) => {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'receipt')}
+                            onClick={() => setSelectedPaymentReceipt(rec)}
                             className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
                             title="View Receipt Voucher"
                           >
@@ -1466,9 +1459,9 @@ const IncomeTab = ({ mode = 'sales' }) => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleOpenDocumentModal(rec.parentRecord, 'logs')}
+                            onClick={() => setSelectedPaymentReceipt(rec)}
                             className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
-                            title="View Logs & History"
+                            title="View Payment Receipt"
                           >
                             <Eye size={15} />
                           </button>
@@ -1635,29 +1628,18 @@ const IncomeTab = ({ mode = 'sales' }) => {
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {inc.status === 'Proforma' && activeIncomeTab !== 'inactive' && (
-                          <button
-                            type="button"
-                            onClick={() => handleConvertProformaToInvoice(inc)}
-                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
-                            title="Convert Proforma Invoice to Official Tax Invoice"
-                          >
-                            <CheckCircle2 size={12} />
-                            <span>Convert to Invoice</span>
-                          </button>
-                        )}
                         <button
                           type="button"
-                          onClick={() => handleOpenDocumentModal(inc, 'invoice')}
-                          className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs"
-                          title="View & Print Tax Invoice"
+                          onClick={() => setSelectedPaymentReceipt(inc)}
+                          className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs"
+                          title="View Payment Receipt"
                         >
-                          <FileText size={12} className="text-indigo-600 dark:text-indigo-400" />
-                          <span>Invoice</span>
+                          <Receipt size={12} className="text-emerald-600 dark:text-emerald-400" />
+                          <span>Receipt</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleOpenDocumentModal(inc, 'logs')}
+                          onClick={() => setSelectedPaymentReceipt(inc)}
                           className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
                           title="View Details & Logs"
                         >
@@ -1935,22 +1917,28 @@ const IncomeTab = ({ mode = 'sales' }) => {
         document.body
       )}
 
-      {/* Category-Specific Income Invoice / Payment Receipt Modal */}
-      <IncomeInvoiceModal
-        isOpen={!!selectedInvoiceRecord}
-        onClose={() => {
-          setSelectedInvoiceRecord(null);
-          setInvoiceModalMode('invoice');
-        }}
-        incomeRecord={selectedInvoiceRecord}
-        initialMode={invoiceModalMode}
-        onUpdateSuccess={(updatedData) => {
-          if (updatedData) {
-            setSelectedInvoiceRecord(updatedData);
-          }
-          fetchIncomes();
-        }}
-        showToast={showToast}
+      {/* Universal Payment Receipt Modal (Identical to Fabrication Payment Receipt) */}
+      <PaymentReceiptModal
+        isOpen={!!selectedPaymentReceipt}
+        onClose={() => setSelectedPaymentReceipt(null)}
+        receiptData={selectedPaymentReceipt}
+        incomeRecord={selectedPaymentReceipt?.parentRecord || selectedPaymentReceipt}
+        settlementData={selectedPaymentReceipt?.settlementData || null}
+        payment={selectedPaymentReceipt?.settlementData || null}
+        financials={(() => {
+          const inc = selectedPaymentReceipt?.parentRecord || selectedPaymentReceipt;
+          if (!inc) return null;
+          const totalQ = getNetPayableAmount(inc);
+          const totalR = (Array.isArray(inc.payments) && inc.payments.length > 0)
+            ? inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+            : (parseFloat(inc.receiptAmount || 0) || totalQ);
+          const bal = Math.max(0, totalQ - totalR);
+          return {
+            totalQuotation: totalQ,
+            totalAmountReceived: totalR,
+            balanceDue: bal
+          };
+        })()}
       />
 
       {/* Sort & Filter Modal */}

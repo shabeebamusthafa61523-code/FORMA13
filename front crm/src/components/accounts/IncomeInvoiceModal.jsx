@@ -1284,8 +1284,12 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
 
                 {/* Top Header Branding */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-4" style={{ borderColor: '#e2e8f0' }}>
-                  <div>
+                  <div className="space-y-1">
                     <img src="/logo3.png" alt="Logo" className="h-11 w-auto object-contain" />
+                    <div className="text-[10px] leading-tight text-slate-500 font-medium">
+                      <p>Workshop & Site Office: Vengoor, Kerala, India</p>
+                      <p className="font-mono text-slate-700">Ph: +91 81398 77848, +91 77366 92975</p>
+                    </div>
                   </div>
 
                   <div className="sm:text-right space-y-1">
@@ -1336,6 +1340,19 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                       <span>Balance Remaining:</span>
                       <strong className="font-mono font-bold" style={{ color: displayBalanceDue > 0 ? '#b45309' : '#0f172a' }}>₹{Math.round(displayBalanceDue).toLocaleString('en-IN')}</strong>
                     </p>
+                  </div>
+                </div>
+
+                {/* Prominent Amount Spotlight Hero Card */}
+                <div 
+                  className="p-4 rounded-xl border text-center space-y-1"
+                  style={{ backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
+                    Amount Received
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-900 tracking-tight">
+                    ₹{Math.round(particularReceiptAmt).toLocaleString('en-IN')}
                   </div>
                 </div>
 

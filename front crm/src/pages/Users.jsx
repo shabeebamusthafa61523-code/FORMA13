@@ -69,7 +69,8 @@ const ALL_SIDEBAR_ITEMS = [
   { label: 'Wage', path: '/accounts/salary', category: 'Finance & Accounts' },
   { label: 'Ledger', path: '/accounts/ledger', category: 'Finance & Accounts' },
   { label: 'Day Book', path: '/accounts/cash-book', category: 'Finance & Accounts' },
-  { label: 'Profit and Loss', path: '/accounts/reports', category: 'Finance & Accounts' }
+  { label: 'Profit and Loss', path: '/accounts/reports', category: 'Finance & Accounts' },
+  { label: 'Share', path: '/accounts/share', category: 'Finance & Accounts' }
 ];
 
 const STATUS_META = {

@@ -1134,13 +1134,7 @@ const AddExpenseTab = () => {
                           >
                             <Edit3 size={14} />
                           </button>
-                          <button
-                            onClick={() => triggerDeleteExpense(exp._id)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          
                         </div>
                       </td>
                     </tr>

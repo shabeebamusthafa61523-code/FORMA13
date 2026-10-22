@@ -134,6 +134,37 @@ const fabricationJobSchema = new mongoose.Schema({
   },
 
   notes: { type: String, default: '', trim: true },
+  // Custom or selected terms & conditions snapshot for this specific job invoice
+  terms: [{
+    text: { type: String, trim: true },
+    enabled: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  }],
+  // Master fabrication materials catalog
+  materials: [{
+    name: { type: String, trim: true },
+    description: { type: String, default: '' },
+    density: { type: Number, default: 0 },
+    order: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  }],
+  // Master fabrication work scope templates
+  workScopes: [{
+    title: { type: String, trim: true },
+    defaultUnit: { type: String, default: 'Nos' },
+    category: { type: String, default: 'General' },
+    order: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  }],
+  // Master fabrication item presets
+  itemPresets: [{
+    description: { type: String, trim: true },
+    category: { type: String, default: 'Raw Material' },
+    defaultUnit: { type: String, default: 'Nos' },
+    order: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  }],
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

@@ -13,7 +13,8 @@ import {
   Loader2, 
   Phone,
   Tag,
-  ArrowRight
+  ArrowRight,
+  Database
 } from 'lucide-react';
 import { 
   getVendors, 
@@ -21,6 +22,15 @@ import {
   updateVendor, 
   deleteVendor 
 } from '../../services/accountsService';
+import {
+  getFabricationItemPresets,
+  createFabricationItemPreset,
+  updateFabricationItemPreset,
+  deleteFabricationItemPreset,
+  resetFabricationItemPresets,
+  getFabricationVendors,
+  createFabricationVendor
+} from '../../services/fabricationService';
 import { useToast } from '../ToastProvider';
 import ConfirmModal from '../ConfirmModal';
 
@@ -68,6 +78,9 @@ const DescriptionVendorModal = ({
 
   // ── DESCRIPTIONS STATE ──
   const [descriptions, setDescriptions] = useState([]);
+  const [dbPresets, setDbPresets] = useState([]);
+  const [loadingPresets, setLoadingPresets] = useState(false);
+  const [isSavingDb, setIsSavingDb] = useState(false);
   const [newDesc, setNewDesc] = useState('');
   const [editingDescIdx, setEditingDescIdx] = useState(null);
   const [editingDescText, setEditingDescText] = useState('');
@@ -96,20 +109,55 @@ const DescriptionVendorModal = ({
     }
   }, [isOpen, initialTab]);
 
-  // 1. Descriptions Loader
-  const loadDescriptions = () => {
+  // 1. Descriptions Loader (MongoDB + LocalStorage Fallback)
+  const loadDescriptions = async () => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_DESCS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setDescriptions(parsed);
-          return;
+        } else {
+          setDescriptions(DEFAULT_DESCRIPTIONS);
+        }
+      } else {
+        setDescriptions(DEFAULT_DESCRIPTIONS);
+      }
+    } catch (e) {
+      setDescriptions(DEFAULT_DESCRIPTIONS);
+    }
+
+    try {
+      setLoadingPresets(true);
+      const res = await getFabricationItemPresets();
+      if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
+        setDbPresets(res.data);
+        const list = res.data.map(p => p.description);
+        setDescriptions(list);
+        persistDescriptions(list);
+
+        // Auto-migrate local custom entries into MongoDB
+        try {
+          const localStored = localStorage.getItem(LOCAL_STORAGE_DESCS_KEY);
+          if (localStored) {
+            const parsed = JSON.parse(localStored);
+            if (Array.isArray(parsed)) {
+              for (const locItem of parsed) {
+                if (locItem && !list.some(d => d.toLowerCase() === locItem.toLowerCase())) {
+                  await createFabricationItemPreset({ description: locItem });
+                }
+              }
+            }
+          }
+        } catch (migErr) {
+          console.warn('Auto-migration error for item descriptions:', migErr);
         }
       }
-    } catch (e) {}
-    setDescriptions(DEFAULT_DESCRIPTIONS);
-    persistDescriptions(DEFAULT_DESCRIPTIONS);
+    } catch (err) {
+      console.warn('Could not fetch item presets from DB:', err);
+    } finally {
+      setLoadingPresets(false);
+    }
   };
 
   const persistDescriptions = (list) => {
@@ -118,7 +166,7 @@ const DescriptionVendorModal = ({
     } catch (e) {}
   };
 
-  // 2. Vendors Loader
+  // 2. Vendors Loader (MongoDB + LocalStorage Fallback)
   const loadVendors = async () => {
     setLoadingVendors(true);
     let loaded = [];
@@ -128,31 +176,28 @@ const DescriptionVendorModal = ({
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           loaded = parsed;
+          setVendors(loaded);
         }
       }
     } catch (e) {}
 
     try {
-      const res = await getVendors();
+      const res = await getFabricationVendors();
       const serverList = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
       if (Array.isArray(serverList) && serverList.length > 0) {
-        const map = new Map();
-        DEFAULT_VENDORS.forEach(v => map.set(v.name.toLowerCase().trim(), v));
-        loaded.forEach(v => map.set(v.name.toLowerCase().trim(), v));
-        serverList.forEach(v => map.set(v.name.toLowerCase().trim(), v));
-        loaded = Array.from(map.values());
+        setVendors(serverList);
+        persistVendors(serverList);
+      } else if (loaded.length === 0) {
+        setVendors(DEFAULT_VENDORS);
       }
     } catch (err) {
       console.warn('Failed to fetch vendors from backend, using defaults:', err);
+      if (loaded.length === 0) {
+        setVendors(DEFAULT_VENDORS);
+      }
+    } finally {
+      setLoadingVendors(false);
     }
-
-    if (loaded.length === 0) {
-      loaded = DEFAULT_VENDORS;
-    }
-
-    setVendors(loaded);
-    persistVendors(loaded);
-    setLoadingVendors(false);
   };
 
   const persistVendors = (list) => {
@@ -162,7 +207,7 @@ const DescriptionVendorModal = ({
   };
 
   // ── DESCRIPTION ACTIONS ──
-  const handleAddDescription = (e) => {
+  const handleAddDescription = async (e) => {
     if (e) e.preventDefault();
     const trimmed = newDesc.trim();
     if (!trimmed) {
@@ -184,30 +229,72 @@ const DescriptionVendorModal = ({
       onSelect({ itemDescription: trimmed });
       onClose();
     }
+
+    // Sync to MongoDB
+    try {
+      setIsSavingDb(true);
+      const res = await createFabricationItemPreset({ description: trimmed });
+      if (res?.success && res.data) {
+        setDbPresets(prev => [res.data, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to create item preset in DB:', err);
+    } finally {
+      setIsSavingDb(false);
+    }
   };
 
-  const handleSaveEditDescription = (idx) => {
+  const handleSaveEditDescription = async (idx) => {
     const trimmed = editingDescText.trim();
     if (!trimmed) {
       showToast('Description cannot be empty', 'warning');
       return;
     }
     const updated = [...descriptions];
+    const oldDesc = updated[idx];
     updated[idx] = trimmed;
     setDescriptions(updated);
     persistDescriptions(updated);
     setEditingDescIdx(null);
     setEditingDescText('');
     showToast(`Description updated to "${trimmed}"`, 'success');
+
+    // Find in MongoDB and sync
+    const dbItem = dbPresets.find(p => p.description.toLowerCase() === oldDesc.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await updateFabricationItemPreset(dbItem._id, { description: trimmed });
+        setDbPresets(prev => prev.map(p => p._id === dbItem._id ? { ...p, description: trimmed } : p));
+      } catch (err) {
+        console.error('Failed to update item preset in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
-  const handleDeleteDescription = (idx) => {
+  const handleDeleteDescription = async (idx) => {
     const item = descriptions[idx];
     const updated = descriptions.filter((_, i) => i !== idx);
     setDescriptions(updated);
     persistDescriptions(updated);
     showToast(`Removed "${item}" from items`, 'info');
     setDeleteConfirm({ isOpen: false, type: '', item: null });
+
+    // Find in MongoDB and sync
+    const dbItem = dbPresets.find(p => p.description.toLowerCase() === item.toLowerCase());
+    if (dbItem && dbItem._id) {
+      try {
+        setIsSavingDb(true);
+        await deleteFabricationItemPreset(dbItem._id);
+        setDbPresets(prev => prev.filter(p => p._id !== dbItem._id));
+      } catch (err) {
+        console.error('Failed to delete item preset in DB:', err);
+      } finally {
+        setIsSavingDb(false);
+      }
+    }
   };
 
   // ── VENDOR ACTIONS ──
@@ -227,8 +314,8 @@ const DescriptionVendorModal = ({
     };
 
     try {
-      const res = await createVendor(newEntry);
-      if (res && res.data && res.data._id) {
+      const res = await createFabricationVendor(newEntry);
+      if (res?.data?._id) {
         newEntry._id = res.data._id;
       }
     } catch (err) {
@@ -342,8 +429,24 @@ const DescriptionVendorModal = ({
                 {activeTab === 'descriptions' ? <Package size={20} /> : <Building2 size={20} />}
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                  Manage Descriptions & Vendors
+                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2 flex-wrap">
+                  <span>Manage Descriptions & Vendors</span>
+                  <span className="flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                    <Database size={10} />
+                    <span>MongoDB Synced</span>
+                  </span>
+                  {isSavingDb && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-amber-600 font-semibold animate-pulse">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Saving...</span>
+                    </span>
+                  )}
+                  {(loadingPresets || loadingVendors) && (
+                    <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Loading...</span>
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Quick-add, edit, or delete items and suppliers for fast purchase logging.
