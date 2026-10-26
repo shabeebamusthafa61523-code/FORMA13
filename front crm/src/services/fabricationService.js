@@ -249,3 +249,30 @@ export const getFabricationExpenseCategories = async () => {
   const response = await axios.get(`${getBaseUrl()}/expense-categories`, getAuthHeaders());
   return response.data;
 };
+
+// 12. Fabrication Quotation Units (MongoDB)
+export const getFabricationUnits = async () => {
+  const response = await axios.get(`${getBaseUrl()}/units`, getAuthHeaders());
+  return response.data;
+};
+
+export const createFabricationUnit = async (data) => {
+  const response = await axios.post(`${getBaseUrl()}/units`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const updateFabricationUnit = async (id, data) => {
+  const response = await axios.put(`${getBaseUrl()}/units/${id}`, data, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteFabricationUnit = async (id) => {
+  const response = await axios.delete(`${getBaseUrl()}/units/${id}`, getAuthHeaders());
+  return response.data;
+};
+
+export const resetFabricationUnits = async () => {
+  const response = await axios.post(`${getBaseUrl()}/units/reset`, {}, getAuthHeaders());
+  return response.data;
+};
+

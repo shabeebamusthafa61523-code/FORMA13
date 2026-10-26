@@ -51,6 +51,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Bypass Vite dev server internal URLs, node_modules, HMR, and localhost dev
+  if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/src/') ||
+    url.searchParams.has('v') ||
+    url.searchParams.has('t') ||
+    request.headers.get('upgrade') === 'websocket'
+  ) {
+    return;
+  }
+
   // Bypass service worker caching completely for dynamic API calls and uploads
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/uploads/')) {
     event.respondWith(
@@ -69,7 +83,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request).catch(async () => {
         const cachedIndex = await caches.match('/index.html');
-        return cachedIndex || caches.match('/');
+        if (cachedIndex) return cachedIndex;
+        const cachedRoot = await caches.match('/');
+        if (cachedRoot) return cachedRoot;
+        return new Response('<h1>App is offline</h1>', {
+          status: 503,
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
     return;
@@ -96,7 +116,11 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
         return networkResponse;
       }).catch(() => {
-        // Offline asset fallback
+        return new Response('Asset unavailable offline', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
+        });
       });
     })
   );

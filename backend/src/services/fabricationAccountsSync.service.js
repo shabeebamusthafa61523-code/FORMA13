@@ -170,7 +170,7 @@ export const syncPurchaseOrExpense = async (job, item) => {
       totalAmount: amount,
       paymentMode: payMode,
       paidTo: item.vendorName || (isPurchase ? 'Material Vendor' : 'Service Provider'),
-      description: `[${job.jobId}] ${item.itemDescription || ''}${item.billNumber ? ` (Bill #${item.billNumber})` : ''}`.trim(),
+      description: `[${job.jobId}] ${item.itemDescription?.trim() || item.category || (isPurchase ? 'Material Purchase' : 'Operational Expense')}${item.billNumber ? ` (Bill #${item.billNumber})` : ''}`.trim(),
       attachment: item.receiptUrl || '',
       status: 'APPROVED',
       syncSource: {

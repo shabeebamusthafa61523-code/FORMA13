@@ -7,7 +7,7 @@ const quotationItemSchema = new mongoose.Schema({
   unit: { 
     type: String, 
     default: 'Nos',
-    enum: ['Sq.Ft', 'Inches', 'Feet', 'Kg', 'Nos', 'Lengths', 'Meters', 'Tons', 'Box', 'Litres', 'Lumpsum', 'Hours', 'Days']
+    trim: true
   },
   unitPrice: { type: Number, required: true, default: 0, min: 0 },
   discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' },
@@ -54,7 +54,7 @@ const purchaseExpenseSchema = new mongoose.Schema({
   unit: { 
     type: String, 
     default: 'Nos',
-    enum: ['Sq.Ft', 'Inches', 'Feet', 'Kg', 'Nos', 'Lengths', 'Meters', 'Tons', 'Box', 'Litres', 'Lumpsum']
+    trim: true
   },
   rate: { type: Number, default: 0, min: 0 },
   amount: { type: Number, required: true, min: 0 },
@@ -162,6 +162,12 @@ const fabricationJobSchema = new mongoose.Schema({
     description: { type: String, trim: true },
     category: { type: String, default: 'Raw Material' },
     defaultUnit: { type: String, default: 'Nos' },
+    order: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  }],
+  // Master fabrication quotation units catalog
+  units: [{
+    name: { type: String, trim: true },
     order: { type: Number, default: 0 },
     isDefault: { type: Boolean, default: false }
   }],

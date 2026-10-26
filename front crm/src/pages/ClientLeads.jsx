@@ -282,76 +282,14 @@ export default function ClientLeads() {
     return String(currentUser.department || currentUser.departmentId?.name || '').toLowerCase().trim();
   }, [currentUser]);
 
-  const isAdmin = useMemo(() => {
-    if (!currentUser) return false;
-    const roleId = String(currentUser.role_id || currentUser.roleId || currentUser.role || '').toLowerCase().trim();
-    const designation = String(currentUser.designation || currentUser.designationId?.name || currentUser.designation_id || '').toLowerCase().trim();
-    const isOps = designation.includes('operation') || designation.includes('ops');
-    return (['1', '2', 'admin', 'superadmin'].includes(roleId) || designation.includes('admin')) && !isOps;
-  }, [currentUser]);
-
-  const isMarketing = useMemo(() => {
-    if (!currentUser) return false;
-    const roleId = String(currentUser.role_id || currentUser.roleId || currentUser.role || '').toLowerCase().trim();
-    const isOpsOrAdmin = ['1', '2', 'admin', 'superadmin', 'manager', 'hr'].includes(roleId);
-    if (isOpsOrAdmin) return false;
-    return userDeptName.includes('marketing');
-  }, [currentUser, userDeptName]);
-
-  const isAcademicCounselor = useMemo(() => {
-    if (!currentUser) return false;
-    const designation = String(currentUser.designation || currentUser.designationId?.name || currentUser.designation_id || '').toLowerCase().trim();
-    let desigId = '';
-    if (currentUser.designationId) {
-      if (typeof currentUser.designationId === 'object' && currentUser.designationId._id) {
-        desigId = String(currentUser.designationId._id).trim();
-      } else {
-        desigId = String(currentUser.designationId).trim();
-      }
-    } else if (currentUser.designation_id) {
-      desigId = String(currentUser.designation_id).trim();
-    }
-    return designation.includes('counselor') || designation.includes('academic') || designation.includes('tele');
-  }, [currentUser]);
-
-  const isOperationManager = useMemo(() => {
-    if (!currentUser) return false;
-    if (isAcademicCounselor) return false;
-    const roleId = String(currentUser.role_id || currentUser.roleId || currentUser.role || '').toLowerCase().trim();
-    const designation = String(currentUser.designation || currentUser.designationId?.name || currentUser.designation_id || '').toLowerCase().trim();
-    return (
-      ['1', '2', 'admin', 'superadmin', 'manager'].includes(roleId) ||
-      designation.includes('operation') ||
-      designation.includes('ops') ||
-      designation.includes('manager') ||
-      userDeptName.includes('operation') ||
-      userDeptName.includes('ops') ||
-      !!currentUser.isTeamLead
-    );
-  }, [currentUser, userDeptName, isAcademicCounselor]);
-
-  const canEditLead = useMemo(() => {
-    if (isAdmin) return false;
-    if (isMarketing) return false;
-    return true;
-  }, [isAdmin, isMarketing]);
-
-  const canEditAssignedTo = useMemo(() => {
-    if (isAdmin) return false;
-    if (isAcademicCounselor) return false;
-    return isOperationManager;
-  }, [isAdmin, isAcademicCounselor, isOperationManager]);
-
-  const canDeleteLead = useMemo(() => {
-    if (!currentUser) return true;
-    const roleId = String(currentUser.role_id || currentUser.roleId || currentUser.role || '').toLowerCase().trim();
-    return (
-      currentUser.isSuperAdmin ||
-      ['0', '1', '2', 'admin', 'superadmin', 'manager', 'team_lead', 'teamlead', 'tl', 'hr'].includes(roleId) ||
-      isOperationManager ||
-      canEditLead
-    );
-  }, [currentUser, isOperationManager, canEditLead]);
+  // Role-based restrictions removed: All authenticated roles have full access
+  const isAdmin = false;
+  const isMarketing = false;
+  const isAcademicCounselor = false;
+  const isOperationManager = true;
+  const canEditLead = true;
+  const canEditAssignedTo = true;
+  const canDeleteLead = true;
 
   // Form State
   const [formData, setFormData] = useState({
@@ -406,37 +344,10 @@ export default function ClientLeads() {
     }
   }, [getAuthHeaders]);
 
-  // Filter Sales & Growth Department Staff ONLY
+  // Available staff members for lead assignment (all active staff)
   const salesGrowthStaff = useMemo(() => {
     if (!staff || !Array.isArray(staff)) return [];
-    return staff.filter(member => {
-      const deptName = String(
-        member.department ||
-        member.departmentId?.name ||
-        member.department_name ||
-        ''
-      ).toLowerCase().trim();
-
-      const desigName = String(
-        member.designation ||
-        member.designationId?.name ||
-        member.designation_name ||
-        ''
-      ).toLowerCase().trim();
-
-      const desigId = String(member.designationId?._id || member.designationId || member.designation_id || '');
-
-      return (
-        deptName.includes('sales') ||
-        deptName.includes('growth') ||
-        deptName.includes('counselor') ||
-        deptName.includes('telecaller') ||
-        deptName.includes('academy') ||
-        desigName.includes('sales') ||
-        desigName.includes('growth') ||
-        desigName.includes('telecaller')
-      );
-    });
+    return staff.filter(member => member.status !== 'inactive' && member.status !== 'blocked');
   }, [staff]);
 
   // Fetch Client Leads
@@ -492,7 +403,8 @@ export default function ClientLeads() {
       companyName: (formData.companyName || formData.leadName || '').trim(),
       phone: (formData.phone || '').trim(),
       remarks: (formData.remarks || '').trim(),
-      status: formData.status || 'New'
+      status: formData.status || 'New',
+      leadsReceivedDate: formData.leadsReceivedDate || getISTDate()
     };
     try {
       const res = await fetch(getApiEndpoint('/client-leads'), {
@@ -527,7 +439,8 @@ export default function ClientLeads() {
       companyName: (formData.companyName || formData.leadName || '').trim(),
       phone: (formData.phone || '').trim(),
       remarks: (formData.remarks || '').trim(),
-      status: formData.status || selectedLead.status || 'New'
+      status: formData.status || selectedLead.status || 'New',
+      leadsReceivedDate: formData.leadsReceivedDate || undefined
     };
     try {
       const res = await fetch(getApiEndpoint(`/client-leads/${selectedLead.id || selectedLead._id}`), {
@@ -554,10 +467,6 @@ export default function ClientLeads() {
   };
 
   const handleInlineUpdate = async (leadId, field, value) => {
-    if (!canEditLead && !(field === 'assignedTo' && canEditAssignedTo)) {
-      showToast("Editing is restricted for your role.", "warning");
-      return;
-    }
     const cleanValue = (field === 'assignedTo' && (!value || !String(value).trim())) ? null : value;
     // Optimistic state update: change field color instantly on click
     const extraFields = field === 'interestedService' ? { courseIntrests: cleanValue, courseInterests: cleanValue } : {};
@@ -853,12 +762,14 @@ export default function ClientLeads() {
 
   const openEditModal = (lead) => {
     setSelectedLead(lead);
+    const existingDate = formatDateForInput(lead.leadsReceivedDate || lead.createdAt) || getISTDate();
     setFormData({
       leadName: lead.leadName || '',
       companyName: lead.companyName || lead.leadName || '',
       phone: lead.phone || '',
       status: lead.status || 'New',
-      remarks: lead.remarks || ''
+      remarks: lead.remarks || '',
+      leadsReceivedDate: existingDate
     });
     setIsEditOpen(true);
   };
@@ -869,7 +780,8 @@ export default function ClientLeads() {
       companyName: '',
       phone: '',
       status: 'New',
-      remarks: ''
+      remarks: '',
+      leadsReceivedDate: getISTDate()
     });
   };
 
@@ -950,7 +862,7 @@ export default function ClientLeads() {
               Client Leads Directory
             </h1>
             <p className="text-xs font-semibold text-slate-400 mt-0.5">
-              {isMarketing ? 'Marketing View — Add & Import Client Leads' : 'Sales & Growth View — Complete Lead Pipeline'}
+              Complete Client Lead Pipeline & Operations
             </p>
           </div>
         </div>
@@ -1094,7 +1006,7 @@ export default function ClientLeads() {
                 onChange={e => setStaffFilter(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold outline-none"
               >
-                <option value="all">All Sales & Growth Staff</option>
+                <option value="all">All Staff Members</option>
                 {salesGrowthStaff.map(s => (
                   <option key={s.id || s._id} value={s.id || s._id}>{s.name}</option>
                 ))}
@@ -1339,7 +1251,7 @@ export default function ClientLeads() {
                     >
                       {/* 1. Date */}
                       <td className="px-6 py-4.5 text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
-                        {formatDate(lead.createdAt || lead.leadsReceivedDate)}
+                        {formatDate(lead.leadsReceivedDate || lead.createdAt)}
                       </td>
 
                       {/* 2. Name */}
@@ -1472,6 +1384,23 @@ export default function ClientLeads() {
             </div>
 
             <form onSubmit={handleCreateLead} className="space-y-4">
+              {/* Field 0: Date */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Date <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="date"
+                    required
+                    value={formData.leadsReceivedDate}
+                    onChange={e => setFormData({ ...formData, leadsReceivedDate: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
               {/* Field 1: Name */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -1570,6 +1499,22 @@ export default function ClientLeads() {
             </div>
 
             <form onSubmit={handleUpdateLead} className="space-y-4">
+              {/* Field 0: Date */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                  Date
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-3.5 top-3 text-slate-400" size={15} />
+                  <input
+                    type="date"
+                    value={formData.leadsReceivedDate}
+                    onChange={e => setFormData({ ...formData, leadsReceivedDate: e.target.value })}
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
               {/* Field 1: Name */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">

@@ -23,27 +23,43 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Register service worker for Progressive Web App (PWA) support & Home Screen installation
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => {
-        // Check for updates
-        reg.onupdatefound = () => {
-          const installingWorker = reg.installing;
-          if (installingWorker) {
-            installingWorker.onstatechange = () => {
-              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New content is available
-                installingWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            };
-          }
-        };
-      })
-      .catch((err) => {
-        console.warn('PWA Service Worker registration error:', err);
-      });
-  });
+// Register service worker for Progressive Web App (PWA) support only in production builds
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => {
+          // Check for updates
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New content is available
+                  installingWorker.postMessage({ type: 'SKIP_WAITING' });
+                }
+              };
+            }
+          };
+        })
+        .catch((err) => {
+          console.warn('PWA Service Worker registration error:', err);
+        });
+    });
+  } else {
+    // In local development, automatically unregister any active service worker and clean caches
+    // to prevent Vite HMR, WebSockets, and dynamic module dependencies from being intercepted
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        reg.unregister().catch(() => {});
+      }
+    }).catch(() => {});
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        for (const name of names) {
+          caches.delete(name).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }
 }
-

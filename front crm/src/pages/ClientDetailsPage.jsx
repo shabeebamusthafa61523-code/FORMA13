@@ -33,9 +33,11 @@ import { formatApiError } from '../utils/errorUtils';
 import EditClientModal from '../components/clients/EditClientModal';
 import ConfirmModal from '../components/ConfirmModal';
 import QuotationInvoiceModal from '../components/fabrication/QuotationInvoiceModal';
+import PurchaseExpenseInvoiceModal from '../components/fabrication/PurchaseExpenseInvoiceModal';
 import ExpenseCategoryModal, { DEFAULT_FABRICATION_CATEGORIES } from '../components/fabrication/ExpenseCategoryModal';
 import DescriptionVendorModal, { DEFAULT_DESCRIPTIONS, DEFAULT_VENDORS } from '../components/fabrication/DescriptionVendorModal';
 import WorkScopeModal, { DEFAULT_WORK_SCOPE_DESCRIPTIONS } from '../components/fabrication/WorkScopeModal';
+import QuotationUnitModal, { DEFAULT_FABRICATION_UNITS } from '../components/fabrication/QuotationUnitModal';
 
 const UNIT_OPTIONS = [
   'Sq.Ft',
@@ -148,6 +150,7 @@ const ClientDetailsPage = () => {
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
   const [editingQuotationItem, setEditingQuotationItem] = useState(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isPurchaseInvoiceOpen, setIsPurchaseInvoiceOpen] = useState(false);
 
   const [isWageModalOpen, setIsWageModalOpen] = useState(false);
   const [editingWage, setEditingWage] = useState(null);
@@ -194,6 +197,26 @@ const ClientDetailsPage = () => {
     } catch (e) {}
     return DEFAULT_VENDORS;
   });
+
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
+  const [unitsList, setUnitsList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm_fab_quotation_units');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_FABRICATION_UNITS;
+  });
+
+  const handleSelectUnit = (unit) => {
+    setQuoteForm(prev => ({ ...prev, unit }));
+  };
+
+  const handleUnitsChanged = (newList) => {
+    setUnitsList(newList);
+  };
 
   const [isWorkScopeModalOpen, setIsWorkScopeModalOpen] = useState(false);
   const [workScopeDescriptions, setWorkScopeDescriptions] = useState(() => {
@@ -642,20 +665,14 @@ const ClientDetailsPage = () => {
     e.preventDefault();
     if (!job?._id) return;
 
-    if (expenseForm.type === 'Purchase' && !expenseForm.itemDescription.trim()) {
-      showToast('Please provide an item description', 'warning');
-      return;
-    }
-    if (expenseForm.type === 'Expense' && (!expenseForm.amount || parseFloat(expenseForm.amount) <= 0)) {
-      showToast('Please enter a valid expense amount', 'warning');
+    if (!expenseForm.amount || parseFloat(expenseForm.amount) <= 0) {
+      showToast('Please enter a valid amount or quantity and rate', 'warning');
       return;
     }
 
     const payload = {
       ...expenseForm,
-      itemDescription: expenseForm.type === 'Expense'
-        ? (expenseForm.notes?.trim() || expenseForm.itemDescription?.trim() || expenseForm.category || 'Site Operational Expense')
-        : expenseForm.itemDescription.trim(),
+      itemDescription: (expenseForm.itemDescription || '').trim(),
       amount: parseFloat(expenseForm.amount) || 0,
       quantity: expenseForm.type === 'Expense' ? 1 : (parseFloat(expenseForm.quantity) || 1),
       rate: expenseForm.type === 'Expense' ? (parseFloat(expenseForm.amount) || 0) : (parseFloat(expenseForm.rate) || 0)
@@ -718,7 +735,9 @@ const ClientDetailsPage = () => {
     setDeleteConfirm({
       isOpen: true,
       title: `Delete ${entry.type}`,
-      message: `Delete ${entry.type.toLowerCase()} record "${entry.itemDescription}" (${formatCurrency(entry.amount)})?`,
+      message: entry.itemDescription?.trim()
+        ? `Delete ${entry.type.toLowerCase()} record "${entry.itemDescription.trim()}" (${formatCurrency(entry.amount)})?`
+        : `Delete ${entry.type.toLowerCase()} record (${formatCurrency(entry.amount)})?`,
       onConfirm: async () => {
         try {
           const res = await deletePurchaseExpense(job._id, entry._id);
@@ -963,19 +982,19 @@ const ClientDetailsPage = () => {
           </button>
 
           <button
-            onClick={() => scrollToSection('section-wages')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <Users size={14} className="text-indigo-600" />
-            <span>2. Daily Wages ({wagesCount})</span>
-          </button>
-
-          <button
             onClick={() => scrollToSection('section-purchases')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
           >
             <ShoppingCart size={14} className="text-indigo-600" />
-            <span>3. Purchases & Expenses ({purchasesCount})</span>
+            <span>2. Purchases & Expenses ({purchasesCount})</span>
+          </button>
+
+          <button
+            onClick={() => scrollToSection('section-wages')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Users size={14} className="text-indigo-600" />
+            <span>3. Daily Wages ({wagesCount})</span>
           </button>
 
           <button
@@ -1090,15 +1109,26 @@ const ClientDetailsPage = () => {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                Unit
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                  Unit
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsUnitModalOpen(true)}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                  title="Add, Edit or Delete Measurement Units"
+                >
+                  <Plus size={11} className="stroke-[3]" />
+                  <span>Manage</span>
+                </button>
+              </div>
               <select
                 value={quoteForm.unit}
                 onChange={(e) => setQuoteForm({ ...quoteForm, unit: e.target.value })}
                 className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
-                {UNIT_OPTIONS.map((u) => (
+                {unitsList.map((u) => (
                   <option key={u} value={u}>{u}</option>
                 ))}
               </select>
@@ -1292,7 +1322,620 @@ const ClientDetailsPage = () => {
       </section>
 
       {/* ========================================================================= */}
-      {/* SECTION 2: 👷 EMPLOYEE DAILY WAGES TRACKER                                */}
+      {/* SECTION 2: 🛒 MATERIAL PURCHASES & OPERATIONAL EXPENSES                   */}
+      {/* ========================================================================= */}
+      <section id="section-purchases" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
+              <ShoppingCart size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                2. Material Purchases & Operational Expenses
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                  {purchasesCount} items
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Log metal purchases (Sq.Ft, Inches, Kg, Tubes), welding consumables, transport & site expenses.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsPurchaseInvoiceOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              title="Download Material Purchases & Expenses Statement / Invoice PDF"
+            >
+              <Download size={14} />
+              <span>Download Invoice</span>
+            </button>
+            <div className="text-right">
+              <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Purchases & Expenses</span>
+              <span className="text-lg font-black text-rose-600 dark:text-rose-400">
+                {formatCurrency(fin.totalPurchases + fin.totalExpenses)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* INLINE QUICK-ADD FORM FOR PURCHASES & EXPENSES */}
+        <form onSubmit={handleSaveExpense} className="p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                <Plus size={15} />
+                <span>Add Material Purchase or Site Expense</span>
+              </span>
+              <div className="inline-flex p-0.5 bg-slate-200 dark:bg-slate-700 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseForm(prev => ({ ...prev, type: 'Purchase' }));
+                    setExpenseFilter('Purchase');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                    expenseForm.type === 'Purchase' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Material Purchase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseForm(prev => ({ ...prev, type: 'Expense' }));
+                    setExpenseFilter('Expense');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                    expenseForm.type === 'Expense' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Operational Expense
+                </button>
+              </div>
+            </div>
+
+            <span className="text-[11px] text-slate-400 font-normal">
+              {expenseForm.type === 'Expense' ? 'Direct site expense / petty cash entry' : 'Amount = Quantity × Unit Rate'}
+            </span>
+          </div>
+
+          {expenseForm.type === 'Expense' ? (
+            /* ========================================================================= */
+            /* OPERATIONAL EXPENSE FORM: Date, Type & Category, Amount, Mode, Remarks, Actions */
+            /* ========================================================================= */
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+              {/* 1. Date */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Date <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={expenseForm.date}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                  className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                />
+              </div>
+
+              {/* 2. Type & Category */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                    Category
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryModalOpen(true)}
+                    className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                    title="Add, Edit or Delete Categories"
+                  >
+                    <Plus size={11} className="stroke-[3]" />
+                    <span>Manage</span>
+                  </button>
+                </div>
+                <select
+                  value={expenseForm.category}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {categoriesList.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Amount */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  required
+                  placeholder="e.g. 1500"
+                  value={expenseForm.amount}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* 4. Mode */}
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Payment Mode
+                </label>
+                <select
+                  value={expenseForm.paymentMode}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {PAYMENT_MODES.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Remarks (If any) */}
+              <div className="md:col-span-3">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Remarks (If any)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Tea & snacks for site team, diesel"
+                  value={expenseForm.notes}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* 6. Actions */}
+              <div className="md:col-span-1">
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs text-center"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ========================================================================= */
+            /* MATERIAL PURCHASE FORM: Full 2 Rows                                      */
+            /* ========================================================================= */
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                {/* Date */}
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={expenseForm.date}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
+                </div>
+
+                {/* Category */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Category
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Categories"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {categoriesList.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 1. SEPARATE FIELD: Item Description */}
+                <div className="md:col-span-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Item Description
+                    </label>
+                    <button
+                      type="button"
+                      onClick={openItemDescriptionModal}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Item Descriptions"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    list="fab-item-descriptions-list"
+                    placeholder="e.g. MS Square Pipe 2x2 inch (Optional)"
+                    value={expenseForm.itemDescription}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, itemDescription: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="fab-item-descriptions-list">
+                    {savedDescriptions.map((desc, i) => (
+                      <option key={i} value={desc} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* 2. SEPARATE FIELD: Vendor / Supplier */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Vendor / Supplier
+                    </label>
+                    <button
+                      type="button"
+                      onClick={openVendorSupplierModal}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Suppliers / Vendors"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    list="fab-vendors-list"
+                    placeholder="e.g. Krishna Steels & Hardware"
+                    value={expenseForm.vendorName}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, vendorName: e.target.value })}
+                    className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="fab-vendors-list">
+                    {savedVendors.map((v, i) => (
+                      <option key={i} value={typeof v === 'string' ? v : v.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Unit Dropdown */}
+                <div className="md:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Unit
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsUnitModalOpen(true)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Measurement Units"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
+                  <select
+                    value={expenseForm.unit}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
+                    className="w-full px-1 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {unitsList.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quantity */}
+                <div className="md:col-span-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Qty
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={expenseForm.quantity}
+                    onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
+                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Rate */}
+                <div className="md:col-span-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Rate (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="Rate"
+                    value={expenseForm.rate}
+                    onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
+                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Optional Bill #, Payment Mode, Total & Add Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                <div className="flex items-center flex-wrap gap-3">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Bill/Inv #:</span>
+                    <input
+                      type="text"
+                      placeholder="Optional (e.g. INV-8492)"
+                      value={expenseForm.billNumber}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, billNumber: e.target.value })}
+                      className="w-36 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Mode:</span>
+                    <select
+                      value={expenseForm.paymentMode}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                      className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      {PAYMENT_MODES.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
+                    <span className="text-sm font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                      {formatCurrency(expenseForm.amount)}
+                    </span>
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                  >
+                    + Add Entry
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </form>
+
+        {/* Filter Pills & Download PDF Button */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div className="flex items-center gap-1.5">
+            {['All', 'Purchase', 'Expense'].map(type => (
+              <button
+                key={type}
+                onClick={() => setExpenseFilter(type)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  expenseFilter === type
+                    ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsPurchaseInvoiceOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-xs cursor-pointer"
+            title="Download Purchases & Expenses Invoice PDF"
+          >
+            <Download size={13} />
+            <span>Download Invoice PDF</span>
+          </button>
+        </div>
+
+        {/* PURCHASES & EXPENSES TABLE */}
+        {filteredPurchasesAndExpenses.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+            <ShoppingCart size={28} className="mx-auto text-slate-400 mb-1.5" />
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No purchases or expenses logged</p>
+            <p className="text-[11px] text-slate-400">Record steel sheets, tubular pipes, fasteners, and workshop expenses above.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  {expenseFilter === 'Expense' ? (
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Type & Category</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-center">Mode</th>
+                      <th className="py-3 px-4">Remarks (If any)</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  ) : (
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Type & Category</th>
+                      <th className="py-3 px-4">Item Description</th>
+                      <th className="py-3 px-4">Vendor / Supplier</th>
+                      <th className="py-3 px-4 text-center">Unit</th>
+                      <th className="py-3 px-4 text-right">Quantity</th>
+                      <th className="py-3 px-4 text-right">Rate</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-center">Mode</th>
+                      <th className="py-3 px-4 text-center">Actions</th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredPurchasesAndExpenses.map((entry) => (
+                    expenseFilter === 'Expense' ? (
+                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                          {formatDate(entry.date)}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                            {entry.type}
+                          </span>
+                          <span className="text-slate-600 dark:text-slate-300 font-semibold">{entry.category}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {formatCurrency(entry.amount)}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                            {entry.paymentMode || 'Cash'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {entry.notes?.trim() || (entry.itemDescription?.trim() && entry.itemDescription.trim() !== 'Material Purchase' && entry.itemDescription.trim() !== 'Site Operational Expense' ? entry.itemDescription.trim() : null) || <span className="text-slate-400 italic">No remarks</span>}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditExpenseModal(entry)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Edit Entry"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => promptDeleteExpense(entry)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Delete Entry"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                          {formatDate(entry.date)}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 ${
+                            entry.type === 'Purchase' 
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300' 
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}>
+                            {entry.type}
+                          </span>
+                          <span className="text-slate-500">{entry.category}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {entry.itemDescription?.trim() && entry.itemDescription.trim() !== 'Material Purchase' && entry.itemDescription.trim() !== 'Site Operational Expense' ? (
+                            <div className="font-bold text-slate-900 dark:text-white">{entry.itemDescription.trim()}</div>
+                          ) : null}
+                          {entry.billNumber && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">Bill #{entry.billNumber}</div>
+                          )}
+                          {entry.notes && entry.type === 'Expense' && (
+                            <div className="text-[10px] text-slate-500 mt-0.5 italic">{entry.notes}</div>
+                          )}
+                          {!entry.itemDescription?.trim() && !entry.billNumber && (!entry.notes || entry.type !== 'Expense') && (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {entry.vendorName ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                              🏪 {entry.vendorName}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                            {entry.unit || 'Nos'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
+                          {entry.type === 'Expense' ? '—' : entry.quantity}
+                        </td>
+                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                          {entry.type === 'Expense' ? '—' : (entry.rate > 0 ? formatCurrency(entry.rate) : '-')}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {formatCurrency(entry.amount)}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
+                          {entry.paymentMode}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditExpenseModal(entry)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Edit Entry"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => promptDeleteExpense(entry)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title="Delete Entry"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  ))}
+                  {/* Subtotal row */}
+                  {expenseFilter === 'Expense' ? (
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                      <td colSpan={2} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                        Site Operational Expenses Total:
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                        {formatCurrency(fin.totalExpenses)}
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  ) : (
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                      <td colSpan={7} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                        {expenseFilter === 'Purchase' ? 'Material Purchases Total:' : 'Purchases & Site Expenses Total:'}
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                        {formatCurrency(expenseFilter === 'Purchase' ? fin.totalPurchases : (fin.totalPurchases + fin.totalExpenses))}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================================= */}
+      {/* SECTION 3: 👷 EMPLOYEE DAILY WAGES TRACKER                                */}
       {/* ========================================================================= */}
       <section id="section-wages" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
@@ -1302,7 +1945,7 @@ const ClientDetailsPage = () => {
             </div>
             <div>
               <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-                2. Employee Daily Wage Tracker
+                3. Employee Daily Wage Tracker
                 <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
                   {wagesCount} entries
                 </span>
@@ -1544,581 +2187,6 @@ const ClientDetailsPage = () => {
                     </td>
                     <td></td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* ========================================================================= */}
-      {/* SECTION 3: 🛒 MATERIAL PURCHASES & OPERATIONAL EXPENSES                   */}
-      {/* ========================================================================= */}
-      <section id="section-purchases" className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
-              <ShoppingCart size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-                3. Material Purchases & Operational Expenses
-                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
-                  {purchasesCount} items
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500">
-                Log metal purchases (Sq.Ft, Inches, Kg, Tubes), welding consumables, transport & site expenses.
-              </p>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Purchases & Expenses</span>
-            <span className="text-lg font-black text-rose-600 dark:text-rose-400">
-              {formatCurrency(fin.totalPurchases + fin.totalExpenses)}
-            </span>
-          </div>
-        </div>
-
-        {/* INLINE QUICK-ADD FORM FOR PURCHASES & EXPENSES */}
-        <form onSubmit={handleSaveExpense} className="p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
-                <Plus size={15} />
-                <span>Add Material Purchase or Site Expense</span>
-              </span>
-              <div className="inline-flex p-0.5 bg-slate-200 dark:bg-slate-700 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExpenseForm(prev => ({ ...prev, type: 'Purchase' }));
-                    setExpenseFilter('Purchase');
-                  }}
-                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                    expenseForm.type === 'Purchase' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
-                  }`}
-                >
-                  Material Purchase
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExpenseForm(prev => ({ ...prev, type: 'Expense' }));
-                    setExpenseFilter('Expense');
-                  }}
-                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                    expenseForm.type === 'Expense' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
-                  }`}
-                >
-                  Operational Expense
-                </button>
-              </div>
-            </div>
-
-            <span className="text-[11px] text-slate-400 font-normal">
-              {expenseForm.type === 'Expense' ? 'Direct site expense / petty cash entry' : 'Amount = Quantity × Unit Rate'}
-            </span>
-          </div>
-
-          {expenseForm.type === 'Expense' ? (
-            /* ========================================================================= */
-            /* OPERATIONAL EXPENSE FORM: Date, Type & Category, Amount, Mode, Remarks, Actions */
-            /* ========================================================================= */
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-              {/* 1. Date */}
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Date <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={expenseForm.date}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
-                  className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                />
-              </div>
-
-              {/* 2. Type & Category */}
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                    Category
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCategoryModalOpen(true)}
-                    className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                    title="Add, Edit or Delete Categories"
-                  >
-                    <Plus size={11} className="stroke-[3]" />
-                    <span>Manage</span>
-                  </button>
-                </div>
-                <select
-                  value={expenseForm.category}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                >
-                  {categoriesList.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 3. Amount */}
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Amount (₹) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  required
-                  placeholder="e.g. 1500"
-                  value={expenseForm.amount}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              {/* 4. Mode */}
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Payment Mode
-                </label>
-                <select
-                  value={expenseForm.paymentMode}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
-                  className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                >
-                  {PAYMENT_MODES.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 5. Remarks (If any) */}
-              <div className="md:col-span-3">
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Remarks (If any)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tea & snacks for site team, diesel"
-                  value={expenseForm.notes}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              {/* 6. Actions */}
-              <div className="md:col-span-1">
-                <button
-                  type="submit"
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs text-center"
-                >
-                  + Add
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* ========================================================================= */
-            /* MATERIAL PURCHASE FORM: Full 2 Rows                                      */
-            /* ========================================================================= */
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                {/* Date */}
-                <div className="md:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={expenseForm.date}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  />
-                </div>
-
-                {/* Category */}
-                <div className="md:col-span-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Category
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCategoryModalOpen(true)}
-                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                      title="Add, Edit or Delete Categories"
-                    >
-                      <Plus size={11} className="stroke-[3]" />
-                      <span>Manage</span>
-                    </button>
-                  </div>
-                  <select
-                    value={expenseForm.category}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                    className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {categoriesList.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 1. SEPARATE FIELD: Item Description */}
-                <div className="md:col-span-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Item Description <span className="text-rose-500">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={openItemDescriptionModal}
-                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                      title="Add, Edit or Delete Item Descriptions"
-                    >
-                      <Plus size={11} className="stroke-[3]" />
-                      <span>Manage</span>
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    list="fab-item-descriptions-list"
-                    placeholder="e.g. MS Square Pipe 2x2 inch"
-                    value={expenseForm.itemDescription}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, itemDescription: e.target.value })}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <datalist id="fab-item-descriptions-list">
-                    {savedDescriptions.map((desc, i) => (
-                      <option key={i} value={desc} />
-                    ))}
-                  </datalist>
-                </div>
-
-                {/* 2. SEPARATE FIELD: Vendor / Supplier */}
-                <div className="md:col-span-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Vendor / Supplier
-                    </label>
-                    <button
-                      type="button"
-                      onClick={openVendorSupplierModal}
-                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                      title="Add, Edit or Delete Suppliers / Vendors"
-                    >
-                      <Plus size={11} className="stroke-[3]" />
-                      <span>Manage</span>
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    list="fab-vendors-list"
-                    placeholder="e.g. Krishna Steels & Hardware"
-                    value={expenseForm.vendorName}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, vendorName: e.target.value })}
-                    className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <datalist id="fab-vendors-list">
-                    {savedVendors.map((v, i) => (
-                      <option key={i} value={typeof v === 'string' ? v : v.name} />
-                    ))}
-                  </datalist>
-                </div>
-
-                {/* Unit Dropdown */}
-                <div className="md:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Unit
-                  </label>
-                  <select
-                    value={expenseForm.unit}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
-                    className="w-full px-1 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {UNIT_OPTIONS.map(u => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Quantity */}
-                <div className="md:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Qty
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={expenseForm.quantity}
-                    onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
-                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                {/* Rate */}
-                <div className="md:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Rate (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    placeholder="Rate"
-                    value={expenseForm.rate}
-                    onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
-                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Row 2: Optional Bill #, Payment Mode, Total & Add Button */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
-                <div className="flex items-center flex-wrap gap-3">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Bill/Inv #:</span>
-                    <input
-                      type="text"
-                      placeholder="Optional (e.g. INV-8492)"
-                      value={expenseForm.billNumber}
-                      onChange={(e) => setExpenseForm({ ...expenseForm, billNumber: e.target.value })}
-                      className="w-36 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Mode:</span>
-                    <select
-                      value={expenseForm.paymentMode}
-                      onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
-                      className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                    >
-                      {PAYMENT_MODES.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 self-end sm:self-auto">
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
-                    <span className="text-sm font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                      {formatCurrency(expenseForm.amount)}
-                    </span>
-                  </div>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs"
-                  >
-                    + Add Entry
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </form>
-
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 pt-1">
-          {['All', 'Purchase', 'Expense'].map(type => (
-            <button
-              key={type}
-              onClick={() => setExpenseFilter(type)}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                expenseFilter === type
-                  ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
-            </button>
-          ))}
-        </div>
-
-        {/* PURCHASES & EXPENSES TABLE */}
-        {filteredPurchasesAndExpenses.length === 0 ? (
-          <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-            <ShoppingCart size={28} className="mx-auto text-slate-400 mb-1.5" />
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No purchases or expenses logged</p>
-            <p className="text-[11px] text-slate-400">Record steel sheets, tubular pipes, fasteners, and workshop expenses above.</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  {expenseFilter === 'Expense' ? (
-                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">Type & Category</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4 text-center">Mode</th>
-                      <th className="py-3 px-4">Remarks (If any)</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
-                    </tr>
-                  ) : (
-                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">Type & Category</th>
-                      <th className="py-3 px-4">Item Description</th>
-                      <th className="py-3 px-4">Vendor / Supplier</th>
-                      <th className="py-3 px-4 text-center">Unit</th>
-                      <th className="py-3 px-4 text-right">Quantity</th>
-                      <th className="py-3 px-4 text-right">Rate</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4 text-center">Mode</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
-                    </tr>
-                  )}
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredPurchasesAndExpenses.map((entry) => (
-                    expenseFilter === 'Expense' ? (
-                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
-                          {formatDate(entry.date)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                            {entry.type}
-                          </span>
-                          <span className="text-slate-600 dark:text-slate-300 font-semibold">{entry.category}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {formatCurrency(entry.amount)}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
-                            {entry.paymentMode || 'Cash'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                          {entry.notes || entry.itemDescription || <span className="text-slate-400 italic">No remarks</span>}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => openEditExpenseModal(entry)}
-                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Edit Entry"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                            <button
-                              onClick={() => promptDeleteExpense(entry)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Delete Entry"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
-                          {formatDate(entry.date)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold mr-2 ${
-                            entry.type === 'Purchase' 
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300' 
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                          }`}>
-                            {entry.type}
-                          </span>
-                          <span className="text-slate-500">{entry.category}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 dark:text-white">{entry.itemDescription}</div>
-                          {entry.billNumber && (
-                            <div className="text-[10px] text-slate-400 mt-0.5">Bill #{entry.billNumber}</div>
-                          )}
-                          {entry.notes && entry.type === 'Expense' && (
-                            <div className="text-[10px] text-slate-500 mt-0.5 italic">{entry.notes}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          {entry.vendorName ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-800 dark:text-slate-200 text-xs">
-                              🏪 {entry.vendorName}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
-                            {entry.unit || 'Nos'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
-                          {entry.type === 'Expense' ? '—' : entry.quantity}
-                        </td>
-                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
-                          {entry.type === 'Expense' ? '—' : (entry.rate > 0 ? formatCurrency(entry.rate) : '-')}
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {formatCurrency(entry.amount)}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
-                          {entry.paymentMode}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => openEditExpenseModal(entry)}
-                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Edit Entry"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                            <button
-                              onClick={() => promptDeleteExpense(entry)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Delete Entry"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  ))}
-                  {/* Subtotal row */}
-                  {expenseFilter === 'Expense' ? (
-                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
-                      <td colSpan={2} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
-                        Site Operational Expenses Total:
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                        {formatCurrency(fin.totalExpenses)}
-                      </td>
-                      <td colSpan={3}></td>
-                    </tr>
-                  ) : (
-                    <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
-                      <td colSpan={7} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
-                        {expenseFilter === 'Purchase' ? 'Material Purchases Total:' : 'Purchases & Site Expenses Total:'}
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                        {formatCurrency(expenseFilter === 'Purchase' ? fin.totalPurchases : (fin.totalPurchases + fin.totalExpenses))}
-                      </td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -2606,15 +2674,26 @@ const ClientDetailsPage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Unit
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Unit
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsUnitModalOpen(true)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                      title="Add, Edit or Delete Measurement Units"
+                    >
+                      <Plus size={11} className="stroke-[3]" />
+                      <span>Manage</span>
+                    </button>
+                  </div>
                   <select
                     value={quoteForm.unit}
                     onChange={(e) => setQuoteForm({ ...quoteForm, unit: e.target.value })}
                     className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                   >
-                    {UNIT_OPTIONS.map((u) => (
+                    {unitsList.map((u) => (
                       <option key={u} value={u}>{u}</option>
                     ))}
                   </select>
@@ -2947,7 +3026,7 @@ const ClientDetailsPage = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Item Description <span className="text-rose-500">*</span>
+                        Item Description
                       </label>
                       <button
                         type="button"
@@ -2961,9 +3040,8 @@ const ClientDetailsPage = () => {
                     </div>
                     <input
                       type="text"
-                      required
                       list="fab-item-descriptions-list"
-                      placeholder="e.g. MS Square Pipe 2x2 inch"
+                      placeholder="e.g. MS Square Pipe 2x2 inch (Optional)"
                       value={expenseForm.itemDescription}
                       onChange={(e) => setExpenseForm({ ...expenseForm, itemDescription: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -3012,15 +3090,26 @@ const ClientDetailsPage = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Unit
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Unit
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsUnitModalOpen(true)}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                          title="Add, Edit or Delete Measurement Units"
+                        >
+                          <Plus size={11} className="stroke-[3]" />
+                          <span>Manage</span>
+                        </button>
+                      </div>
                       <select
                         value={expenseForm.unit}
                         onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
                         className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                       >
-                        {UNIT_OPTIONS.map((u) => (
+                        {unitsList.map((u) => (
                           <option key={u} value={u}>{u}</option>
                         ))}
                       </select>
@@ -3184,6 +3273,16 @@ const ClientDetailsPage = () => {
         message={deleteConfirm.message}
         onConfirm={deleteConfirm.onConfirm}
         onCancel={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Material Purchases & Operational Expenses Invoice Modal */}
+      <PurchaseExpenseInvoiceModal
+        isOpen={isPurchaseInvoiceOpen}
+        onClose={() => setIsPurchaseInvoiceOpen(false)}
+        client={clientData}
+        job={job}
+        purchasesAndExpenses={job?.purchasesAndExpenses || []}
+        financials={fin}
       />
 
       {/* 7. Quotation & Work Measurements Invoice Modal */}
