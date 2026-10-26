@@ -34,6 +34,7 @@ import EditClientModal from '../components/clients/EditClientModal';
 import ConfirmModal from '../components/ConfirmModal';
 import QuotationInvoiceModal from '../components/fabrication/QuotationInvoiceModal';
 import PurchaseExpenseInvoiceModal from '../components/fabrication/PurchaseExpenseInvoiceModal';
+import OverallFabricationLedgerModal from '../components/fabrication/OverallFabricationLedgerModal';
 import ExpenseCategoryModal, { DEFAULT_FABRICATION_CATEGORIES } from '../components/fabrication/ExpenseCategoryModal';
 import DescriptionVendorModal, { DEFAULT_DESCRIPTIONS, DEFAULT_VENDORS } from '../components/fabrication/DescriptionVendorModal';
 import WorkScopeModal, { DEFAULT_WORK_SCOPE_DESCRIPTIONS } from '../components/fabrication/WorkScopeModal';
@@ -151,6 +152,7 @@ const ClientDetailsPage = () => {
   const [editingQuotationItem, setEditingQuotationItem] = useState(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isPurchaseInvoiceOpen, setIsPurchaseInvoiceOpen] = useState(false);
+  const [isOverallLedgerOpen, setIsOverallLedgerOpen] = useState(false);
 
   const [isWageModalOpen, setIsWageModalOpen] = useState(false);
   const [editingWage, setEditingWage] = useState(null);
@@ -886,6 +888,15 @@ const ClientDetailsPage = () => {
         </button>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsOverallLedgerOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            title="Download Overall Project Report PDF (Tables with Data Only)"
+          >
+            <Download size={14} />
+            <span>Overall PDF Report</span>
+          </button>
           <button
             onClick={() => window.print()}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer shadow-xs"
@@ -2417,9 +2428,20 @@ const ClientDetailsPage = () => {
               </p>
             </div>
           </div>
-          <span className="font-mono text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-xl font-bold border border-indigo-200 dark:border-indigo-800">
-            Real-Time Auto-Calculated
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsOverallLedgerOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              title="Download Complete Overall Project Ledger PDF"
+            >
+              <Download size={14} />
+              <span>Download Overall Report PDF</span>
+            </button>
+            <span className="font-mono text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-xl font-bold border border-indigo-200 dark:border-indigo-800 hidden sm:inline-block">
+              Real-Time Auto-Calculated
+            </span>
+          </div>
         </div>
 
         {/* 6 Key Financial Metric Cards */}
@@ -3273,6 +3295,15 @@ const ClientDetailsPage = () => {
         message={deleteConfirm.message}
         onConfirm={deleteConfirm.onConfirm}
         onCancel={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Overall Project Ledger Report Modal (Data Tables Only) */}
+      <OverallFabricationLedgerModal
+        isOpen={isOverallLedgerOpen}
+        onClose={() => setIsOverallLedgerOpen(false)}
+        job={job}
+        client={clientData}
+        financials={fin}
       />
 
       {/* Material Purchases & Operational Expenses Invoice Modal */}
