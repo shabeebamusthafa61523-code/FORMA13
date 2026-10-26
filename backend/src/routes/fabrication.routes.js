@@ -77,4 +77,11 @@ router.get('/expense-categories', fabricationController.getFabricationExpenseCat
 // 13. Retroactive Sync Route to Accounts
 router.post('/sync-to-accounts', fabricationController.syncAllFabricationToAccounts);
 
+// 14. Fabrication Quotation Units Management
+router.get('/units', fabricationController.getFabricationUnits);
+router.post('/units', fabricationController.createFabricationUnit);
+router.put('/units/:id', fabricationController.updateFabricationUnit);
+router.delete('/units/:id', fabricationController.deleteFabricationUnit);
+router.post('/units/reset', fabricationController.resetFabricationUnits);
+
 export default router;

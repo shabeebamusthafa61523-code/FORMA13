@@ -154,14 +154,13 @@ export const createClientLead = async (req, res, next) => {
     const desigName = String(userObj?.designation || userObj?.designationId?.name || '').toLowerCase().trim();
     const isMarketer = deptName.includes('marketing') || desigName.includes('marketing');
 
-    let leadSource = req.body.source;
-    if (isMarketer || !leadSource) {
-      leadSource = 'MARKETING';
-    }
+    let leadSource = req.body.source || (isMarketer ? 'MARKETING' : 'Direct');
+    const receivedDate = req.body.leadsReceivedDate ? new Date(req.body.leadsReceivedDate) : new Date();
 
     const newLead = new ClientLead({
       ...req.body,
       source: leadSource,
+      leadsReceivedDate: receivedDate,
       createdBy: currentUserId
     });
 

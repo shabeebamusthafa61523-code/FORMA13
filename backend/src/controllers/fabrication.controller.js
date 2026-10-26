@@ -80,6 +80,22 @@ export const DEFAULT_ITEM_PRESETS = [
   { description: 'Crane & Loading Charges', category: 'Transport & Freight', defaultUnit: 'Lumpsum', order: 15, isDefault: true }
 ];
 
+export const DEFAULT_FABRICATION_UNITS = [
+  { name: 'Sq.Ft', order: 1, isDefault: true },
+  { name: 'Inches', order: 2, isDefault: true },
+  { name: 'Feet', order: 3, isDefault: true },
+  { name: 'Kg', order: 4, isDefault: true },
+  { name: 'Nos', order: 5, isDefault: true },
+  { name: 'Lengths', order: 6, isDefault: true },
+  { name: 'Meters', order: 7, isDefault: true },
+  { name: 'Tons', order: 8, isDefault: true },
+  { name: 'Box', order: 9, isDefault: true },
+  { name: 'Litres', order: 10, isDefault: true },
+  { name: 'Lumpsum', order: 11, isDefault: true },
+  { name: 'Hours', order: 12, isDefault: true },
+  { name: 'Days', order: 13, isDefault: true }
+];
+
 export const DEFAULT_FABRICATION_VENDORS = [
   { name: 'Jindal Steel Distributors', phone: '9845012345', notes: 'Raw steel & pipes' },
   { name: 'Tata Steel Yard', phone: '9845067890', notes: 'Plates & sheets' },
@@ -736,13 +752,6 @@ export const addPurchaseExpense = async (req, res) => {
     } = req.body;
 
     let finalDescription = (itemDescription || '').trim();
-    if (!finalDescription) {
-      if (type === 'Expense') {
-        finalDescription = (notes || '').trim() || category || 'Site Operational Expense';
-      } else {
-        return res.status(400).json({ success: false, message: 'Item description is required' });
-      }
-    }
 
     const job = await FabricationJob.findById(id);
     if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
@@ -813,7 +822,7 @@ export const updatePurchaseExpense = async (req, res) => {
     if (date !== undefined) entry.date = new Date(date);
     if (type !== undefined) entry.type = type;
     if (category !== undefined) entry.category = category;
-    if (itemDescription !== undefined) entry.itemDescription = itemDescription;
+    if (itemDescription !== undefined) entry.itemDescription = (itemDescription || "").trim();
     if (vendorName !== undefined) entry.vendorName = vendorName;
     if (billNumber !== undefined) entry.billNumber = billNumber;
     if (quantity !== undefined) entry.quantity = Number(quantity);
@@ -987,7 +996,8 @@ const getMasterConfig = async () => {
       terms: DEFAULT_INVOICE_TERMS,
       materials: DEFAULT_FABRICATION_MATERIALS,
       workScopes: DEFAULT_WORK_SCOPE_DESCRIPTIONS,
-      itemPresets: DEFAULT_ITEM_PRESETS
+      itemPresets: DEFAULT_ITEM_PRESETS,
+      units: DEFAULT_FABRICATION_UNITS
     });
     await config.save();
   } else {
@@ -1008,7 +1018,24 @@ const getMasterConfig = async () => {
       config.itemPresets = DEFAULT_ITEM_PRESETS;
       changed = true;
     }
-    if (changed) await config.save();
+    if (!config.units || config.units.length === 0) {
+      config.units = DEFAULT_FABRICATION_UNITS;
+      changed = true;
+    }
+    if (changed) {
+      await FabricationJob.updateOne(
+        { _id: config._id },
+        {
+          $set: {
+            terms: config.terms,
+            materials: config.materials,
+            workScopes: config.workScopes,
+            itemPresets: config.itemPresets,
+            units: config.units
+          }
+        }
+      );
+    }
   }
   return config;
 };
@@ -1467,5 +1494,93 @@ export const syncAllFabricationToAccounts = async (req, res) => {
       success: false,
       message: error.message || 'Failed to sync fabrication to accounts'
     });
+  }
+};
+
+
+// ==========================================
+// 11. Fabrication Quotation Units Management
+// ==========================================
+export const getFabricationUnits = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    const sorted = [...(config.units || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return res.status(200).json({ success: true, data: sorted });
+  } catch (error) {
+    console.error('Error fetching units:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createFabricationUnit = async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Unit name is required' });
+    }
+    const cleanName = String(name).trim();
+    const config = await getMasterConfig();
+    const existing = (config.units || []).find(u => u.name && u.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing) {
+      return res.status(200).json({ success: true, data: existing, message: 'Unit already exists' });
+    }
+    const maxOrder = (config.units || []).reduce((max, u) => Math.max(max, u.order || 0), 0);
+    const newUnit = {
+      name: cleanName,
+      order: maxOrder + 1,
+      isDefault: false
+    };
+    if (!config.units) config.units = [];
+    config.units.push(newUnit);
+    await config.save();
+    const created = config.units[config.units.length - 1];
+    return res.status(201).json({ success: true, message: 'Unit added successfully', data: created });
+  } catch (error) {
+    console.error('Error creating unit:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateFabricationUnit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, order } = req.body;
+    const config = await getMasterConfig();
+    const unit = config.units.id(id);
+    if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
+    if (name !== undefined) unit.name = String(name).trim();
+    if (order !== undefined) unit.order = Number(order);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Unit updated successfully', data: unit });
+  } catch (error) {
+    console.error('Error updating unit:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteFabricationUnit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const config = await getMasterConfig();
+    const unit = config.units.id(id);
+    if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
+    config.units.pull(id);
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Unit deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting unit:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const resetFabricationUnits = async (req, res) => {
+  try {
+    const config = await getMasterConfig();
+    config.units = DEFAULT_FABRICATION_UNITS;
+    await config.save();
+    return res.status(200).json({ success: true, message: 'Reset units to standard defaults', data: config.units });
+  } catch (error) {
+    console.error('Error resetting units:', error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
