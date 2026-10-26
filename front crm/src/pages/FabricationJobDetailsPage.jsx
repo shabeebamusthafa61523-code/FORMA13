@@ -2443,7 +2443,6 @@ const FabricationJobDetailsPage = () => {
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Payment Mode</th>
                     <th className="py-3 px-4">Reference / Transaction ID</th>
-                    <th className="py-3 px-4">Received By & Notes</th>
                     <th className="py-3 px-4 text-right">Amount Given</th>
                     <th className="py-3 px-4 text-center">Actions</th>
                   </tr>
@@ -2461,10 +2460,6 @@ const FabricationJobDetailsPage = () => {
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-300">
                         {pay.transactionReference || '-'}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                        {pay.receivedBy && <div className="font-semibold text-slate-800 dark:text-slate-200">Recv by: {pay.receivedBy}</div>}
-                        {pay.notes && <div className="text-slate-400">{pay.notes}</div>}
                       </td>
                       <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400 text-sm whitespace-nowrap">
                         {formatCurrency(pay.amount)}
@@ -2501,7 +2496,7 @@ const FabricationJobDetailsPage = () => {
                   ))}
                   {/* Payments Subtotals */}
                   <tr className="bg-emerald-50/40 dark:bg-emerald-950/20 font-bold border-t-2 border-emerald-200 dark:border-emerald-800">
-                    <td colSpan={4} className="py-2.5 px-4 text-right text-[11px] uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
+                    <td colSpan={3} className="py-2.5 px-4 text-right text-[11px] uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
                       Total Amount Received from Client:
                     </td>
                     <td className="py-2.5 px-4 text-right text-sm text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
@@ -2510,7 +2505,7 @@ const FabricationJobDetailsPage = () => {
                     <td></td>
                   </tr>
                   <tr className="bg-amber-50/40 dark:bg-amber-950/20 font-bold">
-                    <td colSpan={4} className="py-2 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                    <td colSpan={3} className="py-2 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
                       Outstanding Client Balance:
                     </td>
                     <td className="py-2 px-4 text-right text-sm text-amber-700 dark:text-amber-300 whitespace-nowrap">
