@@ -610,7 +610,6 @@ const OverallFabricationLedgerModal = ({
                         <th className="py-2 px-2.5 w-20">Date</th>
                         <th className="py-2 px-2.5 w-24">Payment Mode</th>
                         <th className="py-2 px-3">Transaction Reference</th>
-                        <th className="py-2 px-3">Received By / Notes</th>
                         <th className="py-2 px-3 text-right w-28">Amount Received (₹)</th>
                       </tr>
                     </thead>
@@ -625,16 +624,11 @@ const OverallFabricationLedgerModal = ({
                             </span>
                           </td>
                           <td className="py-2 px-3 font-mono text-slate-700">{pay.transactionReference || '—'}</td>
-                          <td className="py-2 px-3 text-slate-600">
-                            {pay.receivedBy && <span className="font-semibold text-slate-800">Recv by: {pay.receivedBy} </span>}
-                            {pay.notes && <span className="text-slate-400 italic">({pay.notes})</span>}
-                            {!pay.receivedBy && !pay.notes && '—'}
-                          </td>
                           <td className="py-2 px-3 text-right font-bold text-emerald-700">{formatCurrency(pay.amount)}</td>
                         </tr>
                       ))}
                       <tr className="bg-slate-50 font-bold border-t border-slate-200 text-[10.5px]">
-                        <td colSpan={5} className="py-2 px-3 text-right uppercase text-slate-500 text-[9.5px]">
+                        <td colSpan={4} className="py-2 px-3 text-right uppercase text-slate-500 text-[9.5px]">
                           Total Amount Received from Client:
                         </td>
                         <td className="py-2 px-3 text-right font-black text-emerald-700">
