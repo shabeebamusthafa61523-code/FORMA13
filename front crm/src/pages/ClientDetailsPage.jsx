@@ -146,6 +146,7 @@ const ClientDetailsPage = () => {
 
   // Purchases filter pill: 'All' | 'Purchase' | 'Expense'
   const [expenseFilter, setExpenseFilter] = useState('All');
+  const [hideTableQtyUnit, setHideTableQtyUnit] = useState(false);
 
   // Modals state for EDIT operations
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
@@ -329,6 +330,7 @@ const ClientDetailsPage = () => {
   const [expenseForm, setExpenseForm] = useState({
     date: new Date().toISOString().split('T')[0],
     type: 'Purchase',
+    pricingType: 'itemised',
     category: 'Raw Material (MS/SS Steel)',
     itemDescription: '',
     vendorName: '',
@@ -336,7 +338,7 @@ const ClientDetailsPage = () => {
     quantity: 1,
     unit: 'Sq.Ft',
     rate: '',
-    amount: 0,
+    amount: '',
     paymentMode: 'Cash',
     notes: ''
   });
@@ -672,12 +674,14 @@ const ClientDetailsPage = () => {
       return;
     }
 
+    const isLumpSum = expenseForm.type === 'Purchase' && expenseForm.pricingType === 'lump_sum';
     const payload = {
       ...expenseForm,
       itemDescription: (expenseForm.itemDescription || '').trim(),
-      amount: parseFloat(expenseForm.amount) || 0,
-      quantity: expenseForm.type === 'Expense' ? 1 : (parseFloat(expenseForm.quantity) || 1),
-      rate: expenseForm.type === 'Expense' ? (parseFloat(expenseForm.amount) || 0) : (parseFloat(expenseForm.rate) || 0)
+      unit: isLumpSum ? '—' : (expenseForm.unit || 'Nos'),
+      quantity: isLumpSum ? 0 : (expenseForm.type === 'Expense' ? 1 : (parseFloat(expenseForm.quantity) || 1)),
+      rate: isLumpSum ? 0 : (expenseForm.type === 'Expense' ? (parseFloat(expenseForm.amount) || 0) : (parseFloat(expenseForm.rate) || 0)),
+      amount: parseFloat(expenseForm.amount) || 0
     };
 
     try {
@@ -697,6 +701,7 @@ const ClientDetailsPage = () => {
         setExpenseForm({
           date: new Date().toISOString().split('T')[0],
           type: expenseForm.type,
+          pricingType: expenseForm.pricingType || 'itemised',
           category: expenseForm.category,
           itemDescription: '',
           vendorName: '',
@@ -704,7 +709,7 @@ const ClientDetailsPage = () => {
           quantity: 1,
           unit: 'Sq.Ft',
           rate: '',
-          amount: 0,
+          amount: '',
           paymentMode: 'Cash',
           notes: ''
         });
@@ -716,17 +721,19 @@ const ClientDetailsPage = () => {
 
   const openEditExpenseModal = (entry) => {
     setEditingExpense(entry);
+    const isLumpSum = entry.type === 'Purchase' && (!entry.rate || Number(entry.rate) <= 0 || !entry.quantity || Number(entry.quantity) <= 0 || entry.unit === '—');
     setExpenseForm({
       date: entry.date ? new Date(entry.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       type: entry.type || 'Purchase',
+      pricingType: isLumpSum ? 'lump_sum' : 'itemised',
       category: entry.category || 'Raw Material (MS/SS Steel)',
       itemDescription: entry.itemDescription || '',
       vendorName: entry.vendorName || '',
       billNumber: entry.billNumber || '',
-      quantity: entry.quantity ?? 1,
+      quantity: isLumpSum ? '' : (entry.quantity ?? 1),
       unit: entry.unit || 'Sq.Ft',
-      rate: entry.rate ?? 0,
-      amount: entry.amount ?? 0,
+      rate: isLumpSum ? '' : (entry.rate ?? ''),
+      amount: entry.amount ?? '',
       paymentMode: entry.paymentMode || 'Cash',
       notes: entry.notes || ''
     });
@@ -1407,10 +1414,39 @@ const ClientDetailsPage = () => {
                   Operational Expense
                 </button>
               </div>
+
+              {expenseForm.type === 'Purchase' && (
+                <div className="inline-flex p-0.5 bg-indigo-100/70 dark:bg-slate-700 rounded-lg ml-1">
+                  <button
+                    type="button"
+                    onClick={() => setExpenseForm(prev => ({ ...prev, pricingType: 'itemised' }))}
+                    className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                      expenseForm.pricingType === 'itemised' 
+                        ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-800 dark:text-indigo-400' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    📏 Itemised (Qty × Rate)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpenseForm(prev => ({ ...prev, pricingType: 'lump_sum' }))}
+                    className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                      expenseForm.pricingType === 'lump_sum' 
+                        ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-800 dark:text-indigo-400' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    💵 Lump-Sum / Flat
+                  </button>
+                </div>
+              )}
             </div>
 
             <span className="text-[11px] text-slate-400 font-normal">
-              {expenseForm.type === 'Expense' ? 'Direct site expense / petty cash entry' : 'Amount = Quantity × Unit Rate'}
+              {expenseForm.type === 'Expense' 
+                ? 'Direct site expense / petty cash entry' 
+                : (expenseForm.pricingType === 'lump_sum' ? 'Flat purchase (no Qty/Unit/Rate)' : 'Amount = Quantity × Unit Rate')}
             </span>
           </div>
 
@@ -1626,63 +1662,84 @@ const ClientDetailsPage = () => {
                   </datalist>
                 </div>
 
-                {/* Unit Dropdown */}
-                <div className="md:col-span-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Unit
+                {expenseForm.pricingType === 'lump_sum' ? (
+                  /* In Lump-Sum Mode: Unit, Qty & Rate columns are hidden; direct Amount input shown */
+                  <div className="md:col-span-3">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Amount (₹) <span className="text-rose-500">*</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsUnitModalOpen(true)}
-                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                      title="Add, Edit or Delete Measurement Units"
-                    >
-                      <Plus size={11} className="stroke-[3]" />
-                      <span>Manage</span>
-                    </button>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      placeholder="e.g. 5000"
+                      value={expenseForm.amount}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
                   </div>
-                  <select
-                    value={expenseForm.unit}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
-                    className="w-full px-1 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {unitsList.map(u => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </div>
+                ) : (
+                  <>
+                    {/* Unit Dropdown */}
+                    <div className="md:col-span-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                          Unit
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsUnitModalOpen(true)}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                          title="Add, Edit or Delete Measurement Units"
+                        >
+                          <Plus size={11} className="stroke-[3]" />
+                          <span>Manage</span>
+                        </button>
+                      </div>
+                      <select
+                        value={expenseForm.unit}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
+                        className="w-full px-1 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        {unitsList.map(u => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                {/* Quantity */}
-                <div className="md:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Qty
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={expenseForm.quantity}
-                    onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
-                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
+                    {/* Quantity */}
+                    <div className="md:col-span-1">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Qty
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={expenseForm.quantity}
+                        onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
+                        className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
 
-                {/* Rate */}
-                <div className="md:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Rate (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    placeholder="Rate"
-                    value={expenseForm.rate}
-                    onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
-                    className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
+                    {/* Rate */}
+                    <div className="md:col-span-1">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Rate (₹)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="Rate"
+                        value={expenseForm.rate}
+                        onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
+                        className="w-full px-1.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Row 2: Optional Bill #, Payment Mode, Total & Add Button */}
@@ -1732,22 +1789,39 @@ const ClientDetailsPage = () => {
           )}
         </form>
 
-        {/* Filter Pills & Download PDF Button */}
+        {/* Filter Pills, Hide/Show Qty & Unit Toggle, & Download PDF Button */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-1.5">
-            {['All', 'Purchase', 'Expense'].map(type => (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {['All', 'Purchase', 'Expense'].map(type => (
+                <button
+                  key={type}
+                  onClick={() => setExpenseFilter(type)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    expenseFilter === type
+                      ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
+                </button>
+              ))}
+            </div>
+
+            {expenseFilter !== 'Expense' && (
               <button
-                key={type}
-                onClick={() => setExpenseFilter(type)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  expenseFilter === type
-                    ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                type="button"
+                onClick={() => setHideTableQtyUnit(prev => !prev)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                  hideTableQtyUnit
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
                 }`}
+                title="Toggle Qty & Unit columns visibility in table"
               >
-                {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
+                <span>{hideTableQtyUnit ? '👁️ Show Qty & Unit' : '👁️‍🗨️ Hide Qty & Unit'}</span>
               </button>
-            ))}
+            )}
           </div>
 
           <button
@@ -1788,9 +1862,13 @@ const ClientDetailsPage = () => {
                       <th className="py-3 px-4">Type & Category</th>
                       <th className="py-3 px-4">Item Description</th>
                       <th className="py-3 px-4">Vendor / Supplier</th>
-                      <th className="py-3 px-4 text-center">Unit</th>
-                      <th className="py-3 px-4 text-right">Quantity</th>
-                      <th className="py-3 px-4 text-right">Rate</th>
+                      {!hideTableQtyUnit && (
+                        <>
+                          <th className="py-3 px-4 text-center">Unit</th>
+                          <th className="py-3 px-4 text-right">Quantity</th>
+                          <th className="py-3 px-4 text-right">Rate</th>
+                        </>
+                      )}
                       <th className="py-3 px-4 text-right">Amount</th>
                       <th className="py-3 px-4 text-center">Mode</th>
                       <th className="py-3 px-4 text-center">Actions</th>
@@ -1878,17 +1956,33 @@ const ClientDetailsPage = () => {
                             <span className="text-slate-400">—</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
-                            {entry.unit || 'Nos'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
-                          {entry.type === 'Expense' ? '—' : entry.quantity}
-                        </td>
-                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
-                          {entry.type === 'Expense' ? '—' : (entry.rate > 0 ? formatCurrency(entry.rate) : '-')}
-                        </td>
+                        {!hideTableQtyUnit && (
+                          <>
+                            <td className="py-3 px-4 text-center">
+                              {entry.type === 'Expense' || (!entry.rate || Number(entry.rate) <= 0 || !entry.quantity || Number(entry.quantity) <= 0 || entry.unit === '—') ? (
+                                <span className="text-slate-400">—</span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                                  {entry.unit || 'Nos'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
+                              {entry.type === 'Expense' || (!entry.rate || Number(entry.rate) <= 0 || !entry.quantity || Number(entry.quantity) <= 0 || entry.unit === '—') ? (
+                                <span className="text-slate-400 font-normal">—</span>
+                              ) : (
+                                entry.quantity
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                              {entry.type === 'Expense' || (!entry.rate || Number(entry.rate) <= 0 || !entry.quantity || Number(entry.quantity) <= 0 || entry.unit === '—') ? (
+                                <span className="text-slate-400">—</span>
+                              ) : (
+                                formatCurrency(entry.rate)
+                              )}
+                            </td>
+                          </>
+                        )}
                         <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
                           {formatCurrency(entry.amount)}
                         </td>
@@ -3091,70 +3185,115 @@ const ClientDetailsPage = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  {/* Purchase Mode Toggle in Edit Modal */}
+                  <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setExpenseForm(prev => ({ ...prev, pricingType: 'itemised' }))}
+                      className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        expenseForm.pricingType === 'itemised'
+                          ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-700 dark:text-white'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      📏 Itemised (Qty × Rate)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpenseForm(prev => ({ ...prev, pricingType: 'lump_sum' }))}
+                      className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        expenseForm.pricingType === 'lump_sum'
+                          ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-700 dark:text-white'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      💵 Lump-Sum / Flat Amount
+                    </button>
+                  </div>
+
+                  {expenseForm.pricingType === 'lump_sum' ? (
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Quantity
+                        Total Purchase Amount (₹) <span className="text-rose-500">*</span>
                       </label>
                       <input
                         type="number"
                         step="any"
-                        min="0"
-                        value={expenseForm.quantity}
-                        onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        min="1"
+                        required
+                        value={expenseForm.amount}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            Quantity
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={expenseForm.quantity}
+                            onChange={(e) => handleExpenseQtyRateChange(e.target.value, expenseForm.rate)}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Unit
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setIsUnitModalOpen(true)}
-                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
-                          title="Add, Edit or Delete Measurement Units"
-                        >
-                          <Plus size={11} className="stroke-[3]" />
-                          <span>Manage</span>
-                        </button>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Unit
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setIsUnitModalOpen(true)}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                              title="Add, Edit or Delete Measurement Units"
+                            >
+                              <Plus size={11} className="stroke-[3]" />
+                              <span>Manage</span>
+                            </button>
+                          </div>
+                          <select
+                            value={expenseForm.unit}
+                            onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
+                            className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                          >
+                            {unitsList.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            Rate per Unit (₹)
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={expenseForm.rate}
+                            onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
                       </div>
-                      <select
-                        value={expenseForm.unit}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, unit: e.target.value })}
-                        className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                      >
-                        {unitsList.map((u) => (
-                          <option key={u} value={u}>{u}</option>
-                        ))}
-                      </select>
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Rate per Unit (₹)
-                      </label>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={expenseForm.rate}
-                        onChange={(e) => handleExpenseQtyRateChange(expenseForm.quantity, e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl flex items-center justify-between">
-                    <span className="text-xs font-semibold text-rose-900 dark:text-rose-300">
-                      Total Cost:
-                    </span>
-                    <span className="text-base font-bold text-rose-700 dark:text-rose-400 font-mono">
-                      {formatCurrency(expenseForm.amount)}
-                    </span>
-                  </div>
+                      <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl flex items-center justify-between">
+                        <span className="text-xs font-semibold text-rose-900 dark:text-rose-300">
+                          Total Cost:
+                        </span>
+                        <span className="text-base font-bold text-rose-700 dark:text-rose-400 font-mono">
+                          {formatCurrency(expenseForm.amount)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -3299,6 +3438,7 @@ const ClientDetailsPage = () => {
         job={job}
         client={clientData}
         financials={fin}
+        hideQtyUnit={hideTableQtyUnit}
       />
 
       {/* Material Purchases & Operational Expenses Invoice Modal */}
@@ -3309,6 +3449,8 @@ const ClientDetailsPage = () => {
         job={job}
         purchasesAndExpenses={job?.purchasesAndExpenses || []}
         financials={fin}
+        hideQtyUnit={hideTableQtyUnit}
+        onToggleHideQtyUnit={setHideTableQtyUnit}
       />
 
       {/* 7. Quotation & Work Measurements Invoice Modal */}

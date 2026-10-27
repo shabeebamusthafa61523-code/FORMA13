@@ -128,7 +128,7 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved }) => {
   const handleWhatsAppShare = () => {
     const rawPhone = String(workerPhone || '').replace(/\D/g, '');
     const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
-    const msg = `*WAGE SLIP - FABTEC WORKS*\n────────────────────\n🧾 *Slip No:* ${slipNo}\n📅 *Date:* ${paymentDateStr}\n👤 *Employee:* ${empName} (${empCode})\n💼 *Role:* ${designation}\n💰 *Daily Wage:* ₹${dailyRate.toLocaleString('en-IN')}\n💵 *Net Paid:* ₹${paidAmount.toLocaleString('en-IN')}\n💳 *Mode:* ${paymentMode}\n📌 *Status:* ${currentStatus}\n${remarks ? `📝 *Remarks:* ${remarks}\n` : ''}────────────────────\n*FABTEC WORKS & ENGINEERING*\nVengoor, Kerala • Ph: +91 81398 77848`;
+    const msg = `*WAGE SLIP - FABTEC WORKS*\n────────────────────\n🧾 *Slip No:* ${slipNo}\n📅 *Date:* ${paymentDateStr}\n👤 *Employee:* ${empName} (${empCode})\n💼 *Role:* ${designation}\n💰 *Daily Wage:* ₹${dailyRate.toLocaleString('en-IN')}\n💵 *Net Paid:* ₹${paidAmount.toLocaleString('en-IN')}\n💳 *Mode:* ${paymentMode}\n📌 *Status:* ${currentStatus}\n${remarks ? `📝 *Remarks:* ${remarks}\n` : ''}────────────────────\n*FABTEC WORKS & ENGINEERING*\nperinthalmanna,malappuram Dt.,pin:679322\nph:8139-877848,7736-692975\nEmail:forma13interiors@gmail.com`;
     const url = cleanPhone 
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -146,12 +146,46 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved }) => {
     // Helper to sanitize cloned doc styles (converts Tailwind v4 oklch colors)
     const sanitizeClonedDocStyles = (clonedDoc) => {
       try {
+        function oklchToRgb(l, c, h) {
+          const hr = (h || 0) * Math.PI / 180;
+          const a = (c || 0) * Math.cos(hr);
+          const b = (c || 0) * Math.sin(hr);
+
+          const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+          const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+          const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+          const l3 = l_ * l_ * l_;
+          const m3 = m_ * m_ * m_;
+          const s3 = s_ * s_ * s_;
+
+          let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+          let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+          let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+          const toRgb = (x) => {
+            x = Math.max(0, Math.min(1, x));
+            return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+          };
+
+          const R = Math.round(toRgb(r) * 255);
+          const G = Math.round(toRgb(g) * 255);
+          const B = Math.round(toRgb(bl) * 255);
+
+          return `rgb(${R}, ${G}, ${B})`;
+        }
+
         const replaceOklch = (str) => {
           if (!str || typeof str !== 'string') return str;
           return str
-            .replace(/oklch\([^)]+\)/gi, '#059669')
-            .replace(/oklab\([^)]+\)/gi, '#059669')
-            .replace(/color-mix\([^)]+\)/gi, '#059669');
+            .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+              let lNum = parseFloat(l);
+              if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+              return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+            })
+            .replace(/oklch\([^)]+\)/gi, '#475569')
+            .replace(/oklab\([^)]+\)/gi, '#475569')
+            .replace(/color-mix\([^)]+\)/gi, '#475569');
         };
 
         const styleElements = clonedDoc.querySelectorAll('style');
@@ -289,8 +323,8 @@ const PayslipModal = ({ isOpen, onClose, salaryRecord, onSaved }) => {
                   <h2 className="text-base font-black tracking-tight text-slate-900">
                     FABTEC WORKS & ENGINEERING
                   </h2>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Vengoor, Kerala • Ph: +91 81398 77848, +91 77366 92975
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    perinthalmanna,malappuram Dt.,pin:679322 • ph:8139-877848,7736-692975 • Email:forma13interiors@gmail.com
                   </p>
                 </div>
 

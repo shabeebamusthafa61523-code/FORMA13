@@ -768,7 +768,7 @@ export const addPurchaseExpense = async (req, res) => {
       itemDescription: finalDescription,
       vendorName,
       billNumber,
-      quantity: Number(quantity) || 1,
+      quantity: (quantity !== undefined && quantity !== null && quantity !== '') ? Number(quantity) : 0,
       unit,
       rate: Number(rate) || 0,
       amount: calcAmount,

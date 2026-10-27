@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -19,7 +19,8 @@ import {
   ShoppingCart,
   Users,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Edit3
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
@@ -67,11 +68,19 @@ const OverallFabricationLedgerModal = ({
   onClose,
   job,
   client,
-  financials = {}
+  financials = {},
+  hideQtyUnit = false
 }) => {
   const documentRef = useRef(null);
   const [downloading, setDownloading] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
+  const [customReportDate, setCustomReportDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCustomReportDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -80,7 +89,7 @@ const OverallFabricationLedgerModal = ({
   const phone = client?.phone || job?.clientPhone || job?.client?.phone || '';
   const siteAddress = client?.address || job?.siteAddress || job?.client?.address || '';
   const ledgerNumber = `FAB-LEDGER-${(job?.jobId || 'PROJECT').replace(/[^a-zA-Z0-9-]/g, '')}`;
-  const reportDate = formatDate(new Date());
+  const reportDate = formatDate(customReportDate || new Date());
 
   // Data collections - ONLY show tables that have data
   const quotationItems = job?.quotationItems || [];
@@ -113,12 +122,46 @@ const OverallFabricationLedgerModal = ({
       // Helper to sanitize Tailwind v4 oklch/oklab styles for html2canvas
       const sanitizeClonedDocStyles = (clonedDoc) => {
         try {
+          function oklchToRgb(l, c, h) {
+            const hr = (h || 0) * Math.PI / 180;
+            const a = (c || 0) * Math.cos(hr);
+            const b = (c || 0) * Math.sin(hr);
+
+            const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+            const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+            const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+            const l3 = l_ * l_ * l_;
+            const m3 = m_ * m_ * m_;
+            const s3 = s_ * s_ * s_;
+
+            let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+            let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+            let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+            const toRgb = (x) => {
+              x = Math.max(0, Math.min(1, x));
+              return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+            };
+
+            const R = Math.round(toRgb(r) * 255);
+            const G = Math.round(toRgb(g) * 255);
+            const B = Math.round(toRgb(bl) * 255);
+
+            return `rgb(${R}, ${G}, ${B})`;
+          }
+
           const replaceOklch = (str) => {
             if (!str || typeof str !== 'string') return str;
             return str
-              .replace(/oklch\([^)]+\)/gi, '#4f46e5')
-              .replace(/oklab\([^)]+\)/gi, '#4f46e5')
-              .replace(/color-mix\([^)]+\)/gi, '#4f46e5');
+              .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+                let lNum = parseFloat(l);
+                if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+                return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+              })
+              .replace(/oklch\([^)]+\)/gi, '#475569')
+              .replace(/oklab\([^)]+\)/gi, '#475569')
+              .replace(/color-mix\([^)]+\)/gi, '#475569');
           };
 
           const styleElements = clonedDoc.querySelectorAll('style');
@@ -195,6 +238,19 @@ const OverallFabricationLedgerModal = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Edit Statement Date */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs">
+              <Calendar size={14} className="text-indigo-600 shrink-0" />
+              <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Date:</span>
+              <input
+                type="date"
+                value={customReportDate}
+                onChange={(e) => setCustomReportDate(e.target.value)}
+                className="bg-transparent border-0 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                title="Change statement date"
+              />
+            </div>
+
             {/* Print Button */}
             <button
               onClick={() => window.print()}
@@ -333,8 +389,9 @@ const OverallFabricationLedgerModal = ({
                 )}
                 <div className="text-[10px] leading-tight space-y-0.5 pt-0.5 font-medium" style={{ color: '#475569' }}>
                   <p className="font-bold text-slate-800">FABTEC FABRICATION & ENGINEERING WORKS</p>
-                  <p>Vengoor</p>
-                  <p>Phone: 8139877848, 7736692975</p>
+                  <p>perinthalmanna,malappuram Dt.,pin:679322</p>
+                  <p>ph:8139-877848,7736-692975</p>
+                  <p>Email:forma13interiors@gmail.com</p>
                 </div>
               </div>
 
@@ -344,7 +401,18 @@ const OverallFabricationLedgerModal = ({
                 </span>
                 <p className="text-sm font-black text-slate-900 tracking-tight">{ledgerNumber}</p>
                 <div className="text-[10.5px] text-slate-500 font-medium space-y-0.5">
-                  <p>Statement Date: <strong className="text-slate-800 font-bold">{reportDate}</strong></p>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <p>Statement Date: <strong className="text-slate-800 font-bold">{reportDate}</strong></p>
+                    <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                      <Edit3 size={11} />
+                      <input
+                        type="date"
+                        value={customReportDate}
+                        onChange={(e) => setCustomReportDate(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
                   <p>Job Ref: <strong className="text-indigo-600 font-bold">{job?.jobId || 'FAB-PROJECT'}</strong></p>
                 </div>
               </div>
@@ -475,9 +543,13 @@ const OverallFabricationLedgerModal = ({
                         <th className="py-2 px-2.5 w-20">Date</th>
                         <th className="py-2 px-3">Item / Category Description</th>
                         <th className="py-2 px-2.5">Vendor / Supplier</th>
-                        <th className="py-2 px-2 text-center w-12">Unit</th>
-                        <th className="py-2 px-2 text-right w-12">Qty</th>
-                        <th className="py-2 px-2.5 text-right w-16">Rate (₹)</th>
+                        {!hideQtyUnit && (
+                          <>
+                            <th className="py-2 px-2 text-center w-12">Unit</th>
+                            <th className="py-2 px-2 text-right w-12">Qty</th>
+                            <th className="py-2 px-2.5 text-right w-16">Rate (₹)</th>
+                          </>
+                        )}
                         <th className="py-2 px-3 text-right w-20">Amount (₹)</th>
                         <th className="py-2 px-2 text-center w-16">Mode</th>
                       </tr>
@@ -485,6 +557,7 @@ const OverallFabricationLedgerModal = ({
                     <tbody className="divide-y divide-slate-100">
                       {purchasesAndExpenses.map((item, idx) => {
                         const hasDesc = item.itemDescription && item.itemDescription.trim() !== '' && item.itemDescription.trim() !== 'Material Purchase' && item.itemDescription.trim() !== 'Site Operational Expense';
+                        const isLumpSum = item.type === 'Expense' || !item.rate || Number(item.rate) <= 0 || !item.quantity || Number(item.quantity) <= 0 || item.unit === '—';
                         return (
                           <tr key={item._id || idx} className="hover:bg-slate-50/50">
                             <td className="py-2 px-2.5 text-center text-slate-400 font-medium">{idx + 1}</td>
@@ -507,16 +580,20 @@ const OverallFabricationLedgerModal = ({
                               )}
                             </td>
                             <td className="py-2 px-2.5 text-slate-700">{item.vendorName || '—'}</td>
-                            <td className="py-2 px-2 text-center font-medium text-slate-600">{item.type === 'Expense' ? '—' : (item.unit || 'Nos')}</td>
-                            <td className="py-2 px-2 text-right text-slate-700">{item.type === 'Expense' ? '1' : (item.quantity || 1)}</td>
-                            <td className="py-2 px-2.5 text-right text-slate-700">{item.type === 'Expense' ? formatCurrency(item.amount) : formatCurrency(item.rate)}</td>
+                            {!hideQtyUnit && (
+                              <>
+                                <td className="py-2 px-2 text-center font-medium text-slate-600">{isLumpSum ? '—' : (item.unit || 'Nos')}</td>
+                                <td className="py-2 px-2 text-right text-slate-700">{isLumpSum ? '—' : (item.quantity || 1)}</td>
+                                <td className="py-2 px-2.5 text-right text-slate-700">{isLumpSum ? '—' : formatCurrency(item.rate)}</td>
+                              </>
+                            )}
                             <td className="py-2 px-3 text-right font-bold text-slate-900">{formatCurrency(item.amount)}</td>
                             <td className="py-2 px-2 text-center text-slate-600">{item.paymentMode || 'Cash'}</td>
                           </tr>
                         );
                       })}
                       <tr className="bg-slate-50 font-bold border-t border-slate-200 text-[10.5px]">
-                        <td colSpan={7} className="py-2 px-3 text-right uppercase text-slate-500 text-[9.5px]">
+                        <td colSpan={hideQtyUnit ? 4 : 7} className="py-2 px-3 text-right uppercase text-slate-500 text-[9.5px]">
                           Purchases: {formatCurrency(totalPurchases)} • Expenses: {formatCurrency(totalExpenses)} | Total:
                         </td>
                         <td className="py-2 px-3 text-right font-black text-rose-600">
