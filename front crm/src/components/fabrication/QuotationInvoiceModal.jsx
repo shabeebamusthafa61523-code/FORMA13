@@ -135,6 +135,32 @@ const QuotationInvoiceModal = ({
   const [editingTermId, setEditingTermId] = useState(null);
   const [editingTermText, setEditingTermText] = useState('');
 
+  // Editable Quotation Date
+  const [customInvoiceDate, setCustomInvoiceDate] = useState(() => {
+    if (job?.startDate) {
+      try {
+        const d = new Date(job.startDate);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      } catch (e) {}
+    }
+    return new Date().toISOString().split('T')[0];
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (job?.startDate) {
+        try {
+          const d = new Date(job.startDate);
+          if (!isNaN(d.getTime())) {
+            setCustomInvoiceDate(d.toISOString().split('T')[0]);
+            return;
+          }
+        } catch (e) {}
+      }
+      setCustomInvoiceDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [isOpen, job?.startDate]);
+
   // Fetch Master Terms from MongoDB on modal open
   useEffect(() => {
     if (!isOpen) return;
@@ -298,7 +324,7 @@ const QuotationInvoiceModal = ({
   const siteAddress = client?.address || job?.siteAddress || '';
   const gstNumber = client?.gstNumber || '';
   const invoiceNumber = `FAB-QT-${job?.jobId || '2026-001'}`;
-  const issueDate = formatDate(job?.startDate || new Date());
+  const issueDate = formatDate(customInvoiceDate || new Date());
   
   // Financial Totals
   const grossTotal = financials.grossQuotation || quotationItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
@@ -329,12 +355,46 @@ const QuotationInvoiceModal = ({
       // Helper to sanitize cloned doc for html2canvas
       const sanitizeClonedDocStyles = (clonedDoc) => {
         try {
+          function oklchToRgb(l, c, h) {
+            const hr = (h || 0) * Math.PI / 180;
+            const a = (c || 0) * Math.cos(hr);
+            const b = (c || 0) * Math.sin(hr);
+
+            const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+            const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+            const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+            const l3 = l_ * l_ * l_;
+            const m3 = m_ * m_ * m_;
+            const s3 = s_ * s_ * s_;
+
+            let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+            let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+            let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+            const toRgb = (x) => {
+              x = Math.max(0, Math.min(1, x));
+              return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+            };
+
+            const R = Math.round(toRgb(r) * 255);
+            const G = Math.round(toRgb(g) * 255);
+            const B = Math.round(toRgb(bl) * 255);
+
+            return `rgb(${R}, ${G}, ${B})`;
+          }
+
           const replaceOklch = (str) => {
             if (!str || typeof str !== 'string') return str;
             return str
-              .replace(/oklch\([^)]+\)/gi, '#4f46e5')
-              .replace(/oklab\([^)]+\)/gi, '#4f46e5')
-              .replace(/color-mix\([^)]+\)/gi, '#4f46e5');
+              .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+                let lNum = parseFloat(l);
+                if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+                return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+              })
+              .replace(/oklch\([^)]+\)/gi, '#475569')
+              .replace(/oklab\([^)]+\)/gi, '#475569')
+              .replace(/color-mix\([^)]+\)/gi, '#475569');
           };
 
           const styleElements = clonedDoc.querySelectorAll('style');
@@ -353,59 +413,44 @@ const QuotationInvoiceModal = ({
               }
             } catch (e) {}
           });
+          // Ensure container matches full A4 width cleanly without dialog shadows or rounded borders
+          const target = clonedDoc.getElementById('printable-quotation-invoice');
+          if (target) {
+            target.style.boxShadow = 'none';
+            target.style.border = 'none';
+            target.style.borderRadius = '0';
+            target.style.width = '100%';
+            target.style.maxWidth = '100%';
+          }
+
+          // Hide interactive-only buttons/icons from PDF export
+          const noPrint = clonedDoc.querySelectorAll('.print\\:hidden, .no-print');
+          noPrint.forEach((el) => {
+            el.style.display = 'none';
+          });
         } catch (e) {}
       };
 
-      // 1-page guaranteed rendering using html2canvas & jsPDF:
-      try {
-        const canvas = await html2canvas(element, {
+      const opt = {
+        margin: [6, 6, 6, 6],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
           scale: 2,
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
           onclone: sanitizeClonedDocStyles
-        });
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-
-        // Fit into exactly 1 single page with a clean 5mm margin
-        const margin = 5;
-        const usableWidth = pdfWidth - (margin * 2);
-        const usableHeight = pageHeight - (margin * 2);
-        const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height);
-        const renderWidth = canvas.width * ratio;
-        const renderHeight = canvas.height * ratio;
-        const xOffset = margin + (usableWidth - renderWidth) / 2;
-        const yOffset = margin;
-
-        pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderWidth, renderHeight);
-        pdf.save(filename);
-      } catch (directErr) {
-        console.warn('Direct jsPDF 1-page render failed, trying html2pdf fallback:', directErr);
-        const opt = {
-          margin: [4, 4, 4, 4],
-          filename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-            onclone: sanitizeClonedDocStyles
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-        };
-
-        const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
-        if (typeof html2pdfFunc === 'function') {
-          await html2pdfFunc().set(opt).from(element).save();
-        } else {
-          window.print();
-        }
+      const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
+      if (typeof html2pdfFunc === 'function') {
+        await html2pdfFunc().set(opt).from(element).save();
+      } else {
+        window.print();
       }
     } catch (err) {
       console.error('Failed to generate PDF:', err);
@@ -463,6 +508,19 @@ const QuotationInvoiceModal = ({
               </span>
               {isManagingTerms ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
+
+            {/* Edit Invoice Date */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs">
+              <Calendar size={14} className="text-indigo-600 shrink-0" />
+              <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Date:</span>
+              <input
+                type="date"
+                value={customInvoiceDate}
+                onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                className="bg-transparent border-0 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                title="Change quotation date"
+              />
+            </div>
 
             {/* Print Button */}
             <button
@@ -754,9 +812,10 @@ const QuotationInvoiceModal = ({
                 )}
 
                 {/* Company Address & Phone Details */}
-                <div className="text-[10.5px] leading-tight space-y-0.5 pt-0.5 font-medium" style={{ color: '#475569' }}>
-                  <p>Vengoor</p>
-                  <p>8139877848, 7736692975</p>
+                <div className="text-[10px] leading-tight space-y-0.5 pt-0.5 font-medium" style={{ color: '#475569' }}>
+                  <p>perinthalmanna,malappuram Dt.,pin:679322</p>
+                  <p>ph:8139-877848,7736-692975</p>
+                  <p>Email:forma13interiors@gmail.com</p>
                 </div>
               </div>
 
@@ -772,8 +831,18 @@ const QuotationInvoiceModal = ({
                   <p className="font-mono font-bold text-xs tracking-tight" style={{ color: '#0f172a' }}>
                     {invoiceNumber}
                   </p>
-                  <div className="flex items-center sm:justify-end gap-2 text-[11px]" style={{ color: '#475569' }}>
+                  <div className="flex items-center sm:justify-end gap-1.5 text-[11px]" style={{ color: '#475569' }}>
+                    <Calendar size={13} style={{ color: '#94a3b8' }} />
                     <span>Date: <strong style={{ color: '#0f172a' }}>{issueDate}</strong></span>
+                    <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                      <Edit3 size={11} />
+                      <input
+                        type="date"
+                        value={customInvoiceDate}
+                        onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
                   </div>
                 </div>
               </div>

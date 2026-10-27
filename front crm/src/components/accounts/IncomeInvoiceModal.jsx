@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Download, Building2, GraduationCap, Coins, ShieldCheck, FileText, CheckCircle2, Pencil, Loader2, Save, History, Receipt, Plus, User, Trash2, Check, MessageCircle, ChevronDown } from 'lucide-react';
+import { X, Printer, Download, Building2, GraduationCap, Coins, ShieldCheck, FileText, CheckCircle2, Pencil, Loader2, Save, History, Receipt, Plus, User, Trash2, Check, MessageCircle, ChevronDown, Calendar, Edit3 } from 'lucide-react';
 import { updatePaymentSettlement, deletePaymentSettlement } from '../../services/accountsService';
 import ConfirmModal from '../ConfirmModal';
 import html2pdf from 'html2pdf.js';
@@ -17,6 +17,7 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
   const [viewMode, setViewMode] = useState(initialMode); // 'invoice' or 'receipt'
   const [editReceiptNo, setEditReceiptNo] = useState('');
   const [editReceiptDate, setEditReceiptDate] = useState('');
+  const [customInvoiceDate, setCustomInvoiceDate] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState('Bank Transfer');
   const [editNotes, setEditNotes] = useState('');
   const [editAmount, setEditAmount] = useState(0);
@@ -155,6 +156,9 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
           ? new Date(incomeRecord.receiptDate).toISOString().split('T')[0]
           : (incomeRecord.date ? new Date(incomeRecord.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
       );
+      setCustomInvoiceDate(
+        incomeRecord.date ? new Date(incomeRecord.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+      );
       setEditPaymentMethod(incomeRecord.paymentMethod || 'Bank Transfer');
       const recPaid = parseFloat(incomeRecord.receiptAmount || 0);
       setEditAmount((incomeRecord.status === 'Paid' || incomeRecord.status === 'Partially Paid') && recPaid > 0 ? recPaid : 0);
@@ -255,7 +259,8 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
   const defaultRecNo = getReceiptNumber();
   const recNo = editReceiptNo || defaultRecNo;
 
-  const formattedDate = date ? new Date(date).toLocaleDateString('en-IN', {
+  const effectiveInvoiceDate = customInvoiceDate || date;
+  const formattedDate = effectiveInvoiceDate ? new Date(effectiveInvoiceDate).toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric'
@@ -276,7 +281,47 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
     if (!element) return null;
 
     const sanitizeClonedDocStyles = (clonedDoc) => {
-      const replaceOklch = (str) => str.replace(/oklch\([^)]+\)/g, '#6366f1').replace(/oklab\([^)]+\)/g, '#6366f1');
+      function oklchToRgb(l, c, h) {
+        const hr = (h || 0) * Math.PI / 180;
+        const a = (c || 0) * Math.cos(hr);
+        const b = (c || 0) * Math.sin(hr);
+
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+        const toRgb = (x) => {
+          x = Math.max(0, Math.min(1, x));
+          return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        };
+
+        const R = Math.round(toRgb(r) * 255);
+        const G = Math.round(toRgb(g) * 255);
+        const B = Math.round(toRgb(bl) * 255);
+
+        return `rgb(${R}, ${G}, ${B})`;
+      }
+
+      const replaceOklch = (str) => {
+        if (!str || typeof str !== 'string') return str;
+        return str
+          .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+            let lNum = parseFloat(l);
+            if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+            return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+          })
+          .replace(/oklch\([^)]+\)/gi, '#475569')
+          .replace(/oklab\([^)]+\)/gi, '#475569')
+          .replace(/color-mix\([^)]+\)/gi, '#475569');
+      };
       const allElements = clonedDoc.querySelectorAll('*');
       allElements.forEach((el) => {
         try {
@@ -337,7 +382,47 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
     if (!element) return null;
 
     const sanitizeClonedDocStyles = (clonedDoc) => {
-      const replaceOklch = (str) => str.replace(/oklch\([^)]+\)/g, '#6366f1').replace(/oklab\([^)]+\)/g, '#6366f1');
+      function oklchToRgb(l, c, h) {
+        const hr = (h || 0) * Math.PI / 180;
+        const a = (c || 0) * Math.cos(hr);
+        const b = (c || 0) * Math.sin(hr);
+
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+        const toRgb = (x) => {
+          x = Math.max(0, Math.min(1, x));
+          return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        };
+
+        const R = Math.round(toRgb(r) * 255);
+        const G = Math.round(toRgb(g) * 255);
+        const B = Math.round(toRgb(bl) * 255);
+
+        return `rgb(${R}, ${G}, ${B})`;
+      }
+
+      const replaceOklch = (str) => {
+        if (!str || typeof str !== 'string') return str;
+        return str
+          .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+            let lNum = parseFloat(l);
+            if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+            return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+          })
+          .replace(/oklch\([^)]+\)/gi, '#475569')
+          .replace(/oklab\([^)]+\)/gi, '#475569')
+          .replace(/color-mix\([^)]+\)/gi, '#475569');
+      };
       const allElements = clonedDoc.querySelectorAll('*');
       allElements.forEach((el) => {
         try {
@@ -1131,6 +1216,20 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 <span>{isEditingReceipt ? 'Close Editor' : 'Edit Receipt'}</span>
               </button>
             )}
+            {viewMode === 'invoice' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs">
+                <Calendar size={14} className="text-indigo-600 shrink-0" />
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Date:</span>
+                <input
+                  type="date"
+                  value={customInvoiceDate}
+                  onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                  className="bg-transparent border-0 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  title="Change invoice date"
+                />
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handlePrint}
@@ -1286,9 +1385,10 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-4" style={{ borderColor: '#e2e8f0' }}>
                   <div className="space-y-1">
                     <img src="/logo3.png" alt="Logo" className="h-11 w-auto object-contain" />
-                    <div className="text-[10px] leading-tight text-slate-500 font-medium">
-                      <p>Workshop & Site Office: Vengoor, Kerala, India</p>
-                      <p className="font-mono text-slate-700">Ph: +91 81398 77848, +91 77366 92975</p>
+                    <div className="text-[10px] leading-tight text-slate-500 font-medium space-y-0.5">
+                      <p>perinthalmanna,malappuram Dt.,pin:679322</p>
+                      <p>ph:8139-877848,7736-692975</p>
+                      <p>Email:forma13interiors@gmail.com</p>
                     </div>
                   </div>
 
@@ -1298,7 +1398,18 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                     </span>
                     <div className="pt-1.5 text-xs space-y-0.5">
                       <p className="font-semibold" style={{ color: '#0f172a' }}>Receipt No: <span className="font-mono font-bold" style={{ color: '#0f172a' }}>{particularRecNo ? particularRecNo.replace(/^#+/, '') : ''}</span></p>
-                      <p className="text-[11px]" style={{ color: '#64748b' }}>Payment Date: <strong style={{ color: '#0f172a' }}>{particularReceiptDate}</strong></p>
+                      <p className="text-[11px] flex items-center sm:justify-end gap-1.5" style={{ color: '#64748b' }}>
+                        <span>Payment Date: <strong style={{ color: '#0f172a' }}>{particularReceiptDate}</strong></span>
+                        <label className="cursor-pointer text-emerald-600 hover:text-emerald-800 p-0.5 rounded hover:bg-emerald-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                          <Edit3 size={11} />
+                          <input
+                            type="date"
+                            value={editReceiptDate}
+                            onChange={(e) => setEditReceiptDate(e.target.value)}
+                            className="sr-only"
+                          />
+                        </label>
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1419,7 +1530,18 @@ const IncomeInvoiceModal = ({ isOpen, onClose, incomeRecord, initialMode = 'invo
                     </span>
                     <div className="pt-1.5 text-xs space-y-0.5">
                       <p className="font-semibold" style={{ color: '#0f172a' }}>{incomeRecord?.status === 'Proforma' ? 'Proforma No:' : 'Invoice No:'} <span className="font-mono font-bold" style={{ color: '#0f172a' }}>{invoiceNo ? invoiceNo.replace(/^#+/, '') : ''}</span></p>
-                      <p className="text-[11px]" style={{ color: '#64748b' }}>Issue Date: <strong style={{ color: '#0f172a' }}>{formattedDate}</strong></p>
+                      <p className="text-[11px] flex items-center sm:justify-end gap-1.5" style={{ color: '#64748b' }}>
+                        <span>Issue Date: <strong style={{ color: '#0f172a' }}>{formattedDate}</strong></span>
+                        <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                          <Edit3 size={11} />
+                          <input
+                            type="date"
+                            value={customInvoiceDate}
+                            onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                            className="sr-only"
+                          />
+                        </label>
+                      </p>
                       {incomeRecord.dueDate && (
                         <p className="text-[11px]" style={{ color: '#64748b' }}>Due Date: <strong style={{ color: '#0f172a' }}>{new Date(incomeRecord.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></p>
                       )}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -16,7 +16,8 @@ import {
   Phone,
   MapPin,
   Building2,
-  Loader2
+  Loader2,
+  Edit3
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
@@ -84,6 +85,23 @@ const PaymentReceiptModal = ({
   const { showToast } = useToast();
   const [downloading, setDownloading] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
+  const [customReceiptDate, setCustomReceiptDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const rawDate = payment?.date || payment?.receiptDate || settlementData?.date || settlementData?.receiptDate || receiptData?.receiptDate || incomeRecord?.date;
+      if (rawDate) {
+        try {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            setCustomReceiptDate(d.toISOString().split('T')[0]);
+            return;
+          }
+        } catch (e) {}
+      }
+      setCustomReceiptDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [isOpen, payment, settlementData, receiptData, incomeRecord]);
 
   if (!isOpen) return null;
 
@@ -119,7 +137,8 @@ const PaymentReceiptModal = ({
   ) || 0;
 
   // Payment Date
-  const paymentDate = resolvedPayment.date || resolvedPayment.receiptDate || receiptData?.receiptDate || incomeRecord?.date || new Date();
+  const rawDate = resolvedPayment.date || resolvedPayment.receiptDate || receiptData?.receiptDate || incomeRecord?.date;
+  const paymentDate = customReceiptDate || rawDate || new Date();
 
   // Payment Mode
   const paymentMode = resolvedPayment.paymentMode || resolvedPayment.paymentMethod || receiptData?.wayOfIncome || incomeRecord?.paymentMethod || 'Cash';
@@ -161,9 +180,43 @@ const PaymentReceiptModal = ({
     // Helper to sanitize cloned doc for html2canvas (converts Tailwind v4 oklch colors)
     const sanitizeClonedDocStyles = (clonedDoc) => {
       try {
+        function oklchToRgb(l, c, h) {
+          const hr = (h || 0) * Math.PI / 180;
+          const a = (c || 0) * Math.cos(hr);
+          const b = (c || 0) * Math.sin(hr);
+
+          const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+          const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+          const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+          const l3 = l_ * l_ * l_;
+          const m3 = m_ * m_ * m_;
+          const s3 = s_ * s_ * s_;
+
+          let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+          let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+          let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+          const toRgb = (x) => {
+            x = Math.max(0, Math.min(1, x));
+            return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+          };
+
+          const R = Math.round(toRgb(r) * 255);
+          const G = Math.round(toRgb(g) * 255);
+          const B = Math.round(toRgb(bl) * 255);
+
+          return `rgb(${R}, ${G}, ${B})`;
+        }
+
         const replaceOklch = (str) => {
           if (!str || typeof str !== 'string') return str;
           return str
+            .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+              let lNum = parseFloat(l);
+              if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+              return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+            })
             .replace(/oklch\([^)]+\)/gi, '#059669')
             .replace(/oklab\([^)]+\)/gi, '#059669')
             .replace(/color-mix\([^)]+\)/gi, '#059669');
@@ -292,6 +345,19 @@ const PaymentReceiptModal = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Edit Receipt Date */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 text-xs font-semibold shadow-xs">
+              <Calendar size={14} className="text-emerald-400 shrink-0" />
+              <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Date:</span>
+              <input
+                type="date"
+                value={customReceiptDate}
+                onChange={(e) => setCustomReceiptDate(e.target.value)}
+                className="bg-transparent border-0 text-xs font-bold text-white focus:outline-none cursor-pointer"
+                title="Change receipt date"
+              />
+            </div>
+
             <button
               type="button"
               onClick={handleWhatsAppShare}
@@ -370,9 +436,10 @@ const PaymentReceiptModal = ({
                 )}
 
                 {/* Company Address & Contacts */}
-                <div className="text-[11px] leading-tight space-y-0.5 pt-1 text-slate-600 font-medium">
-                  <p>Workshop & Site Office: Vengoor, Kerala, India</p>
-                  <p className="font-mono text-slate-700">Ph: +91 81398 77848, +91 77366 92975</p>
+                <div className="text-[10.5px] leading-tight space-y-0.5 pt-1 text-slate-600 font-medium">
+                  <p>perinthalmanna,malappuram Dt.,pin:679322</p>
+                  <p>ph:8139-877848,7736-692975</p>
+                  <p>Email:forma13interiors@gmail.com</p>
                 </div>
               </div>
 
@@ -389,6 +456,15 @@ const PaymentReceiptModal = ({
                 <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
                   <Calendar size={13} className="text-slate-400" />
                   <span>Date: <strong className="text-slate-900">{formatDate(paymentDate)}</strong></span>
+                  <label className="cursor-pointer text-emerald-600 hover:text-emerald-800 p-0.5 rounded hover:bg-emerald-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                    <Edit3 size={11} />
+                    <input
+                      type="date"
+                      value={customReceiptDate}
+                      onChange={(e) => setCustomReceiptDate(e.target.value)}
+                      className="sr-only"
+                    />
+                  </label>
                 </div>
                 <div className="text-[11px] font-mono text-slate-500">
                   Ref Order: <strong className="text-slate-800">#{resolvedJob.jobNumber || resolvedJob.jobId || 'FAB'}</strong>

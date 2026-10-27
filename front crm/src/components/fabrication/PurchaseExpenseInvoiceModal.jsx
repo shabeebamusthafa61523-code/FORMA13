@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -16,7 +16,8 @@ import {
   Phone,
   Briefcase,
   FileText,
-  DollarSign
+  DollarSign,
+  Edit3
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
@@ -65,21 +66,42 @@ const PurchaseExpenseInvoiceModal = ({
   job,
   client,
   purchasesAndExpenses = [],
-  financials = {}
+  financials = {},
+  hideQtyUnit = false,
+  onToggleHideQtyUnit
 }) => {
   const invoiceRef = useRef(null);
   const [downloading, setDownloading] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
   const [filterType, setFilterType] = useState('All'); // 'All' | 'Purchase' | 'Expense'
+  const [hideQtyUnitRate, setHideQtyUnitRate] = useState(hideQtyUnit);
+  const [customInvoiceDate, setCustomInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCustomInvoiceDate(new Date().toISOString().split('T')[0]);
+      setHideQtyUnitRate(hideQtyUnit);
+    }
+  }, [isOpen, hideQtyUnit]);
 
   if (!isOpen) return null;
+
+  const handleToggleHideQtyUnit = () => {
+    const nextVal = !hideQtyUnitRate;
+    setHideQtyUnitRate(nextVal);
+    if (typeof onToggleHideQtyUnit === 'function') {
+      onToggleHideQtyUnit(nextVal);
+    }
+  };
+
+  const shouldHideColumns = hideQtyUnitRate || filterType === 'Expense';
 
   // Resolve client & job details
   const clientName = client?.companyName || client?.clientName || client?.name || job?.clientName || job?.client?.name || 'Valued Client';
   const phone = client?.phone || job?.clientPhone || job?.client?.phone || '';
   const siteAddress = client?.address || job?.siteAddress || job?.client?.address || '';
   const invoiceNumber = `FAB-PUR-${(job?.jobId || 'EXP').replace(/[^a-zA-Z0-9-]/g, '')}`;
-  const issueDate = formatDate(new Date());
+  const issueDate = formatDate(customInvoiceDate || new Date());
 
   // Filter items based on active tab
   const items = (purchasesAndExpenses || []).filter(item => {
@@ -112,12 +134,46 @@ const PurchaseExpenseInvoiceModal = ({
       // Helper to sanitize Tailwind v4 oklch/oklab styles for html2canvas
       const sanitizeClonedDocStyles = (clonedDoc) => {
         try {
+          function oklchToRgb(l, c, h) {
+            const hr = (h || 0) * Math.PI / 180;
+            const a = (c || 0) * Math.cos(hr);
+            const b = (c || 0) * Math.sin(hr);
+
+            const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+            const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+            const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+            const l3 = l_ * l_ * l_;
+            const m3 = m_ * m_ * m_;
+            const s3 = s_ * s_ * s_;
+
+            let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+            let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+            let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+            const toRgb = (x) => {
+              x = Math.max(0, Math.min(1, x));
+              return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+            };
+
+            const R = Math.round(toRgb(r) * 255);
+            const G = Math.round(toRgb(g) * 255);
+            const B = Math.round(toRgb(bl) * 255);
+
+            return `rgb(${R}, ${G}, ${B})`;
+          }
+
           const replaceOklch = (str) => {
             if (!str || typeof str !== 'string') return str;
             return str
-              .replace(/oklch\([^)]+\)/gi, '#4f46e5')
-              .replace(/oklab\([^)]+\)/gi, '#4f46e5')
-              .replace(/color-mix\([^)]+\)/gi, '#4f46e5');
+              .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+                let lNum = parseFloat(l);
+                if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+                return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+              })
+              .replace(/oklch\([^)]+\)/gi, '#475569')
+              .replace(/oklab\([^)]+\)/gi, '#475569')
+              .replace(/color-mix\([^)]+\)/gi, '#475569');
           };
 
           const styleElements = clonedDoc.querySelectorAll('style');
@@ -136,58 +192,45 @@ const PurchaseExpenseInvoiceModal = ({
               }
             } catch (e) {}
           });
+
+          // Ensure container matches full A4 width cleanly without dialog shadows or rounded borders
+          const target = clonedDoc.getElementById('printable-purchase-expense-invoice');
+          if (target) {
+            target.style.boxShadow = 'none';
+            target.style.border = 'none';
+            target.style.borderRadius = '0';
+            target.style.width = '100%';
+            target.style.maxWidth = '100%';
+          }
+
+          // Hide interactive-only buttons/icons from PDF export
+          const noPrint = clonedDoc.querySelectorAll('.print\\:hidden, .no-print');
+          noPrint.forEach((el) => {
+            el.style.display = 'none';
+          });
         } catch (e) {}
       };
 
-      // Try 1-page fit with html2canvas & jsPDF
-      try {
-        const canvas = await html2canvas(element, {
+      const opt = {
+        margin: [6, 6, 6, 6],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
           scale: 2,
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
           onclone: sanitizeClonedDocStyles
-        });
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-
-        const margin = 5;
-        const usableWidth = pdfWidth - (margin * 2);
-        const usableHeight = pageHeight - (margin * 2);
-        const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height);
-        const renderWidth = canvas.width * ratio;
-        const renderHeight = canvas.height * ratio;
-        const xOffset = margin + (usableWidth - renderWidth) / 2;
-        const yOffset = margin;
-
-        pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderWidth, renderHeight);
-        pdf.save(filename);
-      } catch (directErr) {
-        console.warn('Direct jsPDF render failed, using html2pdf fallback:', directErr);
-        const opt = {
-          margin: [4, 4, 4, 4],
-          filename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-            onclone: sanitizeClonedDocStyles
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-        };
-
-        const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
-        if (typeof html2pdfFunc === 'function') {
-          await html2pdfFunc().set(opt).from(element).save();
-        } else {
-          window.print();
-        }
+      const html2pdfFunc = typeof html2pdf === 'function' ? html2pdf : (html2pdf.default || window.html2pdf);
+      if (typeof html2pdfFunc === 'function') {
+        await html2pdfFunc().set(opt).from(element).save();
+      } else {
+        window.print();
       }
     } catch (err) {
       console.error('Failed to generate PDF:', err);
@@ -223,6 +266,19 @@ const PurchaseExpenseInvoiceModal = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Edit Invoice Date */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs">
+              <Calendar size={14} className="text-indigo-600 shrink-0" />
+              <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Date:</span>
+              <input
+                type="date"
+                value={customInvoiceDate}
+                onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                className="bg-transparent border-0 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                title="Change procurement invoice date"
+              />
+            </div>
+
             {/* Print Button */}
             <button
               onClick={() => window.print()}
@@ -264,24 +320,41 @@ const PurchaseExpenseInvoiceModal = ({
 
         {/* TOOLBAR: FILTER TABS & TOTAL SUMMARY */}
         <div className="bg-slate-50 px-6 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
-          <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
-            {[
-              { id: 'All', label: `All Entries (${purchasesAndExpenses.length})` },
-              { id: 'Purchase', label: `Purchases (${purchasesAndExpenses.filter(p => p.type === 'Purchase').length})` },
-              { id: 'Expense', label: `Site Expenses (${purchasesAndExpenses.filter(p => p.type === 'Expense').length})` }
-            ].map(tab => (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
+              {[
+                { id: 'All', label: `All Entries (${purchasesAndExpenses.length})` },
+                { id: 'Purchase', label: `Purchases (${purchasesAndExpenses.filter(p => p.type === 'Purchase').length})` },
+                { id: 'Expense', label: `Site Expenses (${purchasesAndExpenses.filter(p => p.type === 'Expense').length})` }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setFilterType(tab.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    filterType === tab.id
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {filterType !== 'Expense' && (
               <button
-                key={tab.id}
-                onClick={() => setFilterType(tab.id)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  filterType === tab.id
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                type="button"
+                onClick={handleToggleHideQtyUnit}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border print:hidden ${
+                  hideQtyUnitRate
+                    ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                    : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
                 }`}
+                title="Toggle Qty & Unit columns visibility on invoice"
               >
-                {tab.label}
+                {hideQtyUnitRate ? '👁️ Show Qty & Unit' : '👁️‍🗨️ Hide Qty & Unit'}
               </button>
-            ))}
+            )}
           </div>
 
           <div className="flex items-center gap-3 font-semibold text-slate-600">
@@ -295,18 +368,18 @@ const PurchaseExpenseInvoiceModal = ({
 
         {/* SCROLLABLE DOCUMENT PREVIEW */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-slate-100/90 flex justify-center">
-          
-          {/* PRINTABLE INVOICE CANVAS (A4 Format) */}
-          <div 
-            ref={invoiceRef}
-            id="printable-purchase-expense-invoice"
-            className="w-full max-w-[800px] bg-white text-slate-900 px-6 sm:px-8 py-6 rounded-2xl shadow-xl border border-slate-200 space-y-4 relative overflow-hidden h-fit"
-            style={{ 
-              fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              backgroundColor: '#ffffff',
-              color: '#0f172a'
-            }}
-          >
+          <div className="w-full max-w-[800px] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-fit">
+            {/* PRINTABLE INVOICE CANVAS (A4 Format) */}
+            <div 
+              ref={invoiceRef}
+              id="printable-purchase-expense-invoice"
+              className="w-full bg-white text-slate-900 px-6 sm:px-8 py-6 space-y-4 relative"
+              style={{ 
+                fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                backgroundColor: '#ffffff',
+                color: '#0f172a'
+              }}
+            >
             {/* Print Stylesheet */}
             <style>{`
               @media print {
@@ -352,8 +425,9 @@ const PurchaseExpenseInvoiceModal = ({
                 )}
                 <div className="text-[10px] leading-tight space-y-0.5 pt-0.5 font-medium" style={{ color: '#475569' }}>
                   <p className="font-bold text-slate-800">FABTEC FABRICATION & ENGINEERING WORKS</p>
-                  <p>Vengoor</p>
-                  <p>Phone: 8139877848, 7736692975</p>
+                  <p>perinthalmanna,malappuram Dt.,pin:679322</p>
+                  <p>ph:8139-877848,7736-692975</p>
+                  <p>Email:forma13interiors@gmail.com</p>
                 </div>
               </div>
 
@@ -363,7 +437,18 @@ const PurchaseExpenseInvoiceModal = ({
                 </span>
                 <p className="text-sm font-black text-slate-900 tracking-tight">{invoiceNumber}</p>
                 <div className="text-[10.5px] text-slate-500 font-medium space-y-0.5">
-                  <p>Date: <strong className="text-slate-800 font-bold">{issueDate}</strong></p>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <p>Date: <strong className="text-slate-800 font-bold">{issueDate}</strong></p>
+                    <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                      <Edit3 size={11} />
+                      <input
+                        type="date"
+                        value={customInvoiceDate}
+                        onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
                   <p>Job Ref: <strong className="text-slate-800 font-bold">{job?.jobId || 'FAB-PROJECT'}</strong></p>
                 </div>
               </div>
@@ -371,7 +456,7 @@ const PurchaseExpenseInvoiceModal = ({
 
             {/* Billed To & Project Details Cards */}
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+              <div className="p-3 rounded-xl border space-y-1" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
                 <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 block">
                   Project Client Details
                 </span>
@@ -380,7 +465,7 @@ const PurchaseExpenseInvoiceModal = ({
                 {siteAddress && <div className="text-[10.5px] text-slate-500 leading-snug">{siteAddress}</div>}
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+              <div className="p-3 rounded-xl border space-y-1" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
                 <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 block">
                   Fabrication Job Order
                 </span>
@@ -397,17 +482,24 @@ const PurchaseExpenseInvoiceModal = ({
             </div>
 
             {/* Itemised Table */}
-            <div className="border border-slate-200 rounded-xl overflow-hidden text-[11px]">
+            <div className="border rounded-xl overflow-hidden text-[11px]" style={{ borderColor: '#e2e8f0' }}>
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200 uppercase text-[9.5px] tracking-wider">
+                  <tr 
+                    className="font-bold border-b uppercase text-[9.5px] tracking-wider"
+                    style={{ backgroundColor: '#f8fafc', color: '#334155', borderColor: '#e2e8f0' }}
+                  >
                     <th className="py-2 px-2.5 text-center w-8">#</th>
                     <th className="py-2 px-2.5 w-20">Date</th>
                     <th className="py-2 px-3">Item / Category Description</th>
                     <th className="py-2 px-2.5">Vendor / Supplier</th>
-                    <th className="py-2 px-2 text-center w-14">Unit</th>
-                    <th className="py-2 px-2 text-right w-12">Qty</th>
-                    <th className="py-2 px-2.5 text-right w-16">Rate (₹)</th>
+                    {!shouldHideColumns && (
+                      <>
+                        <th className="py-2 px-2 text-center w-14">Unit</th>
+                        <th className="py-2 px-2 text-right w-12">Qty</th>
+                        <th className="py-2 px-2.5 text-right w-16">Rate (₹)</th>
+                      </>
+                    )}
                     <th className="py-2 px-3 text-right w-20">Amount (₹)</th>
                     <th className="py-2 px-2 text-center w-16">Mode</th>
                   </tr>
@@ -415,13 +507,14 @@ const PurchaseExpenseInvoiceModal = ({
                 <tbody className="divide-y divide-slate-100">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                      <td colSpan={shouldHideColumns ? 6 : 9} className="py-8 text-center text-slate-400 italic">
                         No purchases or expenses matching the selected criteria.
                       </td>
                     </tr>
                   ) : (
                     items.map((item, idx) => {
                       const hasDesc = item.itemDescription && item.itemDescription.trim() !== '' && item.itemDescription.trim() !== 'Material Purchase' && item.itemDescription.trim() !== 'Site Operational Expense';
+                      const isLumpSum = item.type === 'Expense' || !item.rate || Number(item.rate) <= 0 || !item.quantity || Number(item.quantity) <= 0 || item.unit === '—';
                       return (
                         <tr key={item._id || idx} className="hover:bg-slate-50/50">
                           <td className="py-2 px-2.5 text-center text-slate-400 font-medium">
@@ -435,11 +528,14 @@ const PurchaseExpenseInvoiceModal = ({
                               <div className="font-bold text-slate-900">{item.itemDescription.trim()}</div>
                             ) : null}
                             <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                item.type === 'Purchase' 
-                                  ? 'bg-blue-50 text-blue-700' 
-                                  : 'bg-amber-50 text-amber-700'
-                              }`}>
+                              <span 
+                                className="px-2 py-0.5 rounded text-[9.5px] font-bold"
+                                style={{
+                                  backgroundColor: item.type === 'Purchase' ? '#eff6ff' : '#fffbeb',
+                                  color: item.type === 'Purchase' ? '#1d4ed8' : '#b45309',
+                                  border: `1px solid ${item.type === 'Purchase' ? '#bfdbfe' : '#fde68a'}`
+                                }}
+                              >
                                 {item.type}
                               </span>
                               <span>{item.category}</span>
@@ -458,20 +554,27 @@ const PurchaseExpenseInvoiceModal = ({
                               <span className="text-slate-400">—</span>
                             )}
                           </td>
-                          <td className="py-2 px-2 text-center text-slate-600 font-semibold">
-                            {item.type === 'Expense' ? '—' : (item.unit || 'Nos')}
-                          </td>
-                          <td className="py-2 px-2 text-right text-slate-700 font-medium">
-                            {item.type === 'Expense' ? '1' : (item.quantity || 1)}
-                          </td>
-                          <td className="py-2 px-2.5 text-right text-slate-700 font-medium">
-                            {item.type === 'Expense' ? formatCurrency(item.amount) : formatCurrency(item.rate)}
-                          </td>
+                          {!shouldHideColumns && (
+                            <>
+                              <td className="py-2 px-2 text-center text-slate-600 font-semibold">
+                                {isLumpSum ? '—' : (item.unit || 'Nos')}
+                              </td>
+                              <td className="py-2 px-2 text-right text-slate-700 font-medium">
+                                {isLumpSum ? '—' : (item.quantity || 1)}
+                              </td>
+                              <td className="py-2 px-2.5 text-right text-slate-700 font-medium">
+                                {isLumpSum ? '—' : formatCurrency(item.rate)}
+                              </td>
+                            </>
+                          )}
                           <td className="py-2 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
                             {formatCurrency(item.amount)}
                           </td>
                           <td className="py-2 px-2 text-center">
-                            <span className="px-1.5 py-0.5 bg-slate-100 rounded text-[9.5px] font-medium text-slate-600 whitespace-nowrap">
+                            <span 
+                              className="px-2 py-0.5 rounded text-[9.5px] font-semibold whitespace-nowrap"
+                              style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }}
+                            >
                               {item.paymentMode || 'Cash'}
                             </span>
                           </td>
@@ -485,7 +588,7 @@ const PurchaseExpenseInvoiceModal = ({
 
             {/* Financial Totals & In Words */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start pt-1">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
+              <div className="p-3 rounded-xl border space-y-1" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
                 <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 block">
                   Amount in Words
                 </span>
@@ -498,7 +601,7 @@ const PurchaseExpenseInvoiceModal = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5 text-xs">
+              <div className="p-3 rounded-xl border space-y-1.5 text-xs" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
                 {filterType === 'All' && (
                   <>
                     <div className="flex justify-between text-slate-600 text-[11px]">
@@ -509,12 +612,12 @@ const PurchaseExpenseInvoiceModal = ({
                       <span>Total Operational Expenses:</span>
                       <strong className="text-slate-900 font-bold">{formatCurrency(totalExpenses)}</strong>
                     </div>
-                    <div className="border-t border-slate-200 pt-1" />
+                    <div className="border-t pt-1" style={{ borderColor: '#e2e8f0' }} />
                   </>
                 )}
                 <div className="flex justify-between items-center text-sm font-black text-slate-900">
                   <span className="text-xs uppercase tracking-wide">Net Total Amount:</span>
-                  <span className="text-base font-black text-rose-600">{formatCurrency(grandTotal)}</span>
+                  <span className="text-base font-black" style={{ color: '#e11d48' }}>{formatCurrency(grandTotal)}</span>
                 </div>
               </div>
             </div>
@@ -536,6 +639,7 @@ const PurchaseExpenseInvoiceModal = ({
               </div>
             </div>
 
+            </div>
           </div>
         </div>
       </div>
