@@ -21,6 +21,11 @@ router.put('/jobs/:id/quotation-items/:itemId', fabricationController.updateQuot
 router.delete('/jobs/:id/quotation-items/:itemId', fabricationController.deleteQuotationItem);
 router.put('/jobs/:id/quotation-discount', fabricationController.updateQuotationDiscount);
 
+// 2.1. Quotation Sub-Items CRUD
+router.post('/jobs/:id/quotation-items/:itemId/sub-items', fabricationController.addQuotationSubItem);
+router.put('/jobs/:id/quotation-items/:itemId/sub-items/:subId', fabricationController.updateQuotationSubItem);
+router.delete('/jobs/:id/quotation-items/:itemId/sub-items/:subId', fabricationController.deleteQuotationSubItem);
+
 // 3. Employee Daily Wages CRUD (Date picker & User selection)
 router.post('/jobs/:id/wages', fabricationController.addDailyWage);
 router.put('/jobs/:id/wages/:wageId', fabricationController.updateDailyWage);

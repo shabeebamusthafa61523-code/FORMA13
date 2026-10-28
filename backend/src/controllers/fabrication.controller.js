@@ -447,7 +447,8 @@ export const addQuotationItem = async (req, res) => {
       discountType = 'fixed',
       discountValue = 0,
       amount, 
-      notes = '' 
+      notes = '',
+      subItems = []
     } = req.body;
 
     if (!description) {
@@ -468,6 +469,22 @@ export const addQuotationItem = async (req, res) => {
       ? Number(amount) 
       : Math.max(0, gross - discAmt);
 
+    const formattedSubItems = Array.isArray(subItems) ? subItems.map(s => {
+      const sQty = Number(s.quantity) || 1;
+      const sRate = Number(s.unitPrice) || 0;
+      const sPrice = s.price !== undefined && s.price !== null && s.price !== '' 
+        ? Number(s.price) 
+        : (sQty * sRate);
+      return {
+        title: String(s.title || '').trim(),
+        quantity: sQty,
+        unit: String(s.unit || 'Nos').trim(),
+        unitPrice: sRate,
+        price: sPrice,
+        notes: String(s.notes || '').trim()
+      };
+    }).filter(s => s.title) : [];
+
     job.quotationItems.push({
       description,
       material: String(material || '').trim(),
@@ -478,7 +495,8 @@ export const addQuotationItem = async (req, res) => {
       discountValue: discVal,
       discountAmount: Math.round(discAmt * 100) / 100,
       amount: Math.round(calcAmount * 100) / 100,
-      notes
+      notes,
+      subItems: formattedSubItems
     });
 
     await job.save();
@@ -498,7 +516,7 @@ export const addQuotationItem = async (req, res) => {
 export const updateQuotationItem = async (req, res) => {
   try {
     const { id, itemId } = req.params;
-    const { description, material, quantity, unit, unitPrice, discountType, discountValue, amount, notes } = req.body;
+    const { description, material, quantity, unit, unitPrice, discountType, discountValue, amount, notes, subItems } = req.body;
 
     const job = await FabricationJob.findById(id);
     if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
@@ -514,6 +532,26 @@ export const updateQuotationItem = async (req, res) => {
     if (discountType !== undefined) item.discountType = discountType;
     if (discountValue !== undefined) item.discountValue = Number(discountValue);
     if (notes !== undefined) item.notes = notes;
+
+    if (Array.isArray(subItems)) {
+      item.subItems = subItems.map(s => {
+        const sQty = Number(s.quantity) || 1;
+        const sRate = Number(s.unitPrice) || 0;
+        const sPrice = s.price !== undefined && s.price !== null && s.price !== '' 
+          ? Number(s.price) 
+          : (sQty * sRate);
+        const subObj = {
+          title: String(s.title || '').trim(),
+          quantity: sQty,
+          unit: String(s.unit || 'Nos').trim(),
+          unitPrice: sRate,
+          price: sPrice,
+          notes: String(s.notes || '').trim()
+        };
+        if (s._id) subObj._id = s._id;
+        return subObj;
+      }).filter(s => s.title);
+    }
 
     if (amount !== undefined && amount !== null && amount !== '') {
       item.amount = Number(amount);
@@ -588,6 +626,114 @@ export const deleteQuotationItem = async (req, res) => {
     });
   } catch (error) {
     console.error('Error deleting quotation item:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Sub-items operations
+export const addQuotationSubItem = async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const { title, quantity = 1, unit = 'Nos', unitPrice = 0, price, notes = '' } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'Sub-item title is required' });
+    }
+
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const item = job.quotationItems.id(itemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Quotation item not found' });
+
+    if (!item.subItems) item.subItems = [];
+
+    const sQty = Number(quantity) || 1;
+    const sRate = Number(unitPrice) || 0;
+    const sPrice = price !== undefined && price !== null && price !== '' 
+      ? Number(price) 
+      : (sQty * sRate);
+
+    item.subItems.push({
+      title: String(title).trim(),
+      quantity: sQty,
+      unit: String(unit || 'Nos').trim(),
+      unitPrice: sRate,
+      price: sPrice,
+      notes: String(notes || '').trim()
+    });
+
+    await job.save();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Sub-item added successfully',
+      data: job
+    });
+  } catch (error) {
+    console.error('Error adding quotation sub-item:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateQuotationSubItem = async (req, res) => {
+  try {
+    const { id, itemId, subId } = req.params;
+    const { title, quantity, unit, unitPrice, price, notes } = req.body;
+
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const item = job.quotationItems.id(itemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Quotation item not found' });
+
+    const subItem = item.subItems.id(subId);
+    if (!subItem) return res.status(404).json({ success: false, message: 'Sub-item not found' });
+
+    if (title !== undefined) subItem.title = String(title).trim();
+    if (quantity !== undefined) subItem.quantity = Number(quantity);
+    if (unit !== undefined) subItem.unit = String(unit).trim();
+    if (unitPrice !== undefined) subItem.unitPrice = Number(unitPrice);
+    if (notes !== undefined) subItem.notes = String(notes).trim();
+
+    if (price !== undefined && price !== null && price !== '') {
+      subItem.price = Number(price);
+    } else if (quantity !== undefined || unitPrice !== undefined) {
+      subItem.price = (subItem.quantity || 1) * (subItem.unitPrice || 0);
+    }
+
+    await job.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sub-item updated successfully',
+      data: job
+    });
+  } catch (error) {
+    console.error('Error updating quotation sub-item:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteQuotationSubItem = async (req, res) => {
+  try {
+    const { id, itemId, subId } = req.params;
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const item = job.quotationItems.id(itemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Quotation item not found' });
+
+    item.subItems.pull(subId);
+    await job.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sub-item deleted successfully',
+      data: job
+    });
+  } catch (error) {
+    console.error('Error deleting quotation sub-item:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
