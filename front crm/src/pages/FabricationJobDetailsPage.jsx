@@ -694,36 +694,6 @@ const FabricationJobDetailsPage = () => {
     }
   };
 
-  const handleApplySubTotalToItem = async (item, mode = 'unitPrice') => {
-    const subTotal = (item.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
-    if (subTotal <= 0) {
-      showToast('Sub-items total is 0', 'warning');
-      return;
-    }
-    try {
-      const qty = Number(item.quantity) || 1;
-      const unitPrice = mode === 'unitPrice' ? subTotal : Number(item.unitPrice || 0);
-      const amount = mode === 'unitPrice' ? (qty * subTotal) : subTotal;
-      const updateData = {
-        description: item.description,
-        material: item.material,
-        quantity: qty,
-        unit: item.unit,
-        unitPrice,
-        amount,
-        notes: item.notes,
-        subItems: item.subItems
-      };
-      const res = await updateQuotationItem(job._id, item._id, updateData);
-      if (res && res.success) {
-        showToast(`Item ${mode === 'unitPrice' ? 'unit rate' : 'total'} updated to ${formatCurrency(mode === 'unitPrice' ? subTotal : amount)}`, 'success');
-        setJob(res.data);
-      }
-    } catch (err) {
-      showToast('Failed to update item price', 'error');
-    }
-  };
-
   // ================= 2. DAILY WAGES HANDLERS =================
   const handleEmployeeDropdownSelect = (e) => {
     const empId = e.target.value;
@@ -1553,14 +1523,6 @@ const FabricationJobDetailsPage = () => {
                                       <span className="font-bold text-indigo-600 dark:text-indigo-400 font-mono text-sm">
                                         {formatCurrency(subTotal)}
                                       </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApplySubTotalToItem(item, 'unitPrice')}
-                                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60 text-[11px] font-bold transition-colors cursor-pointer ml-1"
-                                        title="Set parent item Unit Rate = sub-items sum"
-                                      >
-                                        Apply as Unit Rate
-                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -3305,19 +3267,6 @@ const FabricationJobDetailsPage = () => {
                       <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">
                         {formatCurrency(quoteForm.subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0))}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const subSum = (quoteForm.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
-                          if (subSum > 0) {
-                            handleQuoteQtyPriceChange(quoteForm.quantity, subSum);
-                          }
-                        }}
-                        className="px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60 text-[10px] font-bold transition-colors cursor-pointer"
-                        title="Set Rate per Unit = Sub-items Total"
-                      >
-                        Apply to Rate
-                      </button>
                     </div>
                   )}
                 </div>
