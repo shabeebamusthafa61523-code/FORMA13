@@ -435,6 +435,19 @@ export const deleteFabricationJob = async (req, res) => {
 // ==========================================
 // 6. QUOTATION ITEMS CRUD
 // ==========================================
+const recalculateQuotationItemAmount = (item) => {
+  const qty = Number(item.quantity) || 1;
+  const price = Number(item.unitPrice) || 0;
+  const gross = qty * price;
+  const dType = item.discountType || 'fixed';
+  const dVal = Number(item.discountValue) || 0;
+  const dAmt = dType === 'percentage' ? (gross * dVal) / 100 : dVal;
+  const baseAmount = Math.max(0, gross - dAmt);
+  const subSum = (item.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+  item.amount = Math.round((baseAmount + subSum) * 100) / 100;
+  return item.amount;
+};
+
 export const addQuotationItem = async (req, res) => {
   try {
     const { id } = req.params;
@@ -465,9 +478,7 @@ export const addQuotationItem = async (req, res) => {
     const gross = qty * price;
     const discVal = Number(discountValue) || 0;
     const discAmt = discountType === 'percentage' ? (gross * discVal) / 100 : discVal;
-    const calcAmount = amount !== undefined && amount !== null && amount !== '' 
-      ? Number(amount) 
-      : Math.max(0, gross - discAmt);
+    const baseAmount = Math.max(0, gross - discAmt);
 
     const formattedSubItems = Array.isArray(subItems) ? subItems.map(s => {
       const sQty = Number(s.quantity) || 1;
@@ -485,6 +496,9 @@ export const addQuotationItem = async (req, res) => {
       };
     }).filter(s => s.title) : [];
 
+    const subSum = formattedSubItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+    const finalAmount = Math.round((baseAmount + subSum) * 100) / 100;
+
     job.quotationItems.push({
       description,
       material: String(material || '').trim(),
@@ -494,7 +508,7 @@ export const addQuotationItem = async (req, res) => {
       discountType,
       discountValue: discVal,
       discountAmount: Math.round(discAmt * 100) / 100,
-      amount: Math.round(calcAmount * 100) / 100,
+      amount: finalAmount,
       notes,
       subItems: formattedSubItems
     });
@@ -553,16 +567,7 @@ export const updateQuotationItem = async (req, res) => {
       }).filter(s => s.title);
     }
 
-    if (amount !== undefined && amount !== null && amount !== '') {
-      item.amount = Number(amount);
-    } else {
-      const gross = (item.quantity ?? 1) * (item.unitPrice ?? 0);
-      const dType = item.discountType || 'fixed';
-      const dVal = Number(item.discountValue) || 0;
-      const dAmt = dType === 'percentage' ? (gross * dVal) / 100 : dVal;
-      item.discountAmount = Math.round(dAmt * 100) / 100;
-      item.amount = Math.max(0, Math.round((gross - dAmt) * 100) / 100);
-    }
+    recalculateQuotationItemAmount(item);
 
     await job.save();
     try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
@@ -663,7 +668,11 @@ export const addQuotationSubItem = async (req, res) => {
       notes: String(notes || '').trim()
     });
 
+    // Auto-update parent item amount by adding sum of sub-items to base item price
+    recalculateQuotationItemAmount(item);
+
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(201).json({
       success: true,
@@ -702,7 +711,11 @@ export const updateQuotationSubItem = async (req, res) => {
       subItem.price = (subItem.quantity || 1) * (subItem.unitPrice || 0);
     }
 
+    // Auto-update parent item amount by adding sum of sub-items to base item price
+    recalculateQuotationItemAmount(item);
+
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
@@ -725,7 +738,12 @@ export const deleteQuotationSubItem = async (req, res) => {
     if (!item) return res.status(404).json({ success: false, message: 'Quotation item not found' });
 
     item.subItems.pull(subId);
+
+    // Auto-update parent item amount by adding sum of remaining sub-items to base item price
+    recalculateQuotationItemAmount(item);
+
     await job.save();
+    try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
     return res.status(200).json({
       success: true,
