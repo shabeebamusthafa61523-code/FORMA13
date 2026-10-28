@@ -470,7 +470,12 @@ const FabricationJobDetailsPage = () => {
   ) => {
     const q = parseFloat(quantity) || 0;
     const p = parseFloat(unitPrice) || 0;
-    const amount = Math.round(q * p * 100) / 100;
+    const baseGross = q * p;
+    
+    // Parent item amount = Base Item Price + Sum of Sub-items
+    const subItems = quoteForm.subItems || [];
+    const subSum = subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+    const amount = Math.round((baseGross + subSum) * 100) / 100;
 
     setQuoteForm(prev => ({
       ...prev,
@@ -590,17 +595,71 @@ const FabricationJobDetailsPage = () => {
 
   const openEditQuotationModal = (item) => {
     setEditingQuotationItem(item);
+    const subItems = item.subItems ? JSON.parse(JSON.stringify(item.subItems)) : [];
+    const q = parseFloat(item.quantity) || 0;
+    const p = parseFloat(item.unitPrice) || 0;
+    const baseAmount = q * p;
+    const subSum = subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+    const totalAmount = Math.round((baseAmount + subSum) * 100) / 100;
+
     setQuoteForm({
       description: item.description || '',
       material: item.material || '',
       quantity: item.quantity ?? 1,
       unit: item.unit || 'Sq.Ft',
       unitPrice: item.unitPrice ?? '',
-      amount: item.amount ?? 0,
+      amount: totalAmount,
       notes: item.notes || '',
-      subItems: item.subItems ? JSON.parse(JSON.stringify(item.subItems)) : []
+      subItems
     });
+    setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
     setIsQuotationModalOpen(true);
+  };
+
+  const handleModalAddSubItem = () => {
+    if (!modalNewSub.title.trim()) {
+      showToast('Enter sub-item title', 'warning');
+      return;
+    }
+    const qty = Number(modalNewSub.quantity) || 1;
+    const rate = Number(modalNewSub.unitPrice) || 0;
+    const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
+    
+    setQuoteForm(prev => {
+      const updatedSubs = [...(prev.subItems || []), {
+        title: modalNewSub.title.trim(),
+        quantity: qty,
+        unit: modalNewSub.unit || 'Nos',
+        unitPrice: rate,
+        price,
+        notes: ''
+      }];
+      const subSum = updatedSubs.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+      const q = parseFloat(prev.quantity) || 0;
+      const p = parseFloat(prev.unitPrice) || 0;
+      const baseGross = q * p;
+      return {
+        ...prev,
+        subItems: updatedSubs,
+        amount: Math.round((baseGross + subSum) * 100) / 100
+      };
+    });
+    setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
+  };
+
+  const handleModalRemoveSubItem = (sIdx) => {
+    setQuoteForm(prev => {
+      const updatedSubs = (prev.subItems || []).filter((_, i) => i !== sIdx);
+      const subSum = updatedSubs.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+      const q = parseFloat(prev.quantity) || 0;
+      const p = parseFloat(prev.unitPrice) || 0;
+      const baseGross = q * p;
+      return {
+        ...prev,
+        subItems: updatedSubs,
+        amount: Math.round((baseGross + subSum) * 100) / 100
+      };
+    });
   };
 
   const promptDeleteQuotationItem = (item) => {
@@ -1518,10 +1577,17 @@ const FabricationJobDetailsPage = () => {
                                   </div>
 
                                   {subCount > 0 && (
-                                    <div className="flex items-center gap-2 text-xs">
-                                      <span className="text-slate-500 font-medium">Sub-Items Total:</span>
-                                      <span className="font-bold text-indigo-600 dark:text-indigo-400 font-mono text-sm">
-                                        {formatCurrency(subTotal)}
+                                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                                      <span className="text-slate-500 font-medium">
+                                        Base Price: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatCurrency((Number(item.quantity) || 1) * (Number(item.unitPrice) || 0))}</span>
+                                      </span>
+                                      <span className="text-slate-300 dark:text-slate-600">+</span>
+                                      <span className="text-slate-500 font-medium">
+                                        Sub-Items: <span className="font-bold text-indigo-600 dark:text-indigo-400 font-mono">+{formatCurrency(subTotal)}</span>
+                                      </span>
+                                      <span className="text-slate-300 dark:text-slate-600">=</span>
+                                      <span className="text-slate-500 font-medium">
+                                        Total Amount: <span className="font-black text-slate-900 dark:text-white font-mono">{formatCurrency(item.amount)}</span>
                                       </span>
                                     </div>
                                   )}
@@ -3243,7 +3309,9 @@ const FabricationJobDetailsPage = () => {
                     Total Item Amount:
                   </span>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Calculated as Measurements × Rate per Unit
+                    {quoteForm.subItems && quoteForm.subItems.length > 0 
+                      ? `Base (${formatCurrency((parseFloat(quoteForm.quantity) || 0) * (parseFloat(quoteForm.unitPrice) || 0))}) + Sub-Items (${formatCurrency(quoteForm.subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0))})` 
+                      : 'Calculated as Measurements × Rate per Unit'}
                   </span>
                 </div>
                 <span className="text-base font-bold text-indigo-700 dark:text-indigo-400 font-mono">
@@ -3298,12 +3366,7 @@ const FabricationJobDetailsPage = () => {
                             <td className="py-1.5 px-2 text-center">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setQuoteForm(prev => ({
-                                    ...prev,
-                                    subItems: prev.subItems.filter((_, i) => i !== sIdx)
-                                  }));
-                                }}
+                                onClick={() => handleModalRemoveSubItem(sIdx)}
                                 className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                                 title="Remove sub-item"
                               >
@@ -3332,23 +3395,7 @@ const FabricationJobDetailsPage = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          if (modalNewSub.title.trim()) {
-                            const qty = Number(modalNewSub.quantity) || 1;
-                            const rate = Number(modalNewSub.unitPrice) || 0;
-                            const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
-                            setQuoteForm(prev => ({
-                              ...prev,
-                              subItems: [...(prev.subItems || []), {
-                                title: modalNewSub.title.trim(),
-                                quantity: qty,
-                                unit: modalNewSub.unit || 'Nos',
-                                unitPrice: rate,
-                                price,
-                                notes: ''
-                              }]
-                            }));
-                            setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
-                          }
+                          handleModalAddSubItem();
                         }
                       }}
                       className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -3383,23 +3430,7 @@ const FabricationJobDetailsPage = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          if (modalNewSub.title.trim()) {
-                            const qty = Number(modalNewSub.quantity) || 1;
-                            const rate = Number(modalNewSub.unitPrice) || 0;
-                            const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
-                            setQuoteForm(prev => ({
-                              ...prev,
-                              subItems: [...(prev.subItems || []), {
-                                title: modalNewSub.title.trim(),
-                                quantity: qty,
-                                unit: modalNewSub.unit || 'Nos',
-                                unitPrice: rate,
-                                price,
-                                notes: ''
-                              }]
-                            }));
-                            setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
-                          }
+                          handleModalAddSubItem();
                         }
                       }}
                       className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -3408,27 +3439,7 @@ const FabricationJobDetailsPage = () => {
                   <div className="col-span-1">
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!modalNewSub.title.trim()) {
-                          showToast('Enter sub-item title', 'warning');
-                          return;
-                        }
-                        const qty = Number(modalNewSub.quantity) || 1;
-                        const rate = Number(modalNewSub.unitPrice) || 0;
-                        const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
-                        setQuoteForm(prev => ({
-                          ...prev,
-                          subItems: [...(prev.subItems || []), {
-                            title: modalNewSub.title.trim(),
-                            quantity: qty,
-                            unit: modalNewSub.unit || 'Nos',
-                            unitPrice: rate,
-                            price,
-                            notes: ''
-                          }]
-                        }));
-                        setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
-                      }}
+                      onClick={handleModalAddSubItem}
                       className="w-full py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center shadow-xs"
                       title="Add sub-item"
                     >

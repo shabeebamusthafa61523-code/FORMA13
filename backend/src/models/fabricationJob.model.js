@@ -187,6 +187,20 @@ const fabricationJobSchema = new mongoose.Schema({
 
 // Helper function to recalculate financial totals
 fabricationJobSchema.methods.recalculateFinancials = function () {
+  // Parent item amount automatically updates by adding the sum of its sub-items to the base item price
+  (this.quotationItems || []).forEach(item => {
+    const qty = Number(item.quantity) || 1;
+    const price = Number(item.unitPrice) || 0;
+    const gross = qty * price;
+    const dType = item.discountType || 'fixed';
+    const dVal = Number(item.discountValue) || 0;
+    const dAmt = dType === 'percentage' ? (gross * dVal) / 100 : dVal;
+    const baseAmount = Math.max(0, gross - dAmt);
+
+    const subTotal = (item.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+    item.amount = Math.round((baseAmount + subTotal) * 100) / 100;
+  });
+
   const grossQuotation = (this.quotationItems || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   
   let overallDiscountAmount = 0;
