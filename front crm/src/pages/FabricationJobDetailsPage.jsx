@@ -4,7 +4,8 @@ import {
   ArrowLeft, Hammer, Plus, Trash2, Edit3, Calendar, Users, 
   ShoppingCart, DollarSign, CheckCircle2, AlertCircle, Clock, 
   MapPin, Phone, Mail, FileText, Printer, Loader2, Save, X,
-  CreditCard, ChevronRight, Download, Percent, Receipt
+  CreditCard, ChevronRight, ChevronDown, Download, Percent, Receipt,
+  Layers, ListPlus, CornerDownRight, Check
 } from 'lucide-react';
 import { 
   getFabricationJobById,
@@ -12,6 +13,9 @@ import {
   addQuotationItem,
   updateQuotationItem,
   deleteQuotationItem,
+  addQuotationSubItem,
+  updateQuotationSubItem,
+  deleteQuotationSubItem,
   updateQuotationDiscount,
   addDailyWage,
   updateDailyWage,
@@ -152,6 +156,12 @@ const FabricationJobDetailsPage = () => {
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isPurchaseInvoiceOpen, setIsPurchaseInvoiceOpen] = useState(false);
   const [isOverallLedgerOpen, setIsOverallLedgerOpen] = useState(false);
+
+  // Sub-items expansion & inline entry state in Quotation & Work Measurements
+  const [expandedItemIds, setExpandedItemIds] = useState(new Set());
+  const [inlineSubForms, setInlineSubForms] = useState({});
+  const [addingSubItemLoading, setAddingSubItemLoading] = useState({});
+  const [modalNewSub, setModalNewSub] = useState({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
 
   // Overall Quotation Discount state
   const [overallDiscount, setOverallDiscount] = useState({ type: 'fixed', value: '' });
@@ -352,7 +362,8 @@ const FabricationJobDetailsPage = () => {
     unit: 'Sq.Ft',
     unitPrice: '',
     amount: 0,
-    notes: ''
+    notes: '',
+    subItems: []
   });
 
   // 2. Daily Wage Form
@@ -568,7 +579,8 @@ const FabricationJobDetailsPage = () => {
           unit: 'Sq.Ft',
           unitPrice: '',
           amount: 0,
-          notes: ''
+          notes: '',
+          subItems: []
         });
       }
     } catch (err) {
@@ -585,7 +597,8 @@ const FabricationJobDetailsPage = () => {
       unit: item.unit || 'Sq.Ft',
       unitPrice: item.unitPrice ?? '',
       amount: item.amount ?? 0,
-      notes: item.notes || ''
+      notes: item.notes || '',
+      subItems: item.subItems ? JSON.parse(JSON.stringify(item.subItems)) : []
     });
     setIsQuotationModalOpen(true);
   };
@@ -609,6 +622,106 @@ const FabricationJobDetailsPage = () => {
         }
       }
     });
+  };
+
+  // Sub-Item Helpers in Quotation & Work Measurements Table
+  const toggleItemExpansion = (itemId) => {
+    setExpandedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  const handleInlineSubFormChange = (itemId, field, val) => {
+    setInlineSubForms(prev => ({
+      ...prev,
+      [itemId]: {
+        ...(prev[itemId] || { title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' }),
+        [field]: val
+      }
+    }));
+  };
+
+  const handleAddSubItemInline = async (itemId) => {
+    const form = inlineSubForms[itemId] || {};
+    const title = (form.title || '').trim();
+    if (!title) {
+      showToast('Please enter a sub-item title', 'warning');
+      return;
+    }
+    const qty = Number(form.quantity) || 1;
+    const unitPrice = Number(form.unitPrice) || 0;
+    const price = form.price !== '' && form.price !== undefined && form.price !== null
+      ? Number(form.price)
+      : (qty * unitPrice);
+
+    setAddingSubItemLoading(prev => ({ ...prev, [itemId]: true }));
+    try {
+      const res = await addQuotationSubItem(job._id, itemId, {
+        title,
+        quantity: qty,
+        unit: form.unit || 'Nos',
+        unitPrice,
+        price,
+        notes: form.notes || ''
+      });
+      if (res && res.success) {
+        showToast('Sub-item added', 'success');
+        setJob(res.data);
+        setInlineSubForms(prev => ({
+          ...prev,
+          [itemId]: { title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' }
+        }));
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to add sub-item', 'error');
+    } finally {
+      setAddingSubItemLoading(prev => ({ ...prev, [itemId]: false }));
+    }
+  };
+
+  const handleDeleteSubItem = async (itemId, subId) => {
+    try {
+      const res = await deleteQuotationSubItem(job._id, itemId, subId);
+      if (res && res.success) {
+        showToast('Sub-item removed', 'success');
+        setJob(res.data);
+      }
+    } catch (err) {
+      showToast('Failed to remove sub-item', 'error');
+    }
+  };
+
+  const handleApplySubTotalToItem = async (item, mode = 'unitPrice') => {
+    const subTotal = (item.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+    if (subTotal <= 0) {
+      showToast('Sub-items total is 0', 'warning');
+      return;
+    }
+    try {
+      const qty = Number(item.quantity) || 1;
+      const unitPrice = mode === 'unitPrice' ? subTotal : Number(item.unitPrice || 0);
+      const amount = mode === 'unitPrice' ? (qty * subTotal) : subTotal;
+      const updateData = {
+        description: item.description,
+        material: item.material,
+        quantity: qty,
+        unit: item.unit,
+        unitPrice,
+        amount,
+        notes: item.notes,
+        subItems: item.subItems
+      };
+      const res = await updateQuotationItem(job._id, item._id, updateData);
+      if (res && res.success) {
+        showToast(`Item ${mode === 'unitPrice' ? 'unit rate' : 'total'} updated to ${formatCurrency(mode === 'unitPrice' ? subTotal : amount)}`, 'success');
+        setJob(res.data);
+      }
+    } catch (err) {
+      showToast('Failed to update item price', 'error');
+    }
   };
 
   // ================= 2. DAILY WAGES HANDLERS =================
@@ -1320,56 +1433,275 @@ const FabricationJobDetailsPage = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {job.quotationItems.map((item, idx) => (
-                    <tr key={item._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-3 px-4 font-mono text-slate-400">{idx + 1}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{item.description}</div>
-                        {item.notes && <div className="text-[11px] text-slate-400 mt-0.5">{item.notes}</div>}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {item.material ? (
-                          <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 rounded font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/50">
-                            {item.material}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
+                  {job.quotationItems.map((item, idx) => {
+                    const isExpanded = expandedItemIds.has(item._id);
+                    const subItems = item.subItems || [];
+                    const subCount = subItems.length;
+                    const subTotal = subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+                    const inlineForm = inlineSubForms[item._id] || { title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' };
+                    const isAdding = addingSubItemLoading[item._id];
+
+                    return (
+                      <React.Fragment key={item._id}>
+                        <tr className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors ${isExpanded ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}`}>
+                          <td className="py-3 px-4 font-mono text-slate-400">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleItemExpansion(item._id)}
+                                className="p-1 -ml-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                                title={isExpanded ? "Collapse sub-items" : "Expand sub-items & pricing"}
+                              >
+                                {isExpanded ? <ChevronDown size={14} className="text-indigo-600 dark:text-indigo-400" /> : <ChevronRight size={14} />}
+                              </button>
+                              <span>{idx + 1}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900 dark:text-white">{item.description}</span>
+                              {subCount > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleItemExpansion(item._id)}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 transition-colors cursor-pointer"
+                                  title="Click to view/manage sub-items"
+                                >
+                                  <Layers size={10} />
+                                  <span>{subCount} sub-item{subCount > 1 ? 's' : ''} (₹{subTotal.toLocaleString('en-IN')})</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isExpanded) toggleItemExpansion(item._id);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer opacity-75 hover:opacity-100 transition-opacity"
+                                  title="Add sub-items & breakdown"
+                                >
+                                  <Plus size={10} />
+                                  <span>+ Sub-items</span>
+                                </button>
+                              )}
+                            </div>
+                            {item.notes && <div className="text-[11px] text-slate-400 mt-0.5">{item.notes}</div>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {item.material ? (
+                              <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 rounded font-semibold text-[11px] border border-indigo-100 dark:border-indigo-900/50">
+                                {item.material}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300 font-semibold">
+                              {item.unit}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
+                            {item.quantity}
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                            {formatCurrency(item.unitPrice)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                            {formatCurrency(item.amount)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openEditQuotationModal(item)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                title="Edit Item"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                onClick={() => promptDeleteQuotationItem(item)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* EXPANDED SUB-ITEMS CONTAINER */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50/80 dark:bg-slate-900/70 border-y border-indigo-100 dark:border-indigo-950/60">
+                            <td colSpan={8} className="py-3 px-4 pl-8 sm:pl-12">
+                              <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-indigo-100/80 dark:border-slate-700/80 shadow-xs space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                                      <Layers size={14} />
+                                    </div>
+                                    <div>
+                                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                        <span>Sub-Items & Internal Cost Breakdown</span>
+                                        <span className="text-[10px] font-semibold text-slate-400">(Not visible on client invoice)</span>
+                                      </h4>
+                                    </div>
+                                  </div>
+
+                                  {subCount > 0 && (
+                                    <div className="flex items-center gap-2 text-xs">
+                                      <span className="text-slate-500 font-medium">Sub-Items Total:</span>
+                                      <span className="font-bold text-indigo-600 dark:text-indigo-400 font-mono text-sm">
+                                        {formatCurrency(subTotal)}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApplySubTotalToItem(item, 'unitPrice')}
+                                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60 text-[11px] font-bold transition-colors cursor-pointer ml-1"
+                                        title="Set parent item Unit Rate = sub-items sum"
+                                      >
+                                        Apply as Unit Rate
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Sub-Items List */}
+                                {subCount > 0 ? (
+                                  <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-700">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead>
+                                        <tr className="bg-slate-50/60 dark:bg-slate-800 text-[10px] uppercase font-bold text-slate-400 tracking-wider border-b border-slate-100 dark:border-slate-700">
+                                          <th className="py-2 px-3 w-8">#</th>
+                                          <th className="py-2 px-3">Sub-Item Title / Component</th>
+                                          <th className="py-2 px-3 text-center w-24">Qty & Unit</th>
+                                          <th className="py-2 px-3 text-right w-24">Unit Rate</th>
+                                          <th className="py-2 px-3 text-right w-28">Sub-Item Price (₹)</th>
+                                          <th className="py-2 px-3 text-center w-12">Action</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                        {subItems.map((sub, sIdx) => (
+                                          <tr key={sub._id || sIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                                            <td className="py-2 px-3 font-mono text-slate-400 text-[11px]">{sIdx + 1}</td>
+                                            <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                                              <div>{sub.title}</div>
+                                              {sub.notes && <div className="text-[10px] text-slate-400 font-normal">{sub.notes}</div>}
+                                            </td>
+                                            <td className="py-2 px-3 text-center font-medium text-slate-600 dark:text-slate-400 text-[11px]">
+                                              {sub.quantity || 1} {sub.unit || 'Nos'}
+                                            </td>
+                                            <td className="py-2 px-3 text-right text-slate-600 dark:text-slate-400 text-[11px]">
+                                              {sub.unitPrice ? formatCurrency(sub.unitPrice) : '—'}
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-bold font-mono text-slate-900 dark:text-white text-[11px]">
+                                              {formatCurrency(sub.price)}
+                                            </td>
+                                            <td className="py-2 px-3 text-center">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteSubItem(item._id, sub._id)}
+                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                                                title="Delete sub-item"
+                                              >
+                                                <Trash2 size={13} />
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 text-center bg-slate-50/50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 text-xs">
+                                    No sub-items added for this item yet. Use the quick entry below.
+                                  </div>
+                                )}
+
+                                {/* Inline Add Sub-Item Form */}
+                                <div className="pt-2">
+                                  <div className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                                    <Plus size={12} className="text-indigo-600" />
+                                    <span>Add Sub-Item to "{item.description}"</span>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                                    <div className="sm:col-span-5">
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. MS Pipes 50x50mm, Hardware hinges, Primer..."
+                                        value={inlineForm.title || ''}
+                                        onChange={(e) => handleInlineSubFormChange(item._id, 'title', e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddSubItemInline(item._id);
+                                          }
+                                        }}
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        placeholder="Qty"
+                                        value={inlineForm.quantity ?? 1}
+                                        onChange={(e) => {
+                                          const qty = e.target.value;
+                                          handleInlineSubFormChange(item._id, 'quantity', qty);
+                                          if (inlineForm.unitPrice) {
+                                            handleInlineSubFormChange(item._id, 'price', (Number(qty) || 1) * Number(inlineForm.unitPrice));
+                                          }
+                                        }}
+                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                      <input
+                                        type="text"
+                                        placeholder="Unit (Nos, Kg)"
+                                        value={inlineForm.unit || 'Nos'}
+                                        onChange={(e) => handleInlineSubFormChange(item._id, 'unit', e.target.value)}
+                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        min="0"
+                                        placeholder="Price (₹)"
+                                        value={inlineForm.price || ''}
+                                        onChange={(e) => handleInlineSubFormChange(item._id, 'price', e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddSubItemInline(item._id);
+                                          }
+                                        }}
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-1">
+                                      <button
+                                        type="button"
+                                        disabled={isAdding}
+                                        onClick={() => handleAddSubItemInline(item._id)}
+                                        className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50 flex items-center justify-center"
+                                        title="Add Sub-item"
+                                      >
+                                        {isAdding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-700 dark:text-slate-300 font-semibold">
-                          {item.unit}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium text-slate-700 dark:text-slate-300">
-                        {item.quantity}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
-                        {formatCurrency(item.unitPrice)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
-                        {formatCurrency(item.amount)}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => openEditQuotationModal(item)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                            title="Edit Item"
-                          >
-                            <Edit3 size={14} />
-                          </button>
-                          <button
-                            onClick={() => promptDeleteQuotationItem(item)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                            title="Delete Item"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                   {/* Subtotal & Discount row */}
                   <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
                     <td colSpan={3} className="py-2.5 px-4 text-left">
@@ -2823,7 +3155,7 @@ const FabricationJobDetailsPage = () => {
       {/* 1. Edit Quotation Modal */}
       {isQuotationModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 Edit Quotation Item
@@ -2955,6 +3287,206 @@ const FabricationJobDetailsPage = () => {
                 <span className="text-base font-bold text-indigo-700 dark:text-indigo-400 font-mono">
                   {formatCurrency(quoteForm.amount)}
                 </span>
+              </div>
+
+              {/* SUB-ITEMS & COSTING BREAKDOWN (INTERNAL) */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/90 dark:border-slate-700/80 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Layers size={14} className="text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Sub-Items & Internal Cost Breakdown
+                    </span>
+                    <span className="text-[10px] text-slate-400">(Not shown on client invoice)</span>
+                  </div>
+                  {quoteForm.subItems && quoteForm.subItems.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-500 font-medium">Sub-Items Total:</span>
+                      <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                        {formatCurrency(quoteForm.subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0))}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const subSum = (quoteForm.subItems || []).reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+                          if (subSum > 0) {
+                            handleQuoteQtyPriceChange(quoteForm.quantity, subSum);
+                          }
+                        }}
+                        className="px-2 py-0.5 rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60 text-[10px] font-bold transition-colors cursor-pointer"
+                        title="Set Rate per Unit = Sub-items Total"
+                      >
+                        Apply to Rate
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sub-items list in modal */}
+                {quoteForm.subItems && quoteForm.subItems.length > 0 ? (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100/70 dark:bg-slate-800 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                          <th className="py-1.5 px-2.5">Sub-Item</th>
+                          <th className="py-1.5 px-2.5 text-center w-20">Qty/Unit</th>
+                          <th className="py-1.5 px-2.5 text-right w-24">Price (₹)</th>
+                          <th className="py-1.5 px-2 text-center w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                        {quoteForm.subItems.map((sub, sIdx) => (
+                          <tr key={sIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                            <td className="py-1.5 px-2.5 font-medium text-slate-800 dark:text-slate-200">
+                              {sub.title}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-center text-slate-500 text-[11px]">
+                              {sub.quantity || 1} {sub.unit || 'Nos'}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-right font-bold font-mono text-slate-800 dark:text-slate-200">
+                              {formatCurrency(sub.price)}
+                            </td>
+                            <td className="py-1.5 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuoteForm(prev => ({
+                                    ...prev,
+                                    subItems: prev.subItems.filter((_, i) => i !== sIdx)
+                                  }));
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                title="Remove sub-item"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-1.5 text-center text-slate-400 text-[11px] italic">
+                    No sub-items added yet.
+                  </div>
+                )}
+
+                {/* Quick Add Sub-Item Row */}
+                <div className="grid grid-cols-12 gap-1.5 pt-1 items-center">
+                  <div className="col-span-6">
+                    <input
+                      type="text"
+                      placeholder="Sub-item name / material"
+                      value={modalNewSub.title}
+                      onChange={(e) => setModalNewSub({ ...modalNewSub, title: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (modalNewSub.title.trim()) {
+                            const qty = Number(modalNewSub.quantity) || 1;
+                            const rate = Number(modalNewSub.unitPrice) || 0;
+                            const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
+                            setQuoteForm(prev => ({
+                              ...prev,
+                              subItems: [...(prev.subItems || []), {
+                                title: modalNewSub.title.trim(),
+                                quantity: qty,
+                                unit: modalNewSub.unit || 'Nos',
+                                unitPrice: rate,
+                                price,
+                                notes: ''
+                              }]
+                            }));
+                            setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
+                          }
+                        }
+                      }}
+                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="Qty"
+                      value={modalNewSub.quantity}
+                      onChange={(e) => {
+                        const qty = e.target.value;
+                        setModalNewSub(prev => ({
+                          ...prev,
+                          quantity: qty,
+                          price: prev.unitPrice ? (Number(qty) || 1) * Number(prev.unitPrice) : prev.price
+                        }));
+                      }}
+                      className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="Price (₹)"
+                      value={modalNewSub.price}
+                      onChange={(e) => setModalNewSub({ ...modalNewSub, price: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (modalNewSub.title.trim()) {
+                            const qty = Number(modalNewSub.quantity) || 1;
+                            const rate = Number(modalNewSub.unitPrice) || 0;
+                            const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
+                            setQuoteForm(prev => ({
+                              ...prev,
+                              subItems: [...(prev.subItems || []), {
+                                title: modalNewSub.title.trim(),
+                                quantity: qty,
+                                unit: modalNewSub.unit || 'Nos',
+                                unitPrice: rate,
+                                price,
+                                notes: ''
+                              }]
+                            }));
+                            setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
+                          }
+                        }
+                      }}
+                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!modalNewSub.title.trim()) {
+                          showToast('Enter sub-item title', 'warning');
+                          return;
+                        }
+                        const qty = Number(modalNewSub.quantity) || 1;
+                        const rate = Number(modalNewSub.unitPrice) || 0;
+                        const price = modalNewSub.price !== '' && modalNewSub.price !== undefined ? Number(modalNewSub.price) : (qty * rate);
+                        setQuoteForm(prev => ({
+                          ...prev,
+                          subItems: [...(prev.subItems || []), {
+                            title: modalNewSub.title.trim(),
+                            quantity: qty,
+                            unit: modalNewSub.unit || 'Nos',
+                            unitPrice: rate,
+                            price,
+                            notes: ''
+                          }]
+                        }));
+                        setModalNewSub({ title: '', quantity: 1, unit: 'Nos', unitPrice: '', price: '' });
+                      }}
+                      className="w-full py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center shadow-xs"
+                      title="Add sub-item"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div>

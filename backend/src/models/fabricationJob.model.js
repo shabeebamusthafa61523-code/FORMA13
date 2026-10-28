@@ -1,5 +1,14 @@
 import mongoose from 'mongoose';
 
+const quotationSubItemSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true },
+  quantity: { type: Number, default: 1, min: 0 },
+  unit: { type: String, default: 'Nos', trim: true },
+  unitPrice: { type: Number, default: 0, min: 0 },
+  price: { type: Number, required: true, default: 0, min: 0 },
+  notes: { type: String, default: '', trim: true }
+}, { _id: true, timestamps: true });
+
 const quotationItemSchema = new mongoose.Schema({
   description: { type: String, required: true, trim: true },
   material: { type: String, default: '', trim: true },
@@ -14,7 +23,8 @@ const quotationItemSchema = new mongoose.Schema({
   discountValue: { type: Number, default: 0, min: 0 },
   discountAmount: { type: Number, default: 0, min: 0 },
   amount: { type: Number, required: true, default: 0, min: 0 },
-  notes: { type: String, default: '', trim: true }
+  notes: { type: String, default: '', trim: true },
+  subItems: [quotationSubItemSchema]
 }, { _id: true, timestamps: true });
 
 const dailyWageSchema = new mongoose.Schema({

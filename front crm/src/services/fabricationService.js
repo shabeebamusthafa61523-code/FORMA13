@@ -71,6 +71,22 @@ export const deleteQuotationItem = async (jobId, itemId) => {
   return response.data;
 };
 
+// 2.1. Quotation Sub-Items CRUD
+export const addQuotationSubItem = async (jobId, itemId, subItemData) => {
+  const response = await axios.post(`${getBaseUrl()}/jobs/${jobId}/quotation-items/${itemId}/sub-items`, subItemData, getAuthHeaders());
+  return response.data;
+};
+
+export const updateQuotationSubItem = async (jobId, itemId, subItemId, subItemData) => {
+  const response = await axios.put(`${getBaseUrl()}/jobs/${jobId}/quotation-items/${itemId}/sub-items/${subItemId}`, subItemData, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteQuotationSubItem = async (jobId, itemId, subItemId) => {
+  const response = await axios.delete(`${getBaseUrl()}/jobs/${jobId}/quotation-items/${itemId}/sub-items/${subItemId}`, getAuthHeaders());
+  return response.data;
+};
+
 export const updateQuotationDiscount = async (jobId, discountData) => {
   const response = await axios.put(`${getBaseUrl()}/jobs/${jobId}/quotation-discount`, discountData, getAuthHeaders());
   return response.data;

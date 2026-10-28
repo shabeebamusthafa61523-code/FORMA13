@@ -1225,7 +1225,14 @@ const ClientDetailsPage = () => {
                     <tr key={item._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                       <td className="py-3 px-4 font-mono text-slate-400">{idx + 1}</td>
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{item.description}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 dark:text-white">{item.description}</span>
+                          {item.subItems && item.subItems.length > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
+                              {item.subItems.length} sub-items (₹{item.subItems.reduce((acc, s) => acc + (Number(s.price) || 0), 0).toLocaleString('en-IN')})
+                            </span>
+                          )}
+                        </div>
                         {item.notes && <div className="text-[11px] text-slate-400 mt-0.5">{item.notes}</div>}
                       </td>
                       <td className="py-3 px-4 text-center">
