@@ -210,6 +210,7 @@ const FabricationJobDetailsPage = () => {
   };
 
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
+  const [unitModalTarget, setUnitModalTarget] = useState({ type: 'quote' });
   const [unitsList, setUnitsList] = useState(() => {
     try {
       const cached = localStorage.getItem('crm_fab_quotation_units');
@@ -222,7 +223,15 @@ const FabricationJobDetailsPage = () => {
   });
 
   const handleSelectUnit = (unit) => {
-    setQuoteForm(prev => ({ ...prev, unit }));
+    if (unitModalTarget?.type === 'inlineSub' && unitModalTarget.itemId) {
+      handleInlineSubFormChange(unitModalTarget.itemId, 'unit', unit);
+    } else if (unitModalTarget?.type === 'modalSub') {
+      setModalNewSub(prev => ({ ...prev, unit }));
+    } else if (unitModalTarget?.type === 'expense') {
+      setExpenseForm(prev => ({ ...prev, unit }));
+    } else {
+      setQuoteForm(prev => ({ ...prev, unit }));
+    }
   };
 
   const handleUnitsChanged = (newList) => {
@@ -1373,7 +1382,10 @@ const FabricationJobDetailsPage = () => {
                 </label>
                 <button
                   type="button"
-                  onClick={() => setIsUnitModalOpen(true)}
+                  onClick={() => {
+                    setUnitModalTarget({ type: 'quote' });
+                    setIsUnitModalOpen(true);
+                  }}
                   className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
                   title="Add, Edit or Delete Measurement Units"
                 >
@@ -1652,7 +1664,7 @@ const FabricationJobDetailsPage = () => {
                                     <span>Add Sub-Item to "{item.description}"</span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                                    <div className="sm:col-span-5">
+                                    <div className="sm:col-span-4">
                                       <input
                                         type="text"
                                         placeholder="e.g. MS Pipes 50x50mm, Hardware hinges, Primer..."
@@ -1684,14 +1696,30 @@ const FabricationJobDetailsPage = () => {
                                         className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                       />
                                     </div>
-                                    <div className="sm:col-span-2">
-                                      <input
-                                        type="text"
-                                        placeholder="Unit (Nos, Kg)"
+                                    <div className="sm:col-span-3 flex items-center gap-1">
+                                      <select
                                         value={inlineForm.unit || 'Nos'}
                                         onChange={(e) => handleInlineSubFormChange(item._id, 'unit', e.target.value)}
-                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                      />
+                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                                      >
+                                        {unitsList.map((u) => (
+                                          <option key={u} value={u}>{u}</option>
+                                        ))}
+                                        {inlineForm.unit && !unitsList.includes(inlineForm.unit) && (
+                                          <option value={inlineForm.unit}>{inlineForm.unit}</option>
+                                        )}
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setUnitModalTarget({ type: 'inlineSub', itemId: item._id });
+                                          setIsUnitModalOpen(true);
+                                        }}
+                                        className="p-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shadow-xs shrink-0"
+                                        title="Manage Measurement Units"
+                                      >
+                                        <Plus size={12} className="stroke-[3]" />
+                                      </button>
                                     </div>
                                     <div className="sm:col-span-2">
                                       <input
@@ -2155,7 +2183,10 @@ const FabricationJobDetailsPage = () => {
                         </label>
                         <button
                           type="button"
-                          onClick={() => setIsUnitModalOpen(true)}
+                          onClick={() => {
+                            setUnitModalTarget({ type: 'expense' });
+                            setIsUnitModalOpen(true);
+                          }}
                           className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
                           title="Add, Edit or Delete Measurement Units"
                         >
@@ -3269,7 +3300,10 @@ const FabricationJobDetailsPage = () => {
                     </label>
                     <button
                       type="button"
-                      onClick={() => setIsUnitModalOpen(true)}
+                      onClick={() => {
+                        setUnitModalTarget({ type: 'quote' });
+                        setIsUnitModalOpen(true);
+                      }}
                       className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
                       title="Add, Edit or Delete Measurement Units"
                     >
@@ -3386,7 +3420,7 @@ const FabricationJobDetailsPage = () => {
 
                 {/* Quick Add Sub-Item Row */}
                 <div className="grid grid-cols-12 gap-1.5 pt-1 items-center">
-                  <div className="col-span-6">
+                  <div className="col-span-4">
                     <input
                       type="text"
                       placeholder="Sub-item name / material"
@@ -3419,7 +3453,32 @@ const FabricationJobDetailsPage = () => {
                       className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
-                  <div className="col-span-3">
+                  <div className="col-span-3 flex items-center gap-1">
+                    <select
+                      value={modalNewSub.unit || 'Nos'}
+                      onChange={(e) => setModalNewSub({ ...modalNewSub, unit: e.target.value })}
+                      className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {unitsList.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      {modalNewSub.unit && !unitsList.includes(modalNewSub.unit) && (
+                        <option value={modalNewSub.unit}>{modalNewSub.unit}</option>
+                      )}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnitModalTarget({ type: 'modalSub' });
+                        setIsUnitModalOpen(true);
+                      }}
+                      className="p-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold flex items-center justify-center border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shadow-xs shrink-0"
+                      title="Manage Measurement Units"
+                    >
+                      <Plus size={12} className="stroke-[3]" />
+                    </button>
+                  </div>
+                  <div className="col-span-2">
                     <input
                       type="number"
                       step="any"
@@ -3860,7 +3919,10 @@ const FabricationJobDetailsPage = () => {
                             </label>
                             <button
                               type="button"
-                              onClick={() => setIsUnitModalOpen(true)}
+                              onClick={() => {
+                                setUnitModalTarget({ type: 'expense' });
+                                setIsUnitModalOpen(true);
+                              }}
                               className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
                               title="Add, Edit or Delete Measurement Units"
                             >
@@ -4213,7 +4275,15 @@ const FabricationJobDetailsPage = () => {
       <QuotationUnitModal
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
-        selectedUnit={quoteForm.unit}
+        selectedUnit={
+          unitModalTarget?.type === 'inlineSub' && unitModalTarget.itemId
+            ? (inlineSubForms[unitModalTarget.itemId]?.unit || 'Nos')
+            : unitModalTarget?.type === 'modalSub'
+            ? (modalNewSub.unit || 'Nos')
+            : unitModalTarget?.type === 'expense'
+            ? (expenseForm.unit || 'Nos')
+            : (quoteForm.unit || 'Sq.Ft')
+        }
         onSelectUnit={handleSelectUnit}
         onUnitsChanged={handleUnitsChanged}
       />
