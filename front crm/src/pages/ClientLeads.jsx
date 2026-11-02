@@ -13,6 +13,7 @@ import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
 import ConfirmModal from '../components/ConfirmModal';
 import TopScrollbar from '../components/TopScrollbar';
+import Pagination from '../components/Pagination';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -833,11 +834,15 @@ export default function ClientLeads() {
 
       return matchesSearch && matchesTab && matchesPriority && matchesStaff && matchesCity && matchesDate;
     }).sort((a, b) => {
-      const dateA = new Date(a.createdAt || 0).getTime();
-      const dateB = new Date(b.createdAt || 0).getTime();
+      const dateA = new Date(a.leadsReceivedDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.leadsReceivedDate || b.createdAt || 0).getTime();
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
   }, [leads, searchQuery, activeTab, activePriority, staffFilter, cityFilter, dateFrom, dateTo, sortOrder]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, activeTab, activePriority, staffFilter, cityFilter, dateFrom, dateTo]);
 
   const paginatedLeads = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -1355,6 +1360,19 @@ export default function ClientLeads() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Pagination Controls */}
+      {filteredLeads.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredLeads.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
+          label='leads'
+          className='mt-4 shadow-sm'
+        />
       )}
 
       {/* CREATE LEAD MODAL */}

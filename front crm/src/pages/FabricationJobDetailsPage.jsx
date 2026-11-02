@@ -1165,7 +1165,11 @@ const FabricationJobDetailsPage = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-semibold mt-2">
-              {job.clientPhone && (
+              <span className="flex items-center gap-1">
+                  <Calendar size={13} className="text-slate-400" />
+                  <span>Date: <strong className="font-mono text-slate-700 dark:text-slate-200">{formatDate(job.startDate || job.createdAt)}</strong></span>
+                </span>
+                {job.clientPhone && (
                 <span className="flex items-center gap-1">
                   <Phone size={13} className="text-slate-400" />
                   <a href={`tel:${job.clientPhone}`} className="hover:underline">{job.clientPhone}</a>

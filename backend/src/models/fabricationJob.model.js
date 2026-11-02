@@ -257,6 +257,8 @@ fabricationJobSchema.pre('save', function () {
   this.recalculateFinancials();
 });
 
+fabricationJobSchema.index({ startDate: -1 });
+fabricationJobSchema.index({ createdAt: -1 });
 const FabricationJob = mongoose.model('FabricationJob', fabricationJobSchema);
 
 export default FabricationJob;

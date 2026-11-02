@@ -9,7 +9,7 @@ import Expense from '../models/expense.model.js';
 import User from '../models/user.model.js';
 import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
-import { generateClientId, fetchClientStats, syncAllConfirmedLeadsToClients } from '../services/client.service.js';
+import { generateClientId, fetchClientStats, syncAllConfirmedLeadsToClients, syncClientChangesToLeadsAndWorkspace } from '../services/client.service.js';
 import { sendSuccess, sendError } from '../utils/response.helper.js';
 
 /**
@@ -26,7 +26,7 @@ const sanitizeClientPayload = (body) => {
     }
   });
 
-  const dateFields = ['contractStart', 'contractEnd'];
+  const dateFields = ['contractStart', 'contractEnd', 'clientDate'];
   dateFields.forEach(field => {
     if (sanitized[field] === '' || sanitized[field] === undefined || sanitized[field] === null) {
       delete sanitized[field];
@@ -46,12 +46,15 @@ export const getClients = async (req, res) => {
       limit = 10,
       search = '',
       status,
+      amountStatus,
       clientType,
       priority,
       industry,
       accountManager,
       assignedTeamLead,
-      sortBy = 'createdAt',
+      startDate,
+      endDate,
+      sortBy = 'clientDate',
       sortOrder = 'desc'
     } = req.query;
 
@@ -70,6 +73,7 @@ export const getClients = async (req, res) => {
     }
 
     if (status) query.status = status;
+    if (amountStatus) query.amountStatus = amountStatus;
     if (clientType) query.clientType = clientType;
     if (priority) query.priority = priority;
     if (industry) query.industry = { $regex: industry, $options: 'i' };
@@ -82,12 +86,15 @@ export const getClients = async (req, res) => {
       revenue: 'expectedMonthlyRevenue',
       company: 'companyName',
       client: 'clientName',
-      newest: 'createdAt',
-      oldest: 'createdAt'
+      date: 'clientDate',
+      clientDate: 'clientDate',
+      newest: 'clientDate',
+      oldest: 'clientDate',
+      createdAt: 'createdAt'
     };
-    const mappedSortBy = sortFieldMap[sortBy] || sortBy;
+    const mappedSortBy = sortFieldMap[sortBy] || 'clientDate';
     const finalSortOrder = sortBy === 'oldest' ? 1 : (sortBy === 'newest' ? -1 : (sortOrder === 'asc' ? 1 : -1));
-    const sort = { [mappedSortBy]: finalSortOrder };
+    const sort = { [mappedSortBy]: finalSortOrder, createdAt: -1 };
 
     const clients = await Client.find(query)
       .populate('accountManager', 'name email avatar employeeId designation')
@@ -188,7 +195,10 @@ export const createClient = async (req, res) => {
     const clientId = await generateClientId();
     const sanitizedBody = sanitizeClientPayload(req.body);
 
+    const clientDate = sanitizedBody.clientDate ? new Date(sanitizedBody.clientDate) : new Date();
+
     const newClient = new Client({
+      clientDate,
       ...sanitizedBody,
       clientId,
       createdBy: userId,
@@ -271,6 +281,11 @@ export const updateClient = async (req, res) => {
     } catch (actErr) {
       console.warn('Non-fatal warning: Client update activity logging failed:', actErr.message);
     }
+
+
+
+    // Cascade sync to Workspace Jobs and Client Leads
+    await syncClientChangesToLeadsAndWorkspace(updatedClient);
 
     return sendSuccess(res, 'Client details updated successfully', updatedClient);
   } catch (error) {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, ShieldAlert, Loader2, Building } from 'lucide-react';
+import { X, Save, ShieldAlert, Loader2, Building, Calendar } from 'lucide-react';
 import { createClient } from '../../services/clientService';
 import { formatApiError } from '../../utils/errorUtils';
 
@@ -9,8 +9,10 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
+    clientDate: new Date().toISOString().split('T')[0],
     clientName: '',
     phone: '',
+    amountStatus: 'Beginning Stage',
     remarks: ''
   });
 
@@ -43,10 +45,12 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
       const fallbackEmail = `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}@client.local`;
 
       const payload = {
+        clientDate: formData.clientDate ? new Date(formData.clientDate) : new Date(),
         clientName: cleanName,
         companyName: cleanName,
         phone: cleanPhone,
         email: fallbackEmail,
+        amountStatus: formData.amountStatus || 'Beginning Stage',
         notes: formData.remarks.trim(),
         status: 'Active',
         industry: 'Technology'
@@ -54,7 +58,13 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
 
       const res = await createClient(payload);
       if (res && res.success) {
-        setFormData({ clientName: '', phone: '', remarks: '' });
+        setFormData({
+          clientDate: new Date().toISOString().split('T')[0],
+          clientName: '',
+          phone: '',
+          amountStatus: 'Beginning Stage',
+          remarks: ''
+        });
         if (onSuccess) onSuccess();
         onClose();
       } else {
@@ -106,6 +116,23 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
             )}
 
+            {/* Single Date Field */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                Date *
+              </label>
+              <input
+                type="date"
+                required
+                name="clientDate"
+                value={formData.clientDate}
+                onChange={handleChange}
+                className={inputCls}
+              />
+            </div>
+
+            {/* Client Name */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Client Name *</label>
               <input
@@ -119,6 +146,7 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
               />
             </div>
 
+            {/* Phone Number */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
               <input
@@ -132,6 +160,23 @@ const CreateClientModal = ({ isOpen, onClose, onSuccess }) => {
               />
             </div>
 
+            {/* Amount Status */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Amnt Status</label>
+              <select
+                name="amountStatus"
+                value={formData.amountStatus}
+                onChange={handleChange}
+                className={inputCls}
+              >
+                <option value="Beginning Stage">Beginning Stage</option>
+                <option value="Pending">Pending</option>
+                <option value="Urgent">Urgent</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+
+            {/* Remarks */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Remarks</label>
               <textarea

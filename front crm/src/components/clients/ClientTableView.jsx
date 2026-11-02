@@ -1,8 +1,20 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Edit3, Trash2, Building, ExternalLink, Eye, ChevronRight, Phone } from 'lucide-react';
+import { Edit3, Trash2, Eye, ChevronRight, Phone, ChevronDown } from 'lucide-react';
+import { AMOUNT_STATUSES, AMOUNT_STATUS_CONFIG } from '../../utils/clientStatusUtils';
 
-const ClientTableView = ({ clients, onEdit, onDelete, onViewTransactions }) => {
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return '-';
+  }
+};
+
+const ClientTableView = ({ clients, onEdit, onDelete, onStatusChange }) => {
   const navigate = useNavigate();
 
   return (
@@ -11,17 +23,19 @@ const ClientTableView = ({ clients, onEdit, onDelete, onViewTransactions }) => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-800/50 text-[11px] font-black uppercase text-slate-500 tracking-wider">
+              <th className="py-4 px-6">Date</th>
               <th className="py-4 px-6">Client Name</th>
               <th className="py-4 px-6">Phone Number</th>
+              <th className="py-4 px-6">Amnt Status</th>
               <th className="py-4 px-6">Remarks / Notes</th>
               <th className="py-4 px-6 text-center">Actions</th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+          <tbody className="divide-y divide-slate-100/80 dark:divide-slate-800/60 text-xs">
             {clients.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
+                <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
                   No clients found.
                 </td>
               </tr>
@@ -31,14 +45,21 @@ const ClientTableView = ({ clients, onEdit, onDelete, onViewTransactions }) => {
                 const name = client.clientName || client.companyName || 'N/A';
                 const phone = client.phone || 'N/A';
                 const remarks = client.notes || client.remarks || '-';
+                const amountStatus = client.amountStatus || 'Beginning Stage';
+                const statusCfg = AMOUNT_STATUS_CONFIG[amountStatus] || AMOUNT_STATUS_CONFIG['Beginning Stage'];
 
                 return (
                   <tr
                     key={id}
                     onClick={() => navigate(`/clients/${id}`)}
-                    className="hover:bg-indigo-50/50 dark:hover:bg-slate-800/60 transition-all cursor-pointer group"
+                    className={`border-l-4 transition-all cursor-pointer group ${statusCfg.rowBg}`}
                     title={`Click anywhere to open ${name}'s detail page`}
                   >
+                    {/* Date Column */}
+                    <td className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 font-mono text-xs whitespace-nowrap">
+                      {formatDate(client.clientDate || client.createdAt)}
+                    </td>
+
                     {/* Client Name Column */}
                     <td className="py-4 px-6 font-bold text-slate-800 dark:text-slate-100">
                       <div className="flex items-center gap-3">
@@ -68,6 +89,25 @@ const ClientTableView = ({ clients, onEdit, onDelete, onViewTransactions }) => {
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
+                    </td>
+
+                    {/* Amnt Status Column with Inline Selector */}
+                    <td className="py-4 px-6 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative inline-flex items-center">
+                        <select
+                          value={amountStatus}
+                          onChange={(e) => onStatusChange?.(id, e.target.value)}
+                          aria-label={`Change amount status for ${name}`}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-full border cursor-pointer appearance-none pr-7 transition-all focus:outline-hidden focus:ring-2 focus:ring-offset-1 shadow-xs ${statusCfg.badge}`}
+                        >
+                          {AMOUNT_STATUSES.map((st) => (
+                            <option key={st} value={st} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold py-1">
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 absolute right-2 pointer-events-none opacity-60" />
+                      </div>
                     </td>
 
                     {/* Remarks */}

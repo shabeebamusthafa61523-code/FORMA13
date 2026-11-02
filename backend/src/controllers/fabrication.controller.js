@@ -13,6 +13,7 @@ import {
 import FabricationJob from '../models/fabricationJob.model.js';
 import User from '../models/user.model.js';
 import Client from '../models/client.model.js';
+import { syncClientChangesToLeadsAndWorkspace } from '../services/client.service.js';
 import QuotationTerm from '../models/quotationTerm.model.js';
 import FabricationMaterial from '../models/fabricationMaterial.model.js';
 import FabricationWorkScope from '../models/fabricationWorkScope.model.js';
@@ -134,9 +135,15 @@ const generateJobId = async () => {
 // 1. Get all fabrication jobs with filters & top metrics
 export const getFabricationJobs = async (req, res) => {
   try {
-    const { search, status, page = 1, limit = 50 } = req.query;
+    const { search, status, startDate, endDate, page = 1, limit = 50 } = req.query;
 
     const query = { jobId: { $nin: ['FAB-GLOBAL-CONFIG', 'FAB-CONFIG-MASTER'] } };
+
+    if (startDate || endDate) {
+      query.startDate = {};
+      if (startDate) query.startDate.$gte = new Date(startDate);
+      if (endDate) query.startDate.$lte = new Date(endDate);
+    }
 
     if (status && status !== 'All') {
       query.status = status;
@@ -157,7 +164,7 @@ export const getFabricationJobs = async (req, res) => {
 
     const [jobs, totalCount, allJobsForMetrics] = await Promise.all([
       FabricationJob.find(query)
-        .sort({ updatedAt: -1 })
+        .sort({ startDate: -1, createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10))
         .lean(),
@@ -390,6 +397,25 @@ export const updateFabricationJob = async (req, res) => {
 
     await job.save();
     try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
+
+    // If job is linked to a client and name/contact was updated, sync back to Client and Leads
+    if (job.client && (clientName || clientPhone || clientEmail)) {
+      try {
+        const clientUpdate = {};
+        if (clientName) {
+          clientUpdate.clientName = clientName;
+          clientUpdate.companyName = clientName;
+        }
+        if (clientPhone) clientUpdate.phone = clientPhone;
+        if (clientEmail) clientUpdate.email = clientEmail;
+        const updatedClient = await Client.findByIdAndUpdate(job.client, { $set: clientUpdate }, { new: true });
+        if (updatedClient) {
+          await syncClientChangesToLeadsAndWorkspace(updatedClient);
+        }
+      } catch (err) {
+        console.error("Error cascading job client update to Client and Leads:", err);
+      }
+    }
 
     return res.status(200).json({
       success: true,

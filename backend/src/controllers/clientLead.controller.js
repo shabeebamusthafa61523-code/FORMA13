@@ -1,7 +1,7 @@
 import ClientLead from '../models/clientLead.model.js';
 import User from '../models/user.model.js';
 import Client from '../models/client.model.js';
-import { generateClientId, syncLeadToClient } from '../services/client.service.js';
+import { generateClientId, syncLeadToClient, syncLeadChangesToClientsAndWorkspace } from '../services/client.service.js';
 
 /**
  * GET /api/v1/client-leads
@@ -41,9 +41,13 @@ export const getClientLeads = async (req, res, next) => {
     if (interestedService) query.interestedService = { $regex: interestedService, $options: 'i' };
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const dateFilter = {};
+      if (startDate) dateFilter.$gte = new Date(startDate);
+      if (endDate) dateFilter.$lte = new Date(endDate);
+      query.$or = [
+        { leadsReceivedDate: dateFilter },
+        { createdAt: dateFilter }
+      ];
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -53,7 +57,7 @@ export const getClientLeads = async (req, res, next) => {
         .populate('assignedTo', 'name email employeeId designation role_id department')
         .populate('createdBy', 'name email')
         .populate('convertedToClient', 'clientId companyName clientName phone email')
-        .sort({ createdAt: -1 })
+        .sort({ leadsReceivedDate: -1, createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
@@ -204,6 +208,9 @@ export const updateClientLead = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Client lead not found' });
     }
 
+    if (req.body.leadsReceivedDate) {
+      req.body.leadsReceivedDate = new Date(req.body.leadsReceivedDate);
+    }
     const newStatus = req.body.status;
     const isConfirming = newStatus && ['confirm', 'confirmed', 'converted'].includes(String(newStatus).toLowerCase());
 
@@ -225,6 +232,13 @@ export const updateClientLead = async (req, res, next) => {
       .populate('assignedTo', 'name email employeeId designation role_id department')
       .populate('createdBy', 'name email')
       .populate('convertedToClient');
+
+    if (updatedLead) {
+      const isConfirmed = updatedLead.status && ['confirm', 'confirmed', 'converted'].includes(String(updatedLead.status).toLowerCase());
+      if (isConfirmed || updatedLead.convertedToClient) {
+        await syncLeadChangesToClientsAndWorkspace(updatedLead, currentUserId);
+      }
+    }
 
     return res.status(200).json({
       success: true,

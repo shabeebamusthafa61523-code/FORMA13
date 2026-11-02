@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, ShieldAlert, Loader2, CheckCircle2, Building } from 'lucide-react';
+import { X, Save, ShieldAlert, Loader2, CheckCircle2, Building, Calendar } from 'lucide-react';
 import { updateClient } from '../../services/clientService';
 import { formatApiError } from '../../utils/errorUtils';
 
@@ -10,16 +10,24 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [formData, setFormData] = useState({
+    clientDate: '',
     clientName: '',
     phone: '',
+    amountStatus: 'Beginning Stage',
     remarks: ''
   });
 
   useEffect(() => {
     if (client && isOpen) {
+      const initialDate = client.clientDate
+        ? new Date(client.clientDate).toISOString().split('T')[0]
+        : (client.createdAt ? new Date(client.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+
       setFormData({
+        clientDate: initialDate,
         clientName: client.clientName || client.companyName || '',
         phone: client.phone || '',
+        amountStatus: client.amountStatus || 'Beginning Stage',
         remarks: client.notes || client.remarks || ''
       });
       setError('');
@@ -59,10 +67,12 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
 
       const payload = {
         ...client,
+        clientDate: formData.clientDate ? new Date(formData.clientDate) : new Date(),
         clientName: cleanName,
         companyName: client.companyName || cleanName,
         phone: cleanPhone,
         email: fallbackEmail,
+        amountStatus: formData.amountStatus || 'Beginning Stage',
         notes: formData.remarks.trim()
       };
 
@@ -103,7 +113,7 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
             </div>
             <div>
               <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Edit Client</h2>
-              <p className="text-xs text-slate-400 font-medium">Update client details.</p>
+              <p className="text-xs text-slate-400 font-medium">Update client record & notes.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
@@ -126,19 +136,77 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
               </div>
             )}
 
+            {/* Single Date Field */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                Date *
+              </label>
+              <input
+                type="date"
+                required
+                name="clientDate"
+                value={formData.clientDate}
+                onChange={handleChange}
+                className={inputCls}
+              />
+            </div>
+
+            {/* Client Name */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Client Name *</label>
-              <input type="text" required name="clientName" value={formData.clientName} onChange={handleChange} placeholder="Enter client name" className={inputCls} />
+              <input
+                type="text"
+                required
+                name="clientName"
+                value={formData.clientName}
+                onChange={handleChange}
+                placeholder="Enter client name"
+                className={inputCls}
+              />
             </div>
 
+            {/* Phone Number */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
-              <input type="text" required name="phone" value={formData.phone} onChange={handleChange} placeholder="Enter phone number" className={inputCls} />
+              <input
+                type="text"
+                required
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder="Enter phone number"
+                className={inputCls}
+              />
             </div>
 
+            {/* Amount Status */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Amnt Status</label>
+              <select
+                name="amountStatus"
+                value={formData.amountStatus}
+                onChange={handleChange}
+                className={inputCls}
+              >
+                <option value="Beginning Stage">Beginning Stage</option>
+                <option value="Pending">Pending</option>
+                <option value="Urgent">Urgent</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+
+            {/* Remarks */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Remarks</label>
-              <textarea rows={3} name="remarks" value={formData.remarks} onChange={handleChange} placeholder="Enter any notes or remarks..." className={inputCls} />
+              <textarea
+                rows={3}
+                name="remarks"
+                value={formData.remarks}
+                onChange={handleChange}
+                placeholder="Enter any notes or remarks..."
+                className={inputCls}
+              />
             </div>
           </div>
 
