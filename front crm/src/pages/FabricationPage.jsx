@@ -13,6 +13,7 @@ import {
 import { getClients } from '../services/clientService';
 import { useToast } from '../components/ToastProvider';
 import ConfirmModal from '../components/ConfirmModal';
+import Pagination from '../components/Pagination';
 
 const statusColors = {
   'Quotation Stage': 'bg-amber-100 text-amber-800 border-amber-200',
@@ -35,6 +36,9 @@ const FabricationPage = () => {
   const { showToast } = useToast();
 
   const [jobs, setJobs] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalJobs, setTotalJobs] = useState(0);
   const [metrics, setMetrics] = useState({
     totalJobs: 0,
     activeJobs: 0,
@@ -78,10 +82,19 @@ const FabricationPage = () => {
     try {
       const res = await getFabricationJobs({
         search,
-        status: statusFilter
+        status: statusFilter,
+        page: currentPage,
+        limit: itemsPerPage
       });
       if (res && res.success) {
-        setJobs(res.data.jobs || []);
+        const rawJobs = res.data.jobs || [];
+        const sorted = rawJobs.slice().sort((a, b) => {
+          const dA = new Date(a.startDate || a.createdAt || 0).getTime();
+          const dB = new Date(b.startDate || b.createdAt || 0).getTime();
+          return dB - dA;
+        });
+        setJobs(sorted);
+        setTotalJobs(res.data.pagination?.total ?? (sorted.length || 0));
         if (res.data.metrics) {
           setMetrics(res.data.metrics);
         }
@@ -94,7 +107,7 @@ const FabricationPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, showToast]);
+  }, [search, statusFilter, currentPage, itemsPerPage, showToast]);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -106,6 +119,10 @@ const FabricationPage = () => {
       console.error('Failed to load clients list:', err);
     }
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
 
   useEffect(() => {
     fetchJobs();
@@ -393,6 +410,7 @@ const FabricationPage = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3.5 px-4">Start Date</th>
                   <th className="py-3.5 px-4">Job & Client Details</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4 text-right">Quotation</th>
@@ -411,6 +429,11 @@ const FabricationPage = () => {
                       onClick={() => navigate(`/fabrication/${job._id}`)}
                       className="hover:bg-indigo-50/40 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
                     >
+                      {/* Start Date */}
+                      <td className="py-4 px-4 whitespace-nowrap text-xs font-semibold text-slate-600 dark:text-slate-300 font-mono">
+                        {job.startDate ? new Date(job.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (job.createdAt ? new Date(job.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-')}
+                      </td>
+
                       {/* Job & Client */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-0.5">
@@ -491,6 +514,19 @@ const FabricationPage = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Workspace Jobs Pagination */}
+      {!loading && totalJobs > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={totalJobs}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
+          label='jobs'
+          className='mt-4 shadow-xs'
+        />
       )}
 
       {/* 5. Create New Fabrication Job Modal */}

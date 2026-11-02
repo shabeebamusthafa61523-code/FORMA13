@@ -129,6 +129,7 @@ clientLeadSchema.index({ leadName: 'text', email: 'text', phone: 'text', company
 
 // Performance optimization indexes
 clientLeadSchema.index({ status: 1 });
+clientLeadSchema.index({ leadsReceivedDate: -1 });
 clientLeadSchema.index({ createdAt: -1 });
 clientLeadSchema.index({ assignedTo: 1 });
 clientLeadSchema.index({ priority: 1 });

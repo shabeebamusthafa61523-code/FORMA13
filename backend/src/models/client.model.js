@@ -136,6 +136,16 @@ const clientSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  clientDate: {
+    type: Date,
+    default: Date.now
+  },
+  amountStatus: {
+    type: String,
+    enum: ['Beginning Stage', 'Pending', 'Urgent', 'Completed'],
+    default: 'Beginning Stage',
+    trim: true
+  },
   contractStart: {
     type: Date,
     default: null
@@ -183,6 +193,7 @@ clientSchema.index({ companyName: 'text', clientName: 'text', email: 'text', cli
 clientSchema.index({ status: 1 });
 clientSchema.index({ priority: 1 });
 clientSchema.index({ accountManager: 1 });
+clientSchema.index({ clientDate: -1 });
 clientSchema.index({ createdAt: -1 });
 
 const Client = mongoose.model('Client', clientSchema);

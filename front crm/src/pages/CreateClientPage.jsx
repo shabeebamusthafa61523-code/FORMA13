@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building, ArrowLeft, Save, ShieldAlert, Loader2 } from 'lucide-react';
+import { Building, ArrowLeft, Save, ShieldAlert, Loader2, Calendar } from 'lucide-react';
 import { createClient } from '../services/clientService';
 import { useToast } from '../components/ToastProvider';
 import { formatApiError } from '../utils/errorUtils';
@@ -12,8 +12,10 @@ const CreateClientPage = () => {
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
+    clientDate: new Date().toISOString().split('T')[0],
     clientName: '',
     phone: '',
+    amountStatus: 'Beginning Stage',
     remarks: ''
   });
 
@@ -44,10 +46,12 @@ const CreateClientPage = () => {
       const fallbackEmail = `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'client'}@client.local`;
 
       const payload = {
+        clientDate: formData.clientDate ? new Date(formData.clientDate) : new Date(),
         clientName: cleanName,
         companyName: cleanName,
         phone: cleanPhone,
         email: fallbackEmail,
+        amountStatus: formData.amountStatus || 'Beginning Stage',
         notes: formData.remarks.trim(),
         status: 'Active',
         industry: 'Technology'
@@ -101,6 +105,23 @@ const CreateClientPage = () => {
 
       {/* Form Card */}
       <form onSubmit={handleSubmit} className="p-6 md:p-8 rounded-3xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md shadow-xl flex flex-col gap-4">
+        {/* Single Date Field */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            Date *
+          </label>
+          <input
+            type="date"
+            required
+            name="clientDate"
+            value={formData.clientDate}
+            onChange={handleChange}
+            className={inputCls}
+          />
+        </div>
+
+        {/* Client Name */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Client Name *</label>
           <input
@@ -114,6 +135,7 @@ const CreateClientPage = () => {
           />
         </div>
 
+        {/* Phone Number */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
           <input
@@ -127,6 +149,23 @@ const CreateClientPage = () => {
           />
         </div>
 
+        {/* Amount Status */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Amnt Status</label>
+          <select
+            name="amountStatus"
+            value={formData.amountStatus}
+            onChange={handleChange}
+            className={inputCls}
+          >
+            <option value="Beginning Stage">Beginning Stage</option>
+            <option value="Pending">Pending</option>
+            <option value="Urgent">Urgent</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+
+        {/* Remarks */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Remarks</label>
           <textarea
@@ -139,24 +178,24 @@ const CreateClientPage = () => {
           />
         </div>
 
-        {/* Submit Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+        {/* Submit Actions */}
+        <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
             onClick={() => navigate('/clients')}
-            className="px-6 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+            className="px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center gap-2 px-8 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-lg shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
           >
             {submitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Creating...</span>
+                <span>Saving...</span>
               </>
             ) : (
               <>

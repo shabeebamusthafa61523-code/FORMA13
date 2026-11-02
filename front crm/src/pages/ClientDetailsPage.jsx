@@ -2715,6 +2715,7 @@ const ClientDetailsPage = () => {
         <div>
           <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">Commercial Profile & GST</span>
           <div className="flex items-center gap-4 text-slate-700 dark:text-slate-300 font-semibold">
+            <span>Date: <strong className="text-slate-900 dark:text-white font-mono">{formatDate(clientData?.clientDate || clientData?.createdAt)}</strong></span>
             <span>Status: <strong className="text-slate-900 dark:text-white">{clientData?.status || 'Active'}</strong></span>
             <span>Industry: <strong className="text-slate-900 dark:text-white">{clientData?.industry || 'Fabrication'}</strong></span>
             <span>GSTIN: <strong className="font-mono text-slate-900 dark:text-white">{clientData?.gstNumber || 'Not Specified'}</strong></span>
