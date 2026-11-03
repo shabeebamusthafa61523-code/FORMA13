@@ -31,6 +31,18 @@ const vendorSchema = new mongoose.Schema({
     default: '',
     trim: true
   },
+  openingBalance: {
+    type: Number,
+    default: 0
+  },
+  creditLimit: {
+    type: Number,
+    default: 0
+  },
+  paymentTermsDays: {
+    type: Number,
+    default: 30
+  },
   isActive: {
     type: Boolean,
     default: true

@@ -267,6 +267,11 @@ export const updateVendor = async (id, data) => {
   return response.data;
 };
 
+export const getVendorPurchases = async (id) => {
+  const response = await safeGet(`/vendors/${id}/purchases`);
+  return response.data;
+};
+
 export const deleteVendor = async (id) => {
   const response = await safeDelete(`/vendors/${id}`);
   return response.data;
@@ -286,5 +291,37 @@ export const createPartnerDrawing = async (data) => {
 
 export const deletePartnerDrawing = async (id) => {
   const response = await safeDelete(`/partner-share/drawings/${id}`);
+  return response.data;
+};
+
+
+export const recordSupplierPayment = async (vendorId, data) => {
+  const response = await safePost(`/vendors/${vendorId}/payments`, data);
+  return response.data;
+};
+
+export const getSupplierPayments = async (vendorId) => {
+  const response = await safeGet(`/vendors/${vendorId}/payments`);
+  return response.data;
+};
+
+export const deleteSupplierPayment = async (vendorId, paymentId) => {
+  const response = await safeDelete(`/vendors/${vendorId}/payments/${paymentId}`);
+  return response.data;
+};
+
+export const getSupplierLedger = async (vendorId) => {
+  const response = await safeGet(`/vendors/${vendorId}/ledger`);
+  return response.data;
+};
+
+
+export const recordSupplierCredit = async (vendorId, data) => {
+  const response = await safePost(`/vendors/${vendorId}/credits`, data);
+  return response.data;
+};
+
+export const deleteSupplierCredit = async (vendorId, creditId) => {
+  const response = await safeDelete(`/vendors/${vendorId}/credits/${creditId}`);
   return response.data;
 };

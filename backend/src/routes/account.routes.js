@@ -45,6 +45,13 @@ import {
   updateOperation,
   deleteOperation,
   getVendors,
+  getVendorPurchases,
+  recordSupplierCredit,
+  deleteSupplierCredit,
+  recordSupplierPayment,
+  getSupplierPayments,
+  deleteSupplierPayment,
+  getSupplierLedger,
   createVendor,
   updateVendor,
   deleteVendor,
@@ -150,6 +157,13 @@ router.get('/reports/salary', getSalaryReport);
 
 // ── Vendor Routes ──
 router.get('/vendors', getVendors);
+router.get('/vendors/:id/purchases', getVendorPurchases);
+router.post('/vendors/:id/credits', recordSupplierCredit);
+router.delete('/vendors/:id/credits/:creditId', deleteSupplierCredit);
+router.post('/vendors/:id/payments', recordSupplierPayment);
+router.get('/vendors/:id/payments', getSupplierPayments);
+router.delete('/vendors/:id/payments/:paymentId', deleteSupplierPayment);
+router.get('/vendors/:id/ledger', getSupplierLedger);
 router.post('/vendors', createVendor);
 router.put('/vendors/:id', updateVendor);
 router.delete('/vendors/:id', deleteVendor);

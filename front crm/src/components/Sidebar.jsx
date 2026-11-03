@@ -5,7 +5,9 @@ import {
   Users, 
   UserCheck,
   Building2,
+  Truck,
   Hammer, 
+  ReceiptText,
   Wallet, 
   ShieldCheck,
   X,
@@ -115,8 +117,10 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
   const showDashboard = hasPerm('Dashboard', '/dashboard') || hasPerm('Admin Dashboard', '/dashboard');
   const showEmployees = hasPerm('Employees', '/users') || hasPerm('Users', '/users');
   const showClients = hasPerm('Clients', '/clients');
+  const showSuppliers = isSuper || hasPerm('Suppliers', '/suppliers') || hasPerm('Vendors', '/suppliers') || hasPerm('Clients', '/clients') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showClientLeads = isSuper || hasPerm('Client Leads', '/client-leads') || hasPerm('Leads', '/client-leads') || hasPerm('Clients', '/clients');
   const showFabrication = isSuper || hasPerm('Workspace', '/fabrication') || hasPerm('Fabrication', '/fabrication') || hasPerm('Fabrication Works', '/fabrication') || !userPermissions || userPermissions.length === 0;
+  const showGeneralExpense = isSuper || hasPerm('General expense', '/general-expenses') || hasPerm('General Expense', '/general-expenses') || hasPerm('Expense', '/accounts/expenses') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
   const showShare = isSuper || hasPerm('Share', '/accounts/share') || hasPerm('Share', '/share') || hasPerm('Partner Share', '/accounts/share');
   const showPermissions = isSuper || hasPerm('Sidebar Permissions', '/sidebar-permissions');
@@ -258,6 +262,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             </Link>
           )}
 
+          {/* Suppliers */}
+          {showSuppliers && (
+            <Link
+              to="/suppliers"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/suppliers'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Suppliers' : undefined}
+            >
+              <Truck size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Suppliers</span>}
+            </Link>
+          )}
+
           {/* Fabrication */}
           {showFabrication && (
             <Link
@@ -271,6 +291,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             >
               <Hammer size={20} className="shrink-0" />
               {!isCollapsed && <span className="truncate">Workspace</span>}
+            </Link>
+          )}
+
+          {/* General expense */}
+          {showGeneralExpense && (
+            <Link
+              to="/general-expenses"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath.startsWith('/general-expense')
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'General expense' : undefined}
+            >
+              <ReceiptText size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">General expense</span>}
             </Link>
           )}
 
@@ -476,6 +512,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             </Link>
           )}
 
+          {/* Suppliers */}
+          {showSuppliers && (
+            <Link
+              to="/suppliers"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/suppliers'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Truck size={20} className="shrink-0" />
+              <span>Suppliers</span>
+            </Link>
+          )}
+
           {/* Fabrication */}
           {showFabrication && (
             <Link
@@ -489,6 +541,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
             >
               <Hammer size={20} className="shrink-0" />
               <span>Workspace</span>
+            </Link>
+          )}
+
+          {/* General expense */}
+          {showGeneralExpense && (
+            <Link
+              to="/general-expenses"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath.startsWith('/general-expense')
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <ReceiptText size={20} className="shrink-0" />
+              <span>General expense</span>
             </Link>
           )}
 

@@ -57,6 +57,7 @@ import UserPermissionsPage from './pages/UserPermissionsPage';
 import SidebarPermissionsPage from './pages/SidebarPermissionsPage';
 import MdDashboard from './pages/MdDashboard';
 import AccountsPage from './pages/AccountsPage';
+import GeneralExpensePage from './pages/GeneralExpensePage';
 import LeavesPage from './pages/LeavesPage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import PayslipsPage from './pages/PayslipsPage';
@@ -67,6 +68,7 @@ import DailyOperationsPage from './pages/DailyOperationsPage';
 
 // Client & Project Management Module Pages
 import ClientsPage from './pages/ClientsPage';
+import SuppliersPage from './pages/SuppliersPage';
 import CreateClientPage from './pages/CreateClientPage';
 import ClientDetailsPage from './pages/ClientDetailsPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -241,6 +243,10 @@ function App() {
         <Route path="/my-payslip" element={<ProtectedRoute><MainLayout><PersonalPayslipPage /></MainLayout></ProtectedRoute>} />
         <Route path="/recruitment" element={<ProtectedRoute><MainLayout><RecruitmentPage /></MainLayout></ProtectedRoute>} />
 
+        {/* General Expense Module */}
+        <Route path="/general-expenses" element={<ProtectedRoute><MainLayout><GeneralExpensePage /></MainLayout></ProtectedRoute>} />
+        <Route path="/general-expense" element={<ProtectedRoute><MainLayout><GeneralExpensePage /></MainLayout></ProtectedRoute>} />
+
         {/* Accounts Department Module Routes */}
         <Route path="/accounts" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/income" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
@@ -267,6 +273,7 @@ function App() {
 
         {/* Client & Project Management Module Routes */}
         <Route path="/clients" element={<ProtectedRoute><MainLayout><RestrictedRoute><ClientsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
+        <Route path="/suppliers" element={<ProtectedRoute><MainLayout><SuppliersPage /></MainLayout></ProtectedRoute>} />
         <Route path="/clients/new" element={<ProtectedRoute><MainLayout><RestrictedRoute><CreateClientPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/clients/:id" element={<ProtectedRoute><MainLayout><RestrictedRoute><ClientDetailsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
         <Route path="/projects" element={<ProtectedRoute><MainLayout><RestrictedRoute><ProjectsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />
