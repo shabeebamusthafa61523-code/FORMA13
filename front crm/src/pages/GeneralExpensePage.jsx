@@ -210,10 +210,6 @@ const GeneralExpensePage = () => {
   // Submit Form (Handles both Add & Edit)
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.paidTo || !formData.paidTo.trim()) {
-      showToast('Please specify who was paid (Paid To).', 'warning');
-      return;
-    }
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
       showToast('Please enter a valid expense amount.', 'warning');
       return;
@@ -231,7 +227,7 @@ const GeneralExpensePage = () => {
         amount: parseFloat(formData.amount),
         totalAmount: parseFloat(formData.amount),
         paymentMode: formData.paymentMode,
-        paidTo: formData.paidTo.trim(),
+        paidTo: formData.paidTo ? formData.paidTo.trim() : '',
         description: formData.description ? formData.description.trim() : '',
         module: 'General',
         syncSource: { module: 'General', fabricationJobId: null, isAutoSynced: false }
@@ -661,14 +657,13 @@ const GeneralExpensePage = () => {
 
                     {/* Paid To */}
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Paid To (Payee) *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Paid To (Payee)</label>
                       <input
                         type="text"
-                        placeholder="e.g. Tea Stall, Swiggy, Cleaner"
+                        placeholder="e.g. Tea Stall, Cleaner (optional)"
                         value={formData.paidTo}
                         onChange={(e) => setFormData(prev => ({ ...prev, paidTo: e.target.value }))}
                         className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
-                        required
                       />
                     </div>
                   </div>

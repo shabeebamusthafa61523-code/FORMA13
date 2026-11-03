@@ -333,10 +333,10 @@ export const createExpense = async (req, res) => {
 
     const expAmount = Number(amount || 0);
 
-    if (!expAmount || !paymentMode || !paidTo) {
+    if (!expAmount || !paymentMode) {
       return res.status(400).json({
         success: false,
-        message: 'Amount, Payment Mode, and Paid To fields are required.'
+        message: 'Amount and Payment Mode fields are required.'
       });
     }
 
@@ -393,7 +393,7 @@ export const createExpense = async (req, res) => {
       isPurchase: isPur,
       amount: expAmount,
       paymentMode,
-      paidTo: paidTo.trim(),
+      paidTo: paidTo ? paidTo.trim() : '',
       description: description ? description.trim() : '',
       attachment: attachmentUrl,
       addedBy: req.user?.id || null,
@@ -452,7 +452,7 @@ export const updateExpense = async (req, res) => {
       expense.totalAmount = Number(amount);
     }
     if (paymentMode) expense.paymentMode = paymentMode;
-    if (paidTo) expense.paidTo = paidTo.trim();
+    if (paidTo !== undefined) expense.paidTo = paidTo ? paidTo.trim() : '';
     if (description !== undefined) expense.description = description.trim();
 
     if (req.file) {
