@@ -31,9 +31,11 @@ const ALL_SIDEBAR_ITEMS = [
 
   // --- SALES & CRM ---
   { label: 'Clients', path: '/clients', category: 'Sales & CRM', desc: 'Client directory & company profiles' },
+  { label: 'Suppliers', path: '/suppliers', category: 'Sales & CRM', desc: 'Supplier & vendor directory, contacts, GSTIN & materials supply' },
   { label: 'Workspace', path: '/fabrication', category: 'Operations & Works', desc: 'Workspace client jobs, quotations, daily wages, materials & payments' },
 
   // --- FINANCE & ACCOUNTS ---
+  { label: 'General expense', path: '/general-expenses', category: 'Finance & Accounts', desc: 'Direct logging & management of non-client general operational expenses' },
   { label: 'Capital', path: '/accounts/capital', category: 'Finance & Accounts', desc: 'Capital accounts & assets' },
   { label: 'Sales', path: '/accounts/sales', category: 'Finance & Accounts', desc: 'Sales & revenue tracking' },
   { label: 'Income', path: '/accounts/income', category: 'Finance & Accounts', desc: 'Income invoices & commercial receipts' },

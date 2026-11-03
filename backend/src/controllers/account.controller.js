@@ -11,11 +11,14 @@ import OpeningBalance from '../models/openingBalance.model.js';
 import Capital from '../models/capital.model.js';
 import OperationAccount from '../models/operationAccount.model.js';
 import Vendor from '../models/vendor.model.js';
+import SupplierPayment from '../models/supplierPayment.model.js';
+import SupplierCredit from '../models/supplierCredit.model.js';
 import FabricationJob from '../models/fabricationJob.model.js';
 import { sendEmail } from '../services/emailService.js';
 
 const DEFAULT_CATEGORIES = [
   'Salary',
+  'Tea & Refreshments',
   'Stationery',
   'Electricity',
   'Internet',
@@ -238,7 +241,7 @@ export const deleteCategory = async (req, res) => {
 
 export const getExpenses = async (req, res) => {
   try {
-    const { category, type, startDate, endDate, search, paymentMode, status } = req.query;
+    const { category, type, startDate, endDate, search, paymentMode, status, generalOnly, module } = req.query;
     const query = {};
 
     if (category) {
@@ -258,6 +261,11 @@ export const getExpenses = async (req, res) => {
       query.date = {};
       if (startDate) query.date.$gte = new Date(startDate);
       if (endDate) query.date.$lte = new Date(endDate + 'T23:59:59.999Z');
+    }
+
+    if (generalOnly === 'true' || module === 'General') {
+      query['syncSource.module'] = { $ne: 'Fabrication' };
+      query['syncSource.fabricationJobId'] = { $in: [null, ''] };
     }
 
     if (search) {
@@ -399,7 +407,13 @@ export const createExpense = async (req, res) => {
       sgstAmount: parseFloat(sgstAmount || 0),
       igstAmount: parseFloat(igstAmount || 0),
       totalAmount: parseFloat(totalAmount || expAmount),
-      status: 'APPROVED'
+      status: 'APPROVED',
+      syncSource: {
+        module: req.body.module || 'General',
+        fabricationJobId: null,
+        fabricationItemId: null,
+        isAutoSynced: false
+      }
     });
 
     return res.status(201).json({
@@ -2918,10 +2932,95 @@ export const servePublicPdf = async (req, res) => {
 
 export const getVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find({ isActive: true }).sort({ name: 1 });
+    const vendors = await Vendor.find({ isActive: true }).sort({ name: 1 }).lean();
+
+    // 1. Summary from FabricationJob
+    const jobs = await FabricationJob.find(
+      { 'purchasesAndExpenses.0': { $exists: true } },
+      { purchasesAndExpenses: 1 }
+    ).lean();
+
+    // 2. Summary from SupplierPayment
+    const payments = await SupplierPayment.find({}).lean();
+    const paymentsByVendor = {};
+    payments.forEach(p => {
+      const vId = String(p.vendor);
+      paymentsByVendor[vId] = (paymentsByVendor[vId] || 0) + Number(p.amount || 0);
+    });
+
+    // 3. Summary from SupplierCredit (Direct Credits Added)
+    const credits = await SupplierCredit.find({}).lean();
+    const creditsByVendor = {};
+    const creditsCountByVendor = {};
+    credits.forEach(c => {
+      const vId = String(c.vendor);
+      creditsByVendor[vId] = (creditsByVendor[vId] || 0) + Number(c.amount || 0);
+      creditsCountByVendor[vId] = (creditsCountByVendor[vId] || 0) + 1;
+    });
+
+    const vendorStats = {};
+    vendors.forEach(v => {
+      vendorStats[String(v._id)] = { count: 0, totalAmount: 0, creditPurchases: 0 };
+    });
+
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        const vName = (item.vendorName || '').toLowerCase().trim();
+        if (!vName) return;
+        vendors.forEach(v => {
+          const matchName = v.name.toLowerCase().trim();
+          if (vName.includes(matchName) || matchName.includes(vName)) {
+            const stats = vendorStats[String(v._id)];
+            if (stats) {
+              const amt = Number(item.amount || 0);
+              stats.count += 1;
+              stats.totalAmount += amt;
+              if (item.paymentMode === 'Credit/Pay Later') {
+                stats.creditPurchases += amt;
+              }
+            }
+          }
+        });
+      });
+    });
+
+    const enrichedVendors = vendors.map(v => {
+      const vId = String(v._id);
+      const ob = Number(v.openingBalance || 0);
+      const limit = Number(v.creditLimit || 0);
+      const terms = Number(v.paymentTermsDays || 30);
+      const stats = vendorStats[vId] || { count: 0, totalAmount: 0, creditPurchases: 0 };
+      const totalPaid = paymentsByVendor[vId] || 0;
+      const directCredit = creditsByVendor[vId] || 0;
+      const directCount = creditsCountByVendor[vId] || 0;
+
+      const totalCreditPurchases = stats.creditPurchases + directCredit;
+      const balance = (ob + totalCreditPurchases) - totalPaid;
+
+      let status = 'SETTLED';
+      if (balance > 0) {
+        status = limit > 0 && balance > limit ? 'LIMIT_EXCEEDED' : 'DUE';
+      } else if (balance < 0) {
+        status = 'ADVANCE';
+      }
+
+      return {
+        ...v,
+        openingBalance: ob,
+        creditLimit: limit,
+        paymentTermsDays: terms,
+        purchaseCount: stats.count + directCount,
+        totalPurchasesAmount: stats.totalAmount + directCredit,
+        creditPurchasesAmount: totalCreditPurchases,
+        totalPaidAmount: totalPaid,
+        creditBalance: balance,
+        creditStatus: status
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      data: vendors
+      data: enrichedVendors
     });
   } catch (error) {
     console.error('getVendors Error:', error);
@@ -2931,7 +3030,7 @@ export const getVendors = async (req, res) => {
 
 export const createVendor = async (req, res) => {
   try {
-    const { name, phone, email, gstin, address, notes } = req.body;
+    const { name, phone, email, gstin, address, notes, openingBalance, creditLimit, paymentTermsDays } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Vendor name is required.' });
     }
@@ -2954,6 +3053,9 @@ export const createVendor = async (req, res) => {
       gstin: gstin ? gstin.trim() : '',
       address: address ? address.trim() : '',
       notes: notes ? notes.trim() : '',
+      openingBalance: Number(openingBalance || 0),
+      creditLimit: Number(creditLimit || 0),
+      paymentTermsDays: Number(paymentTermsDays || 30),
       createdBy: req.user?._id || null
     });
 
@@ -2971,7 +3073,7 @@ export const createVendor = async (req, res) => {
 export const updateVendor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, email, gstin, address, notes } = req.body;
+    const { name, phone, email, gstin, address, notes, openingBalance, creditLimit, paymentTermsDays } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Vendor name is required.' });
@@ -2988,6 +3090,9 @@ export const updateVendor = async (req, res) => {
     if (gstin !== undefined) vendor.gstin = gstin.trim();
     if (address !== undefined) vendor.address = address.trim();
     if (notes !== undefined) vendor.notes = notes.trim();
+    if (openingBalance !== undefined) vendor.openingBalance = Number(openingBalance || 0);
+    if (creditLimit !== undefined) vendor.creditLimit = Number(creditLimit || 0);
+    if (paymentTermsDays !== undefined) vendor.paymentTermsDays = Number(paymentTermsDays || 30);
 
     await vendor.save();
 
@@ -3018,6 +3123,147 @@ export const deleteVendor = async (req, res) => {
     });
   } catch (error) {
     console.error('deleteVendor Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getVendorPurchases = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await Vendor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Supplier not found.' });
+    }
+
+    const escapedName = vendor.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedName, 'i');
+
+    // 1. Fetch from FabricationJob collection
+    const jobs = await FabricationJob.find(
+      { 'purchasesAndExpenses.vendorName': regex },
+      { jobId: 1, clientName: 1, siteAddress: 1, purchasesAndExpenses: 1 }
+    ).lean();
+
+    const purchases = [];
+    const seenExpenseIds = new Set();
+
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        if (regex.test(item.vendorName || '')) {
+          if (item._id) seenExpenseIds.add(String(item._id));
+          purchases.push({
+            _id: item._id,
+            source: 'Fabrication',
+            jobId: job.jobId,
+            clientName: job.clientName || 'Direct Client',
+            date: item.date || item.createdAt || new Date(),
+            type: item.type || 'Purchase',
+            category: item.category || 'Raw Material',
+            itemDescription: item.itemDescription || '',
+            billNumber: item.billNumber || '',
+            quantity: Number(item.quantity || 0),
+            unit: item.unit || '—',
+            rate: Number(item.rate || 0),
+            amount: Number(item.amount || 0),
+            paymentMode: item.paymentMode || 'Cash',
+            receiptUrl: item.receiptUrl || '',
+            notes: item.notes || '',
+            vendorName: item.vendorName || vendor.name
+          });
+        }
+      });
+    });
+
+    // 2. Fetch standalone from Expense collection (General Expenses, Accounts purchases, etc.)
+    const standaloneExpenses = await Expense.find({
+      paidTo: regex,
+      $or: [
+        { 'syncSource.fabricationItemId': null },
+        { 'syncSource.fabricationItemId': { $exists: false } },
+        { 'syncSource.module': { $ne: 'Fabrication' } }
+      ]
+    }).lean();
+
+    standaloneExpenses.forEach(exp => {
+      if (exp.syncSource?.fabricationItemId && seenExpenseIds.has(String(exp.syncSource.fabricationItemId))) {
+        return;
+      }
+      purchases.push({
+        _id: exp._id,
+        source: exp.syncSource?.module || 'Accounts',
+        jobId: exp.syncSource?.fabricationJobId || null,
+        clientName: '',
+        date: exp.date || exp.createdAt || new Date(),
+        type: exp.type || (exp.isPurchase ? 'Purchase' : 'Expense'),
+        category: exp.categoryName || 'General Purchase',
+        itemDescription: exp.description || '',
+        billNumber: '',
+        quantity: 1,
+        unit: 'Nos',
+        rate: Number(exp.amount || 0),
+        amount: Number(exp.amount || 0),
+        paymentMode: exp.paymentMode || 'Cash',
+        receiptUrl: exp.attachment || '',
+        notes: exp.description || '',
+        vendorName: exp.paidTo || vendor.name
+      });
+    });
+
+        // 3. Fetch direct credit bills recorded for this supplier
+    const directCredits = await SupplierCredit.find({ vendor: vendor._id }).lean();
+    directCredits.forEach(c => {
+      purchases.push({
+        _id: c._id,
+        source: 'Direct Credit',
+        jobId: null,
+        clientName: '',
+        date: c.date || c.createdAt || new Date(),
+        type: 'Purchase',
+        category: c.category || 'Raw Material',
+        itemDescription: c.itemDescription || 'Credit Bill / Purchase',
+        billNumber: c.billNumber || '',
+        quantity: 1,
+        unit: 'Nos',
+        rate: Number(c.amount || 0),
+        amount: Number(c.amount || 0),
+        paymentMode: 'Credit/Pay Later',
+        receiptUrl: '',
+        notes: c.notes || '',
+        vendorName: vendor.name
+      });
+    });
+
+    // Sort chronologically (newest first)
+    purchases.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    const totalPurchases = purchases.length;
+    const totalAmount = purchases.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    const categoriesBreakdown = {};
+    const paymentModesBreakdown = {};
+    purchases.forEach(p => {
+      const cat = p.category || 'Other';
+      categoriesBreakdown[cat] = (categoriesBreakdown[cat] || 0) + (p.amount || 0);
+
+      const mode = p.paymentMode || 'Cash';
+      paymentModesBreakdown[mode] = (paymentModesBreakdown[mode] || 0) + (p.amount || 0);
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        vendor,
+        summary: {
+          totalPurchases,
+          totalAmount,
+          categoriesBreakdown,
+          paymentModesBreakdown
+        },
+        purchases
+      }
+    });
+  } catch (error) {
+    console.error('getVendorPurchases Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -3240,6 +3486,276 @@ export const deletePartnerDrawing = async (req, res) => {
     });
   } catch (error) {
     console.error('deletePartnerDrawing Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+export const recordSupplierPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, date, paymentMode, referenceNo, fabricationJobId, notes } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid payment amount greater than 0 is required.' });
+    }
+
+    const vendor = await Vendor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Supplier not found.' });
+    }
+
+    const payment = await SupplierPayment.create({
+      vendor: vendor._id,
+      vendorName: vendor.name,
+      date: date ? new Date(date) : new Date(),
+      amount: Number(amount),
+      paymentMode: paymentMode || 'Bank Transfer',
+      referenceNo: referenceNo ? referenceNo.trim() : '',
+      fabricationJobId: fabricationJobId ? fabricationJobId.trim() : null,
+      notes: notes ? notes.trim() : '',
+      recordedBy: req.user?._id || null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Payment recorded successfully.',
+      data: payment
+    });
+  } catch (error) {
+    console.error('recordSupplierPayment Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSupplierPayments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payments = await SupplierPayment.find({ vendor: id }).sort({ date: -1, createdAt: -1 }).lean();
+    return res.status(200).json({
+      success: true,
+      data: payments
+    });
+  } catch (error) {
+    console.error('getSupplierPayments Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteSupplierPayment = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    const payment = await SupplierPayment.findOneAndDelete({ _id: paymentId, vendor: id });
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment record not found.' });
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Payment record deleted successfully.'
+    });
+  } catch (error) {
+    console.error('deleteSupplierPayment Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSupplierLedger = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vendor = await Vendor.findById(id).lean();
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Supplier not found.' });
+    }
+
+    const escapedName = vendor.name.trim().replace(/[.*+?^$${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedName, 'i');
+
+    const jobs = await FabricationJob.find(
+      { 'purchasesAndExpenses.vendorName': regex },
+      { jobId: 1, clientName: 1, purchasesAndExpenses: 1 }
+    ).lean();
+
+    const ledgerEntries = [];
+    const openingBal = Number(vendor.openingBalance || 0);
+
+    if (openingBal > 0) {
+      ledgerEntries.push({
+        _id: 'init_' + vendor._id,
+        date: vendor.createdAt || new Date('2026-01-01'),
+        type: 'OPENING_BALANCE',
+        title: 'Opening Credit Balance',
+        refNo: 'INIT-BAL',
+        category: 'Opening Credit',
+        paymentMode: '—',
+        isCreditMode: true,
+        isManualCredit: true,
+        debit: 0,
+        credit: openingBal,
+        notes: 'Pre-existing supplier balance'
+      });
+    }
+
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        if (regex.test(item.vendorName || '')) {
+          const amt = Number(item.amount || 0);
+          const isCredit = item.paymentMode === 'Credit/Pay Later';
+          ledgerEntries.push({
+            _id: item._id,
+            date: item.date || item.createdAt || new Date(),
+            type: 'PURCHASE',
+            title: `[${job.jobId}] ${item.itemDescription || item.category || 'Purchase'}`,
+            refNo: item.billNumber || job.jobId,
+            jobId: job.jobId,
+            clientName: job.clientName,
+            category: item.category || 'Raw Material',
+            paymentMode: item.paymentMode || 'Cash',
+            isCreditMode: isCredit,
+            debit: 0,
+            credit: amt,
+            notes: item.notes || ''
+          });
+        }
+      });
+    });
+
+    const payments = await SupplierPayment.find({ vendor: vendor._id }).sort({ date: 1 }).lean();
+    payments.forEach(pay => {
+      const amt = Number(pay.amount || 0);
+      ledgerEntries.push({
+        _id: pay._id,
+        date: pay.date || pay.createdAt || new Date(),
+        type: 'PAYMENT',
+        title: `Payment Made (${pay.paymentMode})`,
+        refNo: pay.referenceNo || `PAY-${String(pay._id).slice(-6)}`,
+        jobId: pay.fabricationJobId || null,
+        category: 'Payment Settlement',
+        paymentMode: pay.paymentMode,
+        isCreditMode: false,
+        debit: amt,
+        credit: 0,
+        notes: pay.notes || ''
+      });
+    });
+
+        const directCreditsLedger = await SupplierCredit.find({ vendor: vendor._id }).lean();
+    directCreditsLedger.forEach(c => {
+      ledgerEntries.push({
+        _id: c._id,
+        date: c.date || c.createdAt || new Date(),
+        type: 'PURCHASE',
+        title: c.itemDescription || `Credit Bill (${c.category || 'Raw Material'})`,
+        refNo: c.billNumber || 'CREDIT-BILL',
+        jobId: null,
+        clientName: '',
+        category: c.category || 'Raw Material',
+        paymentMode: 'Credit/Pay Later',
+        isCreditMode: true,
+        debit: 0,
+        credit: Number(c.amount || 0),
+        notes: c.notes || ''
+      });
+    });
+
+    ledgerEntries.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+    let running = 0;
+    const entriesWithBalance = ledgerEntries.map(entry => {
+      running += (entry.credit - entry.debit);
+      return {
+        ...entry,
+        runningBalance: running
+      };
+    });
+
+    entriesWithBalance.reverse();
+
+    const totalCreditBilled = ledgerEntries.filter(e => e.type === 'PURCHASE' || e.type === 'OPENING_BALANCE').reduce((sum, e) => sum + e.credit, 0);
+    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const creditPurchasesOnly = ledgerEntries.filter(e => e.isCreditMode && e.type === 'PURCHASE').reduce((sum, e) => sum + e.credit, 0);
+    const currentCreditBalance = (openingBal + creditPurchasesOnly) - totalPaid;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        vendor,
+        summary: {
+          openingBalance: openingBal,
+          totalPurchasesBilled: totalCreditBilled,
+          creditPurchasesOnly,
+          totalPaid,
+          currentCreditBalance,
+          creditLimit: Number(vendor.creditLimit || 0),
+          paymentTermsDays: Number(vendor.paymentTermsDays || 30),
+          status: currentCreditBalance > (vendor.creditLimit || 0) && (vendor.creditLimit || 0) > 0
+            ? 'LIMIT_EXCEEDED'
+            : currentCreditBalance > 0
+            ? 'DUE'
+            : currentCreditBalance < 0
+            ? 'ADVANCE'
+            : 'SETTLED'
+        },
+        ledger: entriesWithBalance,
+        payments
+      }
+    });
+  } catch (error) {
+    console.error('getSupplierLedger Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+export const recordSupplierCredit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, date, billNumber, category, itemDescription, notes } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid credit amount greater than 0 is required.' });
+    }
+
+    const vendor = await Vendor.findById(id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Supplier not found.' });
+    }
+
+    const credit = await SupplierCredit.create({
+      vendor: vendor._id,
+      vendorName: vendor.name,
+      date: date ? new Date(date) : new Date(),
+      amount: Number(amount),
+      billNumber: billNumber ? billNumber.trim() : '',
+      category: category ? category.trim() : 'Raw Material',
+      itemDescription: itemDescription ? itemDescription.trim() : '',
+      notes: notes ? notes.trim() : '',
+      recordedBy: req.user?._id || null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Credit amount added successfully.',
+      data: credit
+    });
+  } catch (error) {
+    console.error('recordSupplierCredit Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteSupplierCredit = async (req, res) => {
+  try {
+    const { id, creditId } = req.params;
+    const credit = await SupplierCredit.findOneAndDelete({ _id: creditId, vendor: id });
+    if (!credit) {
+      return res.status(404).json({ success: false, message: 'Credit record not found.' });
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Credit record deleted successfully.'
+    });
+  } catch (error) {
+    console.error('deleteSupplierCredit Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
