@@ -35,9 +35,9 @@ import ConfirmModal from '../ConfirmModal';
 const AddExpenseTab = () => {
   const { showToast } = useToast();
   const [expenseSubTab, setExpenseSubTab] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.pathname.includes('/accounts/categories')) {
-      return 'categories';
-    }
+    // if (typeof window !== 'undefined' && window.location.pathname.includes('/accounts/categories')) {
+    //   return 'categories';
+    // }
     return 'expenses';
   });
 
@@ -531,7 +531,7 @@ const AddExpenseTab = () => {
 
   return (
     <div className="space-y-4">
-      {/* Sub-tab Navigation Header inside Expense */}
+      {/* Sub-tab Navigation Header inside Expense (Commented Out)
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-1.5 shadow-xs flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
           <button
@@ -581,10 +581,11 @@ const AddExpenseTab = () => {
           </div>
         )}
       </div>
+      */}
 
-      {expenseSubTab === 'categories' ? (
+      {/* {expenseSubTab === 'categories' ? (
         <ExpenseCategoriesTab />
-      ) : (
+      ) : ( */}
         <>
           {/* Top Summary Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -644,9 +645,9 @@ const AddExpenseTab = () => {
           {/* Categories Opening Balance Badge */}
           {totalCategoryOb > 0 && (
             <div 
-              onClick={() => setExpenseSubTab('categories')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800 text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40 transition"
-              title="Total Category Opening Balances. Click to view & manage categories."
+              /* onClick={() => setExpenseSubTab('categories')} */
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800 text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0"
+              title="Total Category Opening Balances."
             >
               <Tag size={13} />
               <span>Categories OB: ₹{totalCategoryOb.toLocaleString('en-IN')}</span>
@@ -1146,7 +1147,7 @@ const AddExpenseTab = () => {
         </div>
       </div>
         </>
-      )}
+      {/* )} */}
 
       {/* Attachment Preview Modal (Portal to document.body) */}
       {previewFile && createPortal(
@@ -1193,7 +1194,7 @@ const AddExpenseTab = () => {
             </div>
 
             {/* Quick Switcher between Global Opening Balance and Category Opening Balances */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            {/* <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <span className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs text-center">
                 Global Expense OB
               </span>
@@ -1209,7 +1210,7 @@ const AddExpenseTab = () => {
                 <Tag size={13} />
                 <span>Every Category OB</span>
               </button>
-            </div>
+            </div> */}
 
             <form onSubmit={handleSaveExpenseOpeningBalance} className="space-y-3.5">
               <div>
@@ -1273,7 +1274,10 @@ const AddExpenseTab = () => {
                   <Tag size={14} className="shrink-0 text-amber-600" />
                   <span className="font-semibold text-[11px]">Sum of All Category Opening Balances:</span>
                 </div>
-                <button
+                <span className="font-bold text-amber-700 dark:text-amber-300 font-mono text-xs">
+                  ₹{totalCategoryOb.toLocaleString('en-IN')}
+                </span>
+                {/* <button
                   type="button"
                   onClick={() => {
                     setShowExpenseObModal(false);
@@ -1283,7 +1287,7 @@ const AddExpenseTab = () => {
                   title="Click to manage opening balance for every category"
                 >
                   ₹{totalCategoryOb.toLocaleString('en-IN')} (Manage →)
-                </button>
+                </button> */}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
