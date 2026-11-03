@@ -38,7 +38,8 @@ const expenseSchema = new mongoose.Schema({
   },
   paidTo: {
     type: String,
-    required: true,
+    required: false,
+    default: '',
     trim: true
   },
   description: {
