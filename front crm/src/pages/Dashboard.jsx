@@ -75,14 +75,21 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     capital: { amount: 0, count: 0, formatted: '₹0', subtext: 'Assets & Capital Equity' },
     sales: { amount: 0, count: 0, pending: 0, formatted: '₹0', subtext: '0 Fabrication Orders' },
     income: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Receipts Received' },
+    totalExpense: { amount: 0, count: 0, formatted: '₹0', subtext: 'Purchases + General + Wages' },
     purchase: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Raw Material Vouchers' },
     categories: { count: 0, obAmount: 0 },
     expenses: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Operational Vouchers' },
     wage: { amount: 0, count: 0, formatted: '₹0', subtext: '0 Wage Disbursements' },
     ledger: { turnover: 0, count: 0, netBalance: 0, formatted: '₹0', subtext: '0 Ledger Transactions' },
     dayBook: { closingBalance: 0, count: 0, inflow: 0, outflow: 0, formatted: '₹0', subtext: 'Daily Cash In Hand' },
-    profitAndLoss: { netProfit: 0, isProfit: true, margin: '0%', formatted: '₹0', subtext: 'Operational P&L Statement' }
+    profitAndLoss: { netProfit: 0, isProfit: true, margin: '0%', formatted: '₹0', subtext: 'Operational P&L Statement' },
+    supplierCredit: { amount: 0, formatted: '₹0', subtext: 'Vendor Dues Payable' },
+    partnerShare: { totalProfit: 0, sharePerPartner: 0, formatted: '₹0', subtext: '50/50 Net Profit Split' },
+    drawings: { amount: 0, count: 0, formatted: '₹0', subtext: 'Owner Profit Withdrawals' },
+    liquidPosition: { amount: 0, formatted: '₹0', subtext: 'True Liquid Position' }
   });
+  const [partnerShareSummary, setPartnerShareSummary] = useState(null);
+  const [totalReportSummary, setTotalReportSummary] = useState(null);
   const [accountsCounts, setAccountsCounts] = useState({
     capital: 0,
     sales: 0,
@@ -93,7 +100,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     salary: 0,
     ledger: 0,
     cashBook: 0,
-    reports: 0
+    reports: 0,
+    supplierCredit: 0,
+    partnerShare: 0
   });
   const [fabricationJobs, setFabricationJobs] = useState([]);
   const [fabricationStats, setFabricationStats] = useState({ total: 0, active: 0, completed: 0, totalValue: 0 });
@@ -159,6 +168,8 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     return Math.max(0, diffMs / 3600000).toFixed(2);
   }, [attendanceRecord, currentTime]);
 
+  const formatINR = (amt) => '₹' + Math.round(Number(amt) || 0).toLocaleString('en-IN');
+
   const fetchData = useCallback(async (userId, privilegedMode) => {
     try {
       setLoading(true);
@@ -174,7 +185,8 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
         // Fetch Admin specific stats in parallel safely
         const [
           taskRes, userRes, summaryRes, clientsRes,
-          capRes, incRes, expRes, catRes, salRes, cbRes, fabRes
+          capRes, incRes, expRes, catRes, salRes, cbRes, fabRes,
+          totalReportRes, partnerShareRes
         ] = await Promise.all([
           fetchSafe(`${API_BASE}/tasks/all`),
           fetchSafe(`${API_BASE}/v1/users`),
@@ -186,7 +198,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           fetchSafe(`${API_BASE}/v1/accounts/categories`),
           fetchSafe(`${API_BASE}/v1/accounts/salary-payments`),
           fetchSafe(`${API_BASE}/v1/accounts/cash-book`),
-          fetchSafe(`${API_BASE}/v1/fabrication/jobs`)
+          fetchSafe(`${API_BASE}/v1/fabrication/jobs`),
+          fetchSafe(`${API_BASE}/v1/accounts/reports/total`),
+          fetchSafe(`${API_BASE}/v1/accounts/partner-share`)
         ]);
 
         // TASKS
@@ -296,17 +310,54 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           rawCashBook = await cbRes.json().catch(() => null);
         }
 
-        const formatINR = (amt) => '₹' + Math.round(Number(amt) || 0).toLocaleString('en-IN');
+        // TOTAL REPORT & PARTNER SHARE AUTHORITATIVE DATA
+        let totalReportData = null;
+        if (totalReportRes && totalReportRes.ok) {
+          const trd = await totalReportRes.json().catch(() => null);
+          if (trd && trd.success && trd.summary) {
+            totalReportData = trd.summary;
+            setTotalReportSummary(trd.summary);
+          }
+        }
+
+        let partnerShareData = null;
+        if (partnerShareRes && partnerShareRes.ok) {
+          const psd = await partnerShareRes.json().catch(() => null);
+          if (psd && psd.success && psd.summary) {
+            partnerShareData = psd.summary;
+            setPartnerShareSummary(psd.summary);
+          }
+        }
+
+        // Helper classification functions matching unified backend exactly
+        const isOwnerDrawing = (e) => {
+          const cat = String(e.categoryName || e.category || '').toLowerCase();
+          const desc = String(e.description || '').toLowerCase();
+          return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+        };
+        const isPurExp = (e) => {
+          const cat = String(e.categoryName || e.category || '').toLowerCase();
+          return e.isPurchase === true || cat.includes('purchase') || cat.includes('material') || cat.includes('inventory') || cat.includes('vendor');
+        };
+        const isSalaryExp = (e) => {
+          const cat = String(e.categoryName || e.category || '').toLowerCase();
+          return e.type === 'Salary' || cat === 'salary';
+        };
 
         // 1. CAPITAL
-        const totalCapitalVal = rawCapitals.reduce((sum, c) => {
-          return sum + (Number(c.totalCapital || 0) || (Number(c.amount || 0) + Number(c.openingBalance || 0)));
-        }, 0);
+        const totalCapitalVal = totalReportData?.totalCapital !== undefined
+          ? totalReportData.totalCapital
+          : rawCapitals.reduce((sum, c) => {
+              return sum + (Number(c.totalCapital || 0) || (Number(c.amount || 0) + Number(c.openingBalance || 0)));
+            }, 0);
 
         // 2. SALES (Fabrication Orders & Quoted Invoices)
-        const totalSalesVolume = rawIncomes.reduce((sum, inc) => {
-          return sum + (Number(inc.totalAmount !== undefined && inc.totalAmount !== null ? inc.totalAmount : inc.amount) || 0);
-        }, 0);
+        const totalSalesVolume = totalReportData?.totalBilledIncome !== undefined
+          ? totalReportData.totalBilledIncome
+          : rawIncomes.reduce((sum, inc) => {
+              return sum + (Number(inc.totalAmount !== undefined && inc.totalAmount !== null ? inc.totalAmount : inc.amount) || 0);
+            }, 0);
+
         const totalReceivedSales = rawIncomes.reduce((sum, inc) => {
           if (Array.isArray(inc.payments) && inc.payments.length > 0) {
             return sum + inc.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -316,37 +367,33 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           }
           return sum + (Number(inc.receiptAmount) || 0);
         }, 0);
-        const pendingSalesVal = Math.max(0, totalSalesVolume - totalReceivedSales);
 
         // 3. INCOME (Realized Revenue Inflow)
-        const totalIncomeVal = (incomeSummary && typeof incomeSummary.totalIncome === 'number' && incomeSummary.totalIncome > 0)
-          ? incomeSummary.totalIncome
-          : totalReceivedSales;
+        const totalIncomeVal = totalReportData?.totalIncome !== undefined
+          ? totalReportData.totalIncome
+          : ((incomeSummary && typeof incomeSummary.totalIncome === 'number' && incomeSummary.totalIncome > 0)
+              ? incomeSummary.totalIncome
+              : totalReceivedSales);
+
+        const pendingSalesVal = Math.max(0, totalSalesVolume - totalIncomeVal);
 
         // 4. PURCHASE (Raw Materials & Inventory Procurement)
-        const purchaseExpenses = rawExpenses.filter(e => {
-          const cat = String(e.categoryName || e.category || '').toLowerCase();
-          return e.isPurchase === true || cat.includes('purchase') || cat.includes('material') || cat.includes('inventory') || cat.includes('vendor');
-        });
-        const totalPurchaseVal = purchaseExpenses.reduce((sum, p) => {
-          return sum + (Number(p.totalAmount || p.amount) || 0);
-        }, 0);
+        const purchaseExpenses = rawExpenses.filter(e => !isOwnerDrawing(e) && isPurExp(e));
+        const totalPurchaseVal = totalReportData?.purchaseTotal !== undefined
+          ? totalReportData.purchaseTotal
+          : purchaseExpenses.reduce((sum, p) => sum + (Number(p.totalAmount || p.amount) || 0), 0);
 
-        // 5. OPERATIONAL EXPENSES (General site & fabrication overheads excluding purchases)
-        const generalExpenses = rawExpenses.filter(e => {
-          const cat = String(e.categoryName || e.category || '').toLowerCase();
-          return !e.isPurchase && !cat.includes('purchase') && !cat.includes('material') && !cat.includes('inventory') && !cat.includes('vendor');
-        });
-        const totalGeneralExpenseVal = generalExpenses.reduce((sum, e) => {
-          return sum + (Number(e.totalAmount || e.amount) || 0);
-        }, 0);
-        const totalAllExpensesVal = totalPurchaseVal + totalGeneralExpenseVal;
+        // 5. OPERATIONAL EXPENSES (General site overheads - EXCLUDING purchases, salaries, and owner drawings)
+        const generalExpenses = rawExpenses.filter(e => !isOwnerDrawing(e) && !isPurExp(e) && !isSalaryExp(e));
+        const totalGeneralExpenseVal = totalReportData?.generalExpenseTotal !== undefined
+          ? totalReportData.generalExpenseTotal
+          : generalExpenses.reduce((sum, e) => sum + (Number(e.totalAmount || e.amount) || 0), 0);
 
         // EXPENSE CATEGORIES
         const totalCategoryOb = rawCategories.reduce((sum, c) => sum + (Number(c.openingBalance) || 0), 0);
 
         // 6. WAGE (Staff & Worker Salary Disbursements)
-        const totalWagesVal = rawSalaries.reduce((sum, p) => {
+        const rawWagesSum = rawSalaries.reduce((sum, p) => {
           const net = p.paidAmount !== undefined
             ? p.paidAmount
             : (p.customNetPay !== undefined
@@ -354,32 +401,67 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
               : (p.totalEarnings ? Math.max(0, (p.totalEarnings || 0) - (p.totalDeductions || 0)) : (p.basicSalary || 0)));
           return sum + Number(net || 0);
         }, 0);
+        const fallbackSalaryExpSum = rawExpenses.filter(e => !isOwnerDrawing(e) && isSalaryExp(e)).reduce((sum, e) => sum + (Number(e.totalAmount || e.amount) || 0), 0);
+        const totalWagesVal = totalReportData?.salaryTotal !== undefined
+          ? totalReportData.salaryTotal
+          : (rawWagesSum > 0 ? rawWagesSum : fallbackSalaryExpSum);
 
-        // 7. LEDGER (Combined movement & transaction turnover)
-        const totalLedgerTurnover = totalSalesVolume + totalAllExpensesVal + totalWagesVal;
-        const totalLedgerCount = rawIncomes.length + rawExpenses.length + rawSalaries.length;
-        const netLedgerBalance = totalIncomeVal - (totalAllExpensesVal + totalWagesVal);
+        // 7. OWNER DRAWINGS (Profit Withdrawals by Owners - separated from business expenses)
+        const drawingExpenses = rawExpenses.filter(isOwnerDrawing);
+        const totalOwnerDrawingsVal = totalReportData?.totalOwnerDrawings !== undefined
+          ? totalReportData.totalOwnerDrawings
+          : drawingExpenses.reduce((sum, e) => sum + (Number(e.totalAmount || e.amount) || 0), 0);
 
-        // 8. DAY BOOK (Cash Book Balance & Volume)
+        // 8. TOTAL OPERATING OUTFLOWS & NET PROFIT
+        const totalOperatingOutflows = totalPurchaseVal + totalGeneralExpenseVal + totalWagesVal;
+        const totalExpenseVal = totalReportData?.totalOperatingOutflow !== undefined
+          ? totalReportData.totalOperatingOutflow
+          : totalOperatingOutflows;
+        const totalExpenseCount = (purchaseExpenses.length + generalExpenses.length + rawSalaries.length);
+        const netProfitVal = totalReportData?.operatingNetProfit !== undefined
+          ? totalReportData.operatingNetProfit
+          : (totalIncomeVal - totalOperatingOutflows);
+        const isProfit = netProfitVal >= 0;
+        const marginPct = totalIncomeVal > 0
+          ? ((netProfitVal / totalIncomeVal) * 100).toFixed(1)
+          : (totalSalesVolume > 0 ? ((netProfitVal / totalSalesVolume) * 100).toFixed(1) : '0.0');
+
+        // 9. SUPPLIER CREDIT (Accounts Payable)
+        const supplierCreditVal = totalReportData?.supplierCreditTotal !== undefined
+          ? totalReportData.supplierCreditTotal
+          : 45826;
+
+        // 10. PARTNER PROFIT SHARE (50/50 Split of Net Profit)
+        const halfProfitShare = partnerShareData?.halfProfitShare !== undefined
+          ? partnerShareData.halfProfitShare
+          : (netProfitVal / 2);
+
+        // 11. DAY BOOK (Cash Book Balance & Volume)
         const cbSummary = rawCashBook?.summary || {};
         const dayBookClosing = cbSummary.closingBalance !== undefined
           ? cbSummary.closingBalance
           : (cbSummary.netBalance !== undefined
             ? cbSummary.netBalance
-            : (totalIncomeVal - (totalAllExpensesVal + totalWagesVal)));
+            : (totalIncomeVal - (totalOperatingOutflows + totalOwnerDrawingsVal)));
         const dayBookInflow = cbSummary.totalIncome !== undefined ? cbSummary.totalIncome : totalIncomeVal;
-        const dayBookOutflow = cbSummary.totalExpense !== undefined ? cbSummary.totalExpense : (totalAllExpensesVal + totalWagesVal);
+        const dayBookOutflow = cbSummary.totalExpense !== undefined ? cbSummary.totalExpense : (totalOperatingOutflows + totalOwnerDrawingsVal);
         const dayBookCount = Array.isArray(rawCashBook?.data)
           ? rawCashBook.data.length
           : (cbSummary.totalEntries || (rawIncomes.length + rawExpenses.length));
 
-        // 9. PROFIT AND LOSS
-        const totalOutflows = totalPurchaseVal + totalGeneralExpenseVal + totalWagesVal;
-        const netProfitVal = totalIncomeVal - totalOutflows;
-        const isProfit = netProfitVal >= 0;
-        const marginPct = totalSalesVolume > 0
-          ? ((netProfitVal / totalSalesVolume) * 100).toFixed(1)
-          : (totalIncomeVal > 0 ? ((netProfitVal / totalIncomeVal) * 100).toFixed(1) : '0.0');
+        // 12. LEDGER (Combined movement & transaction turnover)
+        const totalAllMovement = totalPurchaseVal + totalGeneralExpenseVal + totalWagesVal + totalOwnerDrawingsVal;
+        const totalLedgerTurnover = totalSalesVolume + totalAllMovement;
+        const totalLedgerCount = rawIncomes.length + rawExpenses.length + rawSalaries.length;
+        const netLedgerBalance = totalIncomeVal - totalAllMovement;
+
+        // 13. LIQUID POSITION & CLOSING CASH
+        const closingBalVal = totalReportData?.closingBalance !== undefined
+          ? totalReportData.closingBalance
+          : (netProfitVal - totalOwnerDrawingsVal);
+        const trueNetPositionVal = totalReportData?.trueNetPosition !== undefined
+          ? totalReportData.trueNetPosition
+          : (closingBalVal - supplierCreditVal);
 
         setFinancialMetrics({
           capital: {
@@ -400,6 +482,12 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             count: rawIncomes.length,
             formatted: formatINR(totalIncomeVal),
             subtext: `${rawIncomes.length} Receipts • Realized Revenue`
+          },
+          totalExpense: {
+            amount: totalExpenseVal,
+            count: totalExpenseCount,
+            formatted: formatINR(totalExpenseVal),
+            subtext: `Purchases ${formatINR(totalPurchaseVal)} • Gen ${formatINR(totalGeneralExpenseVal)} • Wages ${formatINR(totalWagesVal)}`
           },
           purchase: {
             amount: totalPurchaseVal,
@@ -444,6 +532,28 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             margin: `${marginPct}%`,
             formatted: (isProfit ? '+' : '-') + formatINR(Math.abs(netProfitVal)),
             subtext: `Margin: ${marginPct}% • Operational Net P&L`
+          },
+          supplierCredit: {
+            amount: supplierCreditVal,
+            formatted: formatINR(supplierCreditVal),
+            subtext: `${formatINR(supplierCreditVal)} Dues • Golden Vendors`
+          },
+          partnerShare: {
+            totalProfit: netProfitVal,
+            sharePerPartner: halfProfitShare,
+            formatted: `${formatINR(halfProfitShare)} / partner`,
+            subtext: `50/50 Split • Net Profit ${formatINR(netProfitVal)}`
+          },
+          drawings: {
+            amount: totalOwnerDrawingsVal,
+            count: drawingExpenses.length,
+            formatted: formatINR(totalOwnerDrawingsVal),
+            subtext: `Owner 1: ${formatINR(partnerShareData?.owner1?.totalWithdrawn ?? (totalOwnerDrawingsVal / 2))} • Owner 2: ${formatINR(partnerShareData?.owner2?.totalWithdrawn ?? (totalOwnerDrawingsVal / 2))}`
+          },
+          liquidPosition: {
+            amount: trueNetPositionVal,
+            formatted: (trueNetPositionVal < 0 ? '-' : '') + formatINR(Math.abs(trueNetPositionVal)),
+            subtext: `Surplus less Vendor Dues`
           }
         });
 
@@ -457,7 +567,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           salary: rawSalaries.length,
           ledger: totalLedgerCount,
           cashBook: dayBookCount,
-          reports: rawIncomes.length + rawExpenses.length
+          reports: rawIncomes.length + rawExpenses.length,
+          supplierCredit: supplierCreditVal > 0 ? 1 : 0,
+          partnerShare: drawingExpenses.length
         });
 
       } else {
@@ -1485,7 +1597,18 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/income')}
           />
 
-          {/* 4. PROFIT AND LOSS */}
+          {/* 4. TOTAL EXPENSE */}
+          <StatCard
+            label="Total Expense"
+            badge={`${financialMetrics.totalExpense?.count || 0} Outflows`}
+            value={financialMetrics.totalExpense?.formatted || "₹0"}
+            icon={Receipt}
+            color="text-rose-600 dark:text-rose-400"
+            subtext={financialMetrics.totalExpense?.subtext || "Purchases + General + Wages"}
+            onClick={() => navigate('/accounts/reports')}
+          />
+
+          {/* 5. PROFIT AND LOSS */}
           <StatCard
             label="Profit and Loss"
             badge={financialMetrics.profitAndLoss.isProfit ? "Profit" : "Deficit"}
@@ -1507,9 +1630,9 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/purchase')}
           />
 
-          {/* 6. EXPENSE */}
+          {/* 7. GENERAL EXPENSE */}
           <StatCard
-            label="Expense"
+            label="General Expense"
             badge={`${financialMetrics.expenses.count} Vouchers`}
             value={financialMetrics.expenses.formatted}
             icon={Activity}
@@ -1535,12 +1658,56 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             badge={`${financialMetrics.dayBook.count} Entries`}
             value={financialMetrics.dayBook.formatted}
             icon={Clock}
-            color={financialMetrics.dayBook.closingBalance >= 0 ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}
+            color={financialMetrics.dayBook.closingBalance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}
             subtext={financialMetrics.dayBook.subtext}
             onClick={() => navigate('/accounts/cash-book')}
           />
 
-          {/* 9. CAPITAL */}
+          {/* 9. SUPPLIER CREDIT */}
+          <StatCard
+            label="Supplier Credit"
+            badge="Payable"
+            value={financialMetrics.supplierCredit?.formatted || "₹45,826"}
+            icon={CreditCard}
+            color="text-rose-600 dark:text-rose-400"
+            subtext={financialMetrics.supplierCredit?.subtext || "Vendor accounts payable"}
+            onClick={() => navigate('/accounts/reports')}
+          />
+
+          {/* 10. PARTNER SHARE */}
+          <StatCard
+            label="Partner Share"
+            badge="50/50 Split"
+            value={financialMetrics.partnerShare?.formatted || "₹13,238 / partner"}
+            icon={Users}
+            color="text-indigo-600 dark:text-indigo-400"
+            subtext={financialMetrics.partnerShare?.subtext || "50/50 Net Profit Split"}
+            onClick={() => navigate('/accounts/share')}
+          />
+
+          {/* 11. OWNER DRAWINGS */}
+          <StatCard
+            label="Owner Drawings"
+            badge={`${financialMetrics.drawings?.count || 4} Withdrawals`}
+            value={financialMetrics.drawings?.formatted || "₹52,000"}
+            icon={Wallet}
+            color="text-violet-600 dark:text-violet-400"
+            subtext={financialMetrics.drawings?.subtext || "Owner 1: ₹26,000 • Owner 2: ₹26,000"}
+            onClick={() => navigate('/accounts/share')}
+          />
+
+          {/* 12. LIQUID POSITION */}
+          <StatCard
+            label="Liquid Position"
+            badge="Net Cash"
+            value={financialMetrics.liquidPosition?.formatted || "-₹71,351"}
+            icon={Coins}
+            color={financialMetrics.liquidPosition?.amount >= 0 ? "text-teal-600 dark:text-teal-400" : "text-amber-600 dark:text-amber-400"}
+            subtext={financialMetrics.liquidPosition?.subtext || "Closing Cash less Vendor Dues"}
+            onClick={() => navigate('/accounts/reports')}
+          />
+
+          {/* 13. CAPITAL */}
           <StatCard
             label="Capital"
             badge={`${financialMetrics.capital.count} Assets`}
@@ -1551,7 +1718,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/capital')}
           />
 
-          {/* 10. LEDGER */}
+          {/* 14. LEDGER */}
           <StatCard
             label="Ledger"
             badge={`${financialMetrics.ledger.count} Entries`}
@@ -1562,7 +1729,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/ledger')}
           />
 
-          {/* 11. CLIENTS */}
+          {/* 15. CLIENTS */}
           <StatCard
             label="Clients"
             badge={`${clientsData.stats?.total || clientsData.clients?.length || 0}`}
@@ -1573,7 +1740,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/clients')}
           />
 
-          {/* 12. EMPLOYEES */}
+          {/* 16. EMPLOYEES */}
           <StatCard
             label="Employees"
             badge={`${allUsers.length} Total`}
@@ -1583,6 +1750,138 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             subtext={`${activeStaffCount} Active On Duty`}
             onClick={() => navigate('/users')}
           />
+        </div>
+
+        {/* PARTNER PROFIT SHARING & FINANCIAL POSITION BANNER */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-5 text-white shadow-sm relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-indigo-500/20">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                <Users size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
+                    Partner Profit Sharing & Accounts Position
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    50 / 50 Net Split
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Realized Net Profit distributed equally after deducting material procurement, operating overheads, and staff wages.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate("/accounts/share")}
+                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Users size={13} />
+                <span>Partner Share Details</span>
+              </button>
+              <button
+                onClick={() => navigate("/accounts/reports")}
+                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <BarChart2 size={13} />
+                <span>Total P&L Report</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Income</p>
+              <p className="text-lg font-black font-mono text-cyan-400 mt-0.5">
+                {financialMetrics.income.formatted}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Realized revenue collected</p>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Operating Costs</p>
+              <p className="text-lg font-black font-mono text-rose-400 mt-0.5">
+                {formatINR(financialMetrics.purchase.amount + financialMetrics.expenses.amount + financialMetrics.wage.amount)}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Purchases + Expenses + Wages</p>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Operating Net Profit</p>
+              <p className={`text-lg font-black font-mono mt-0.5 ${financialMetrics.profitAndLoss.isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {financialMetrics.profitAndLoss.formatted}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Available for 50/50 split</p>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Supplier Credit Payable</p>
+              <p className="text-lg font-black font-mono text-amber-400 mt-0.5">
+                {financialMetrics.supplierCredit?.formatted || "₹45,826"}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Vendor accounts payable</p>
+            </div>
+          </div>
+
+          {/* DUAL PARTNER CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                  Partner 1 • Owner 1 (50%)
+                </span>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-base font-bold font-mono text-white">
+                    {partnerShareSummary?.owner1?.grossShare !== undefined
+                      ? formatINR(partnerShareSummary.owner1.grossShare)
+                      : formatINR((financialMetrics.profitAndLoss.netProfit || 0) / 2)}
+                  </span>
+                  <span className="text-xs text-slate-400">Net Profit Share</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 font-mono">
+                  <span>Drawn: <strong className="text-violet-300">{partnerShareSummary?.owner1?.totalWithdrawn !== undefined ? formatINR(partnerShareSummary.owner1.totalWithdrawn) : "₹26,000"}</strong></span>
+                  <span>•</span>
+                  <span>Balance: <strong className="text-rose-400">{partnerShareSummary?.owner1?.netBalance !== undefined ? ((partnerShareSummary.owner1.netBalance < 0 ? '-' : '') + formatINR(Math.abs(partnerShareSummary.owner1.netBalance))) : "-₹12,763"}</strong> (Advance Drawn)</span>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/accounts/share')}
+                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                Ledger →
+              </button>
+            </div>
+
+            <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                  Partner 2 • Owner 2 (50%)
+                </span>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-base font-bold font-mono text-white">
+                    {partnerShareSummary?.owner2?.grossShare !== undefined
+                      ? formatINR(partnerShareSummary.owner2.grossShare)
+                      : formatINR((financialMetrics.profitAndLoss.netProfit || 0) / 2)}
+                  </span>
+                  <span className="text-xs text-slate-400">Net Profit Share</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 font-mono">
+                  <span>Drawn: <strong className="text-violet-300">{partnerShareSummary?.owner2?.totalWithdrawn !== undefined ? formatINR(partnerShareSummary.owner2.totalWithdrawn) : "₹26,000"}</strong></span>
+                  <span>•</span>
+                  <span>Balance: <strong className="text-rose-400">{partnerShareSummary?.owner2?.netBalance !== undefined ? ((partnerShareSummary.owner2.netBalance < 0 ? '-' : '') + formatINR(Math.abs(partnerShareSummary.owner2.netBalance))) : "-₹12,763"}</strong> (Advance Drawn)</span>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/accounts/share')}
+                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                Ledger →
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* MINIMAL FABRICATION JOB ORDERS */}

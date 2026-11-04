@@ -22,6 +22,7 @@ import {
   getMonthlyReport,
   getCategoryWiseReport,
   getSalaryReport,
+  getTotalReport,
   getIncomes,
   getIncomeById,
   createIncome,
@@ -154,6 +155,8 @@ router.get('/reports/daily', getDailyReport);
 router.get('/reports/monthly', getMonthlyReport);
 router.get('/reports/category-wise', getCategoryWiseReport);
 router.get('/reports/salary', getSalaryReport);
+router.get('/reports/total', getTotalReport);
+router.get('/total-report', getTotalReport);
 
 // ── Vendor Routes ──
 router.get('/vendors', getVendors);
