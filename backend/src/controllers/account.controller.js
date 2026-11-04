@@ -487,6 +487,13 @@ export const deleteExpense = async (req, res) => {
       await SalaryPayment.findByIdAndDelete(expense.salaryPaymentId);
     }
 
+    if (expense.syncSource?.fabricationJobId && expense.syncSource?.fabricationItemId) {
+      await FabricationJob.findOneAndUpdate(
+        { jobId: expense.syncSource.fabricationJobId },
+        { $pull: { purchasesAndExpenses: { _id: expense.syncSource.fabricationItemId } } }
+      );
+    }
+
     await Expense.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -1088,15 +1095,25 @@ export const getDailyReport = async (req, res) => {
 
     const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
     const totalBilledIncome = incomes.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0);
-    const purchaseTotal = expenses.filter(e => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory')).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const salaryTotal = expenses.filter(e => e.type === 'Salary').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const generalExpenseTotal = expenses.filter(e => !e.isPurchase && !String(e.categoryName || '').toLowerCase().includes('purchase') && !String(e.categoryName || '').toLowerCase().includes('inventory') && e.type !== 'Salary').reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    const isOwnerDrawing = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+    };
+    const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
+    const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+
+    const purchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const salaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const generalExpenseTotal = expenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const ownerDrawingTotal = expenses.filter(isOwnerDrawing).reduce((sum, e) => sum + (e.amount || 0), 0);
     
     const totalOutflow = generalExpenseTotal + salaryTotal + purchaseTotal;
     const effectiveTotalIncome = incomeOpeningBalance + totalIncome;
     const effectiveTotalOutflow = expenseOpeningBalance + totalOutflow;
     const netBalance = totalIncome - totalOutflow;
-    const closingBalance = effectiveTotalIncome - effectiveTotalOutflow;
+    const closingBalance = effectiveTotalIncome - effectiveTotalOutflow - ownerDrawingTotal;
 
     return res.status(200).json({
       success: true,
@@ -1116,6 +1133,7 @@ export const getDailyReport = async (req, res) => {
         salaryTotal,
         purchaseTotal,
         generalExpenseTotal,
+        ownerDrawingTotal,
         netBalance,
         closingBalance,
         count: expenses.length + incomes.length
@@ -1167,15 +1185,25 @@ export const getMonthlyReport = async (req, res) => {
 
     const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
     const totalBilledIncome = incomes.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0);
-    const purchaseTotal = expenses.filter(e => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory')).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const salaryTotal = expenses.filter(e => e.type === 'Salary').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const generalExpenseTotal = expenses.filter(e => !e.isPurchase && !String(e.categoryName || '').toLowerCase().includes('purchase') && !String(e.categoryName || '').toLowerCase().includes('inventory') && e.type !== 'Salary').reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    const isOwnerDrawing = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+    };
+    const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
+    const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+
+    const purchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const salaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const generalExpenseTotal = expenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const ownerDrawingTotal = expenses.filter(isOwnerDrawing).reduce((sum, e) => sum + (e.amount || 0), 0);
     
     const totalOutflow = generalExpenseTotal + salaryTotal + purchaseTotal;
     const effectiveTotalIncome = incomeOpeningBalance + totalIncome;
     const effectiveTotalOutflow = expenseOpeningBalance + totalOutflow;
     const netBalance = totalIncome - totalOutflow;
-    const closingBalance = effectiveTotalIncome - effectiveTotalOutflow;
+    const closingBalance = effectiveTotalIncome - effectiveTotalOutflow - ownerDrawingTotal;
 
     return res.status(200).json({
       success: true,
@@ -1195,6 +1223,7 @@ export const getMonthlyReport = async (req, res) => {
         salaryTotal,
         purchaseTotal,
         generalExpenseTotal,
+        ownerDrawingTotal,
         netBalance,
         closingBalance,
         count: expenses.length + incomes.length
@@ -1308,6 +1337,188 @@ export const getSalaryReport = async (req, res) => {
     });
   } catch (error) {
     console.error('getSalaryReport Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getTotalReport = async (req, res) => {
+  try {
+    const [expenses, incomes, capitals, obRecord, allCategories, salaryPayments, vendors, jobs, supplierPayments, supplierCredits] = await Promise.all([
+      Expense.find().sort({ date: -1 }),
+      Income.find().sort({ date: -1 }),
+      Capital.find().sort({ date: -1 }),
+      OpeningBalance.findOne().sort({ updatedAt: -1 }),
+      ExpenseCategory.find(),
+      SalaryPayment.find().populate('employee', 'name email designation department salary employeeId').sort({ paymentDate: -1 }),
+      Vendor.find({ isActive: true }).sort({ name: 1 }).lean(),
+      FabricationJob.find({ 'purchasesAndExpenses.0': { $exists: true } }, { purchasesAndExpenses: 1 }).lean(),
+      SupplierPayment.find({}).lean(),
+      SupplierCredit.find({}).lean()
+    ]);
+
+    const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
+    const baseExpenseOpeningBalance = obRecord ? (obRecord.expenseAmount ?? 0) : 0;
+    const categoryOpeningBalanceTotal = allCategories.reduce((sum, c) => sum + (Number(c.openingBalance) || 0), 0);
+    const expenseOpeningBalance = baseExpenseOpeningBalance + categoryOpeningBalanceTotal;
+
+    const getPaidIncomeAmt = (inc) => {
+      let paid = 0;
+      if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+        paid = inc.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      }
+      if (paid <= 0 && typeof inc.receiptAmount === 'number' && inc.receiptAmount > 0) {
+        paid = inc.receiptAmount;
+      }
+      if (paid <= 0 && (inc.status || '').toLowerCase() === 'paid') {
+        paid = parseFloat(inc.totalAmount || inc.amount || 0);
+      }
+      return paid;
+    };
+
+    // 1. Incomes
+    const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalBilledIncome = incomes.reduce((sum, i) => sum + (Number(i.totalAmount || i.amount) || 0), 0);
+
+    // 2. Capital Inflows
+    const totalCapital = capitals.reduce((sum, cap) => sum + (Number(cap.totalCapital || 0) || (Number(cap.amount || 0) + Number(cap.openingBalance || 0))), 0);
+
+    // 3. Outflows & Expenses
+    const isOwnerDrawing = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+    };
+
+    const isPur = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      return e.isPurchase || cat.includes('purchase') || cat.includes('inventory');
+    };
+
+    const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+
+    const drawingExpenses = expenses.filter(isOwnerDrawing);
+    const purchaseExpenses = expenses.filter(e => !isOwnerDrawing(e) && isPur(e));
+    const salaryExpenses = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e));
+    const generalExpenses = expenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSalary(e));
+
+    const totalOwnerDrawings = drawingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const ownerDrawingTotal = totalOwnerDrawings;
+    const purchaseTotal = purchaseExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const salaryPaymentsTotal = salaryPayments.reduce((sum, p) => {
+      const netPaid = p.paidAmount !== undefined ? p.paidAmount : (p.customNetPay !== undefined ? p.customNetPay : p.basicSalary);
+      return sum + (Number(netPaid) || 0);
+    }, 0);
+    const salaryTotal = salaryPaymentsTotal > 0 ? salaryPaymentsTotal : salaryExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const generalExpenseTotal = generalExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // 4. Supplier Credit (Accounts Payable)
+    const paymentsByVendor = {};
+    supplierPayments.forEach(p => {
+      const vId = String(p.vendor);
+      paymentsByVendor[vId] = (paymentsByVendor[vId] || 0) + Number(p.amount || 0);
+    });
+
+    const creditsByVendor = {};
+    supplierCredits.forEach(c => {
+      const vId = String(c.vendor);
+      creditsByVendor[vId] = (creditsByVendor[vId] || 0) + Number(c.amount || 0);
+    });
+
+    const vendorStats = {};
+    vendors.forEach(v => {
+      vendorStats[String(v._id)] = { count: 0, totalAmount: 0, creditPurchases: 0 };
+    });
+
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        const vName = (item.vendorName || '').toLowerCase().trim();
+        if (!vName) return;
+        vendors.forEach(v => {
+          const matchName = v.name.toLowerCase().trim();
+          if (vName.includes(matchName) || matchName.includes(vName)) {
+            const stats = vendorStats[String(v._id)];
+            if (stats) {
+              const amt = Number(item.amount || 0);
+              stats.count += 1;
+              stats.totalAmount += amt;
+              if (item.paymentMode === 'Credit/Pay Later') {
+                stats.creditPurchases += amt;
+              }
+            }
+          }
+        });
+      });
+    });
+
+    let supplierCreditTotal = 0;
+    const enrichedVendors = vendors.map(v => {
+      const vId = String(v._id);
+      const ob = Number(v.openingBalance || 0);
+      const stats = vendorStats[vId] || { count: 0, totalAmount: 0, creditPurchases: 0 };
+      const totalPaid = paymentsByVendor[vId] || 0;
+      const directCredit = creditsByVendor[vId] || 0;
+      const totalCreditPurchases = stats.creditPurchases + directCredit;
+      const balance = (ob + totalCreditPurchases) - totalPaid;
+      if (balance > 0) {
+        supplierCreditTotal += balance;
+      }
+      return {
+        ...v,
+        creditBalance: balance,
+        totalPaidAmount: totalPaid,
+        creditPurchasesAmount: totalCreditPurchases
+      };
+    });
+
+    // 5. Operating Outflows & Profits
+    const totalOperatingOutflow = purchaseTotal + generalExpenseTotal + salaryTotal;
+    const effectiveTotalIncome = incomeOpeningBalance + totalIncome + totalCapital;
+    const effectiveTotalOutflow = expenseOpeningBalance + totalOperatingOutflow;
+
+    const operatingNetProfit = (totalIncome + totalCapital) - totalOperatingOutflow;
+    const retainedSurplus = operatingNetProfit - totalOwnerDrawings;
+    const closingBalance = effectiveTotalIncome - effectiveTotalOutflow - totalOwnerDrawings;
+    const trueNetPosition = closingBalance - supplierCreditTotal;
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        incomeOpeningBalance,
+        expenseOpeningBalance,
+        baseExpenseOpeningBalance,
+        categoryOpeningBalance: categoryOpeningBalanceTotal,
+        totalBilledIncome,
+        totalIncome,
+        totalCapital,
+        purchaseTotal,
+        generalExpenseTotal,
+        ownerDrawingTotal,
+        salaryTotal,
+        totalOwnerDrawings,
+        supplierCreditTotal,
+        totalOperatingOutflow,
+        operatingNetProfit,
+        retainedSurplus,
+        closingBalance,
+        trueNetPosition,
+        counts: {
+          incomes: incomes.length,
+          expenses: expenses.length,
+          capitals: capitals.length,
+          salaries: salaryPayments.length,
+          vendors: vendors.length
+        }
+      },
+      data: expenses,
+      incomes,
+      capitals,
+      salaryPayments,
+      vendors: enrichedVendors
+    });
+  } catch (error) {
+    console.error('getTotalReport Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -3280,8 +3491,19 @@ export const getVendorPurchases = async (req, res) => {
 
 export const getPartnerShareSummary = async (req, res) => {
   try {
-    // 1. Fetch all fabrication job orders (excluding global system config)
-    const jobs = await FabricationJob.find({ jobId: { $ne: 'FAB-GLOBAL-CONFIG' } }).sort({ createdAt: -1 });
+    // 1. Fetch all fabrication job orders, drawings, expenses, incomes, and salaries
+    const [jobs, drawingExpenses, allExpenses, allIncomes, salaryPayments] = await Promise.all([
+      FabricationJob.find({ jobId: { $ne: 'FAB-GLOBAL-CONFIG' } }).sort({ createdAt: -1 }),
+      Expense.find({
+        $or: [
+          { categoryName: { $regex: /owner drawing|partner drawing/i } },
+          { description: { $regex: /\[Owner (1|2)\]/i } }
+        ]
+      }).sort({ date: -1, createdAt: -1 }),
+      Expense.find({}).lean(),
+      Income.find({}).lean(),
+      SalaryPayment.find({}).lean()
+    ]);
 
     let totalQuotationRevenue = 0;
     let totalDirectCosts = 0;
@@ -3327,13 +3549,45 @@ export const getPartnerShareSummary = async (req, res) => {
       };
     });
 
-    // 2. Fetch all partner drawings from existing Expense collection
-    const drawingExpenses = await Expense.find({
-      $or: [
-        { categoryName: { $regex: /owner drawing|partner drawing/i } },
-        { description: { $regex: /\[Owner (1|2)\]/i } }
-      ]
-    }).sort({ date: -1, createdAt: -1 });
+    // 2. Aggregate Company Expenses & Operating Net Profit
+    const isOwnerDrawing = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+    };
+    const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
+    const isSal = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+
+    const purchaseTotal = allExpenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const generalExpenseTotal = allExpenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSal(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    
+    const salaryPaymentsTotal = salaryPayments.reduce((sum, p) => {
+      const netPaid = p.paidAmount !== undefined ? p.paidAmount : (p.customNetPay !== undefined ? p.customNetPay : p.basicSalary);
+      return sum + (Number(netPaid) || 0);
+    }, 0);
+    const salaryTotal = salaryPaymentsTotal > 0 ? salaryPaymentsTotal : allExpenses.filter(e => !isOwnerDrawing(e) && isSal(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const totalOperatingCosts = purchaseTotal + generalExpenseTotal + salaryTotal;
+
+    const getPaidIncomeAmt = (inc) => {
+      let paid = 0;
+      if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+        paid = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+      }
+      if (paid <= 0 && typeof inc.receiptAmount === 'number' && inc.receiptAmount > 0) {
+        paid = inc.receiptAmount;
+      }
+      if (paid <= 0 && (inc.status || '').toLowerCase() === 'paid') {
+        paid = parseFloat(inc.totalAmount || inc.amount || 0);
+      }
+      return paid;
+    };
+    const incomeCollTotal = allIncomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const effectiveTotalReceived = Math.max(totalAmountReceived, incomeCollTotal);
+
+    // Business Net Profit = Revenue Inflows - Total Operating Outflows
+    const totalNetProfit = effectiveTotalReceived - totalOperatingCosts;
+    const halfProfitShare = totalNetProfit / 2;
 
     const drawings = drawingExpenses.map(d => {
       const isOwner2 = /owner\s*2|partner\s*2/i.test(d.paidTo || '') || /\[Owner 2\]/i.test(d.description || '');
@@ -3358,10 +3612,11 @@ export const getPartnerShareSummary = async (req, res) => {
 
     const totalOwner1Withdrawn = owner1Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
     const totalOwner2Withdrawn = owner2Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+    const ownerDrawingTotal = totalOwner1Withdrawn + totalOwner2Withdrawn;
 
-    // 3. 50/50 Dual-Owner Split Calculation based on RECEIVED AMOUNT (instead of profit)
-    const grossOwner1Share = totalAmountReceived / 2;
-    const grossOwner2Share = totalAmountReceived / 2;
+    // 3. 50/50 Dual-Owner Split Calculation based on NET PROFIT
+    const grossOwner1Share = halfProfitShare;
+    const grossOwner2Share = halfProfitShare;
 
     const netOwner1Balance = grossOwner1Share - totalOwner1Withdrawn;
     const netOwner2Balance = grossOwner2Share - totalOwner2Withdrawn;
@@ -3373,10 +3628,16 @@ export const getPartnerShareSummary = async (req, res) => {
         totalQuotationRevenue,
         totalDirectCosts,
         totalNetWorkProfit,
-        totalAmountReceived,
-        totalRealizedProfit,
-        splitBase: 'amountReceived',
-        halfReceivedShare: totalAmountReceived / 2,
+        totalAmountReceived: effectiveTotalReceived,
+        totalOperatingCosts,
+        purchaseTotal,
+        generalExpenseTotal,
+        ownerDrawingTotal,
+        salaryTotal,
+        totalNetProfit,
+        splitBase: 'netProfit',
+        halfProfitShare,
+        halfReceivedShare: effectiveTotalReceived / 2,
         owner1: {
           partner: 'Owner 1',
           name: 'Owner 1',

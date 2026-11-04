@@ -21,7 +21,7 @@ import ConfirmModal from '../ConfirmModal';
 import ExcelExportButton from '../ExcelExportButton';
 import VendorModal from './VendorModal';
 import AddItemOptionModal from './AddItemOptionModal';
-import { getVendors } from '../../services/accountsService';
+import { getVendors, deleteExpense } from '../../services/accountsService';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -258,14 +258,15 @@ const PurchaseTab = () => {
     if (!id) return;
 
     try {
-      await fetch(getApiEndpoint(`/accounts/expenses/${id}`), { method: 'DELETE', headers: getAuthHeaders() });
+      try { await deleteExpense(id); } catch (e) { await fetch(getApiEndpoint(`/accounts/expenses/${id}`), { method: 'DELETE', headers: getAuthHeaders() }); }
     } catch (e) {
       // Fallback
     }
     const updated = purchases.filter(p => String(p._id || p.id) !== String(id));
     setPurchases(updated);
     localStorage.setItem('crm_purchase_records', JSON.stringify(updated));
-    showToast('Purchase entry deleted.', 'success');
+    showToast('Purchase entry deleted successfully.', 'success');
+    fetchPurchasesData();
   };
 
   // Filtered purchases
@@ -697,7 +698,13 @@ const PurchaseTab = () => {
                             >
                               <Eye size={15} />
                             </button>
-                            
+                            <button
+                              onClick={() => triggerDeletePurchase(p._id || p.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                              title="Delete Purchase Entry"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -755,7 +762,19 @@ const PurchaseTab = () => {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const idToDelete = selectedPurchase._id || selectedPurchase.id;
+                  setIsViewModalOpen(false);
+                  triggerDeletePurchase(idToDelete);
+                }}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Trash2 size={13} />
+                <span>Delete Voucher</span>
+              </button>
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 cursor-pointer"

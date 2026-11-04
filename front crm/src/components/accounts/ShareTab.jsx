@@ -227,9 +227,11 @@ const ShareTab = () => {
     });
   };
 
-  // 50/50 Split Calculations based on RECEIVED AMOUNT
+  // 50/50 Split Calculations based on NET PROFIT
   const totalAmountReceived = Number(data.summary?.totalAmountReceived || 0);
-  const halfReceivedShare = totalAmountReceived / 2;
+  const totalOperatingCosts = Number(data.summary?.totalOperatingCosts || 0);
+  const totalNetProfit = Number(data.summary?.totalNetProfit || 0);
+  const halfProfitShare = Number(data.summary?.halfProfitShare !== undefined ? data.summary.halfProfitShare : (data.summary?.owner1?.grossShare ?? (totalNetProfit / 2)));
 
   // Split Drawings by Owner
   const rawOwner1Drawings = useMemo(() => {
@@ -275,8 +277,8 @@ const ShareTab = () => {
   const totalOwner1Withdrawn = rawOwner1Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
   const totalOwner2Withdrawn = rawOwner2Drawings.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-  const netOwner1Balance = halfReceivedShare - totalOwner1Withdrawn;
-  const netOwner2Balance = halfReceivedShare - totalOwner2Withdrawn;
+  const netOwner1Balance = halfProfitShare - totalOwner1Withdrawn;
+  const netOwner2Balance = halfProfitShare - totalOwner2Withdrawn;
 
   // Excel export lists
   const excelOwner1Data = useMemo(() => {
@@ -315,11 +317,11 @@ const ShareTab = () => {
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               Partner Accounts & Withdrawals
               <span className="text-[11px] font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-2.5 py-0.5 rounded-full">
-                50 / 50 Received Cash Split
+                50 / 50 Net Profit Split
               </span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Total received money from client work orders divided equally between two owners, minus individual withdrawals by date
+              Company net operating profit (Total Income minus material purchases, operational expenses & salaries) divided equally between two owners, minus individual withdrawals by date
             </p>
           </div>
         </div>
@@ -328,11 +330,17 @@ const ShareTab = () => {
         <div className="flex items-center flex-wrap gap-2">
           {/* Summary Chips */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-lg text-xs">
-            <span className="text-slate-500">Total Received:</span>
+            <span className="text-slate-500">Income:</span>
             <span className="font-bold text-slate-900 dark:text-white">{formatINR(totalAmountReceived)}</span>
             <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="text-slate-500">Costs:</span>
+            <span className="font-bold text-rose-600 dark:text-rose-400">-{formatINR(totalOperatingCosts)}</span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="text-slate-500">Net Profit:</span>
+            <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatINR(totalNetProfit)}</span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
             <span className="text-slate-500">50% Each:</span>
-            <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatINR(halfReceivedShare)}</span>
+            <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatINR(halfProfitShare)}</span>
           </div>
 
           <button
@@ -406,15 +414,15 @@ const ShareTab = () => {
             {/* KPI Metrics Strip */}
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold block">50% Received</span>
-                <span className="font-bold text-slate-900 dark:text-white text-xs">{formatINR(halfReceivedShare)}</span>
+                <span className="text-[10px] text-slate-500 uppercase font-semibold block">50% Net Profit</span>
+                <span className="font-bold text-slate-900 dark:text-white text-xs">{formatINR(halfProfitShare)}</span>
               </div>
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
                 <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Withdrawn</span>
                 <span className="font-bold text-rose-600 dark:text-rose-400 text-xs">- {formatINR(totalOwner1Withdrawn)}</span>
               </div>
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold block">Retained Balance</span>
+                <span className="text-[10px] text-slate-500 uppercase font-semibold block">Remaining Profit</span>
                 <span className={`font-black text-xs ${netOwner1Balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                   {formatINR(netOwner1Balance)}
                 </span>
@@ -599,15 +607,15 @@ const ShareTab = () => {
             {/* KPI Metrics Strip */}
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold block">50% Received</span>
-                <span className="font-bold text-slate-900 dark:text-white text-xs">{formatINR(halfReceivedShare)}</span>
+                <span className="text-[10px] text-slate-500 uppercase font-semibold block">50% Net Profit</span>
+                <span className="font-bold text-slate-900 dark:text-white text-xs">{formatINR(halfProfitShare)}</span>
               </div>
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
                 <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Withdrawn</span>
                 <span className="font-bold text-rose-600 dark:text-rose-400 text-xs">- {formatINR(totalOwner2Withdrawn)}</span>
               </div>
               <div className="bg-white dark:bg-slate-800/80 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold block">Retained Balance</span>
+                <span className="text-[10px] text-slate-500 uppercase font-semibold block">Remaining Profit</span>
                 <span className={`font-black text-xs ${netOwner2Balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                   {formatINR(netOwner2Balance)}
                 </span>
@@ -857,7 +865,7 @@ const ShareTab = () => {
                     Record Owner Withdrawal / Deduction
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Deduct money from the selected partner&apos;s 50% received share
+                    Deduct money from the selected partner&apos;s 50% profit share
                   </p>
                 </div>
               </div>
@@ -1130,7 +1138,7 @@ const ShareTab = () => {
               </div>
               <div>
                 <span className="text-slate-500 block">Each Partner 50%:</span>
-                <span className="font-bold text-indigo-600 text-sm">{formatINR(halfReceivedShare)}</span>
+                <span className="font-bold text-indigo-600 text-sm">{formatINR(halfProfitShare)}</span>
               </div>
             </div>
 
@@ -1141,15 +1149,15 @@ const ShareTab = () => {
                   {partnerNames.owner1} (50% Share)
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">50% Received Base:</span>
-                  <span className="font-semibold">{formatINR(halfReceivedShare)}</span>
+                  <span className="text-slate-500">50% Net Profit Base:</span>
+                  <span className="font-semibold">{formatINR(halfProfitShare)}</span>
                 </div>
                 <div className="flex justify-between text-rose-600">
                   <span>Total Deductions:</span>
                   <span className="font-semibold">- {formatINR(totalOwner1Withdrawn)}</span>
                 </div>
                 <div className="pt-2 border-t flex justify-between font-bold text-sm">
-                  <span>Net Retained Balance:</span>
+                  <span>Remaining Profit:</span>
                   <span className={netOwner1Balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
                     {formatINR(netOwner1Balance)}
                   </span>
@@ -1161,15 +1169,15 @@ const ShareTab = () => {
                   {partnerNames.owner2} (50% Share)
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">50% Received Base:</span>
-                  <span className="font-semibold">{formatINR(halfReceivedShare)}</span>
+                  <span className="text-slate-500">50% Net Profit Base:</span>
+                  <span className="font-semibold">{formatINR(halfProfitShare)}</span>
                 </div>
                 <div className="flex justify-between text-rose-600">
                   <span>Total Deductions:</span>
                   <span className="font-semibold">- {formatINR(totalOwner2Withdrawn)}</span>
                 </div>
                 <div className="pt-2 border-t flex justify-between font-bold text-sm">
-                  <span>Net Retained Balance:</span>
+                  <span>Remaining Profit:</span>
                   <span className={netOwner2Balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
                     {formatINR(netOwner2Balance)}
                   </span>
