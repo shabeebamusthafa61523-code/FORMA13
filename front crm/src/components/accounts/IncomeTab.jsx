@@ -493,6 +493,74 @@ const IncomeTab = ({ mode = 'sales' }) => {
     return receiptsList;
   }, [sortedAndFilteredIncomes, mode, getNetPayableAmount]);
 
+  const incomeMetrics = React.useMemo(() => {
+    let totalRealized = 0;
+    let totalInvoiced = 0;
+    let totalPending = 0;
+    let receiptsCount = 0;
+    let bankTotal = 0;
+    let cashTotal = 0;
+
+    if (mode === 'income') {
+      displayReceiptRows.forEach(r => {
+        const amt = Number(r.amountPaid || 0);
+        totalRealized += amt;
+        receiptsCount++;
+        const modeStr = String(r.wayOfIncome || '').toLowerCase();
+        if (modeStr.includes('cash')) {
+          cashTotal += amt;
+        } else {
+          bankTotal += amt;
+        }
+      });
+
+      incomes.forEach(inc => {
+        if (String(inc.status || '').toLowerCase() === 'inactive' || inc.isDeleted) return;
+        totalInvoiced += getNetPayableAmount(inc);
+      });
+      totalPending = Math.max(0, totalInvoiced - totalRealized);
+    } else {
+      sortedAndFilteredIncomes.forEach(inc => {
+        const net = getNetPayableAmount(inc);
+        totalInvoiced += net;
+        const recStatus = String(inc.status || '').trim().toLowerCase();
+        const isPaidStatus = recStatus === 'paid' || recStatus === 'completed';
+        let paid = 0;
+        if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+          paid = inc.payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+        } else if (parseFloat(inc.receiptAmount || 0) > 0) {
+          paid = parseFloat(inc.receiptAmount);
+        } else if (isPaidStatus) {
+          paid = net;
+        }
+        totalRealized += paid;
+        totalPending += Math.max(0, net - paid);
+        receiptsCount += (Array.isArray(inc.payments) && inc.payments.length > 0) ? inc.payments.length : (paid > 0 ? 1 : 0);
+        
+        const modeStr = String(inc.paymentMethod || '').toLowerCase();
+        if (modeStr.includes('cash')) {
+          cashTotal += paid;
+        } else {
+          bankTotal += paid;
+        }
+      });
+    }
+
+    const effectiveTotalFunds = totalRealized + Number(incomeObAmount || 0);
+    const collectionEfficiency = totalInvoiced > 0 ? ((totalRealized / totalInvoiced) * 100).toFixed(1) : '100.0';
+
+    return {
+      totalRealized,
+      totalInvoiced,
+      totalPending,
+      receiptsCount,
+      bankTotal,
+      cashTotal,
+      effectiveTotalFunds,
+      collectionEfficiency
+    };
+  }, [incomes, displayReceiptRows, sortedAndFilteredIncomes, mode, getNetPayableAmount, incomeObAmount]);
+
   useEffect(() => {
     fetchDepartments();
     fetchClientList();
@@ -923,6 +991,129 @@ const IncomeTab = ({ mode = 'sales' }) => {
 
   return (
     <div className="space-y-4">
+      {/* ── TOP METRIC SUMMARY CARDS ── */}
+      {mode === 'income' ? (
+        /* 2-Card Clean View for Income Page: Realized Income + Settled Receipts & Channels */
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Card 1: Total Realized Income */}
+          <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                Total Realized Income
+              </p>
+              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 size={16} />
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+              ₹{Math.round(incomeMetrics.totalRealized).toLocaleString('en-IN')}
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {incomeMetrics.receiptsCount} Payment Receipts Cleared
+            </p>
+          </div>
+
+          {/* Card 2: Settled Receipts & Payment Channels */}
+          <div className="bg-white dark:bg-slate-900 border border-indigo-500/20 dark:border-indigo-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                Settled Receipts & Channels
+              </p>
+              <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                <Receipt size={16} />
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1 font-mono">
+              {incomeMetrics.receiptsCount} Receipts
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+              Bank: ₹{Math.round(incomeMetrics.bankTotal).toLocaleString('en-IN')} • Cash: ₹{Math.round(incomeMetrics.cashTotal).toLocaleString('en-IN')}
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* 4-Card Full Ledger View for Sales / Proforma Modes */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Card 1: Realized / Advance */}
+          <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'proforma' ? 'Advance Received' : 'Total Realized Income'}
+              </p>
+              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 size={16} />
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+              ₹{Math.round(incomeMetrics.totalRealized).toLocaleString('en-IN')}
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {mode === 'proforma' ? 'Proforma advance collected' : `${incomeMetrics.receiptsCount} Payment Receipts Cleared`}
+            </p>
+          </div>
+
+          {/* Card 2: Invoiced Billing / Value */}
+          <div className="bg-white dark:bg-slate-900 border border-cyan-500/20 dark:border-cyan-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'proforma' ? 'Total Proforma Value' : 'Total Invoiced Sales'}
+              </p>
+              <div className="p-2 rounded-xl bg-cyan-50 dark:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400">
+                <TrendingUp size={16} />
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-cyan-600 dark:text-cyan-400 mt-1 font-mono">
+              ₹{Math.round(incomeMetrics.totalInvoiced).toLocaleString('en-IN')}
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+              {`${sortedAndFilteredIncomes.length} Invoiced Orders / Bills`}
+            </p>
+          </div>
+
+          {/* Card 3: Pending Receivables / Balance */}
+          <div className="bg-white dark:bg-slate-900 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'proforma' ? 'Pending Balance' : 'Pending Receivables'}
+              </p>
+              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                <Clock size={16} />
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 font-mono">
+              ₹{Math.round(incomeMetrics.totalPending).toLocaleString('en-IN')}
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              {mode === 'proforma' ? 'Balance pending quotation' : 'Outstanding Customer Dues'}
+            </p>
+          </div>
+
+          {/* Card 4: Collection Rate / Count */}
+          <div className="bg-white dark:bg-slate-900 border border-indigo-500/20 dark:border-indigo-500/30 rounded-2xl p-4 shadow-2xs transition hover:shadow-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'proforma' ? 'Estimates Count' : 'Recovery Efficiency'}
+              </p>
+              <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                {mode === 'proforma' ? <Receipt size={16} /> : <Percent size={16} />}
+              </div>
+            </div>
+            <h4 className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1 font-mono">
+              {mode === 'proforma' ? `${sortedAndFilteredIncomes.length} Bills` : `${incomeMetrics.collectionEfficiency}%`}
+            </h4>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+              {mode === 'proforma' ? 'Active Proforma Estimates' : 'Payment Recovery Rate'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Sleek 1-Row Compact Header Toolbar */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-3 px-1 py-0.5">
         {/* Left Title & Total Metric Pill */}
