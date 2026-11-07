@@ -44,7 +44,8 @@ import {
   getVendorPurchases,
   recordSupplierPayment,
   getSupplierLedger,
-  deleteSupplierPayment
+  deleteSupplierPayment,
+  deleteSupplierCredit
 } from '../services/accountsService';
 import { useToast } from '../components/ToastProvider';
 import ConfirmModal from '../components/ConfirmModal';
@@ -257,7 +258,6 @@ const SuppliersPage = () => {
       setPaymentSubmitting(false);
     }
   };
-
 
   // Delete Payment Record from Ledger
   const handleDeletePayment = async (paymentId) => {

@@ -230,6 +230,7 @@ const ShareTab = () => {
   // 50/50 Split Calculations based on NET PROFIT
   const totalAmountReceived = Number(data.summary?.totalAmountReceived || 0);
   const totalOperatingCosts = Number(data.summary?.totalOperatingCosts || 0);
+  const totalVendorCredit = Number(data.summary?.totalVendorCredit || 0);
   const totalNetProfit = Number(data.summary?.totalNetProfit || 0);
   const halfProfitShare = Number(data.summary?.halfProfitShare !== undefined ? data.summary.halfProfitShare : (data.summary?.owner1?.grossShare ?? (totalNetProfit / 2)));
 
@@ -333,8 +334,8 @@ const ShareTab = () => {
             <span className="text-slate-500">Income:</span>
             <span className="font-bold text-slate-900 dark:text-white">{formatINR(totalAmountReceived)}</span>
             <span className="text-slate-300 dark:text-slate-600">|</span>
-            <span className="text-slate-500">Costs:</span>
-            <span className="font-bold text-rose-600 dark:text-rose-400">-{formatINR(totalOperatingCosts)}</span>
+            <span className="text-slate-500" title={totalVendorCredit > 0 ? `Net Operating Costs (Less ₹${totalVendorCredit.toLocaleString('en-IN')} Vendor Credit)` : 'Operating Costs'}>Costs:</span>
+            <span className="font-bold text-rose-600 dark:text-rose-400" title={totalVendorCredit > 0 ? `Gross Purchases & Expenses less ₹${totalVendorCredit.toLocaleString('en-IN')} Vendor Credit` : undefined}>-{formatINR(totalOperatingCosts)}</span>
             <span className="text-slate-300 dark:text-slate-600">|</span>
             <span className="text-slate-500">Net Profit:</span>
             <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatINR(totalNetProfit)}</span>

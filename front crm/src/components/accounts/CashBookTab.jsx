@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { getCashBook, getExpenseCategories, getOpeningBalance, setOpeningBalance as saveOpeningBalanceApi } from '../../services/accountsService';
 import { 
   BookOpen, 
@@ -491,7 +491,7 @@ const CashBookTab = () => {
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
-              Profit & Loss / Cash & Bank (Income, Expense & Purchase)
+              Cash Book Ledger (Inflows & Outflows)
             </h3>
           </div>
         </div>
