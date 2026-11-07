@@ -234,7 +234,24 @@ const ExpenseReportsTab = () => {
   const allDayPurchasesMap = new Map();
   dayPurchasesList.forEach(p => allDayPurchasesMap.set(String(p._id || p.id), p));
   dayBackendPurchases.forEach(p => allDayPurchasesMap.set(String(p._id || p.id), p));
-  const dayPurchaseTotal = Array.from(allDayPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+  (reportData?.supplierCredits || []).forEach(sc => {
+    const scDate = sc.date ? new Date(sc.date).toISOString().split('T')[0] : '';
+    if (scDate === dailyDate) {
+      allDayPurchasesMap.set(String(sc._id || sc.id), {
+        _id: sc._id,
+        isPurchase: true,
+        date: sc.date,
+        description: sc.itemDescription ? `Vendor Credit: ${sc.itemDescription}` : `Vendor Credit Purchase (${sc.category || 'Raw Material'})`,
+        categoryName: 'Vendor Credit Purchase',
+        paidTo: sc.vendorName || 'Supplier',
+        paymentMode: 'Credit / Pay Later',
+        amount: Number(sc.amount || 0)
+      });
+    }
+  });
+  const dayPurchaseTotal = reportData?.summary?.purchaseTotal !== undefined
+    ? reportData.summary.purchaseTotal
+    : Array.from(allDayPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
 
   const allDayGenExpMap = new Map();
   dayGenExpList.forEach(e => allDayGenExpMap.set(String(e._id || e.id), e));
@@ -415,7 +432,24 @@ const ExpenseReportsTab = () => {
   const allMonthlyPurchasesMap = new Map();
   monthPurchasesList.forEach(p => allMonthlyPurchasesMap.set(String(p._id || p.id), p));
   monthBackendPurchases.forEach(p => allMonthlyPurchasesMap.set(String(p._id || p.id), p));
-  const monthPurchaseTotal = Array.from(allMonthlyPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+  (reportData?.supplierCredits || []).forEach(sc => {
+    const scDate = sc.date ? new Date(sc.date).toISOString().split('T')[0] : '';
+    if (scDate.startsWith(monthlyYearMonth)) {
+      allMonthlyPurchasesMap.set(String(sc._id || sc.id), {
+        _id: sc._id,
+        isPurchase: true,
+        date: sc.date,
+        description: sc.itemDescription ? `Vendor Credit: ${sc.itemDescription}` : `Vendor Credit Purchase (${sc.category || 'Raw Material'})`,
+        categoryName: 'Vendor Credit Purchase',
+        paidTo: sc.vendorName || 'Supplier',
+        paymentMode: 'Credit / Pay Later',
+        amount: Number(sc.amount || 0)
+      });
+    }
+  });
+  const monthPurchaseTotal = reportData?.summary?.purchaseTotal !== undefined
+    ? reportData.summary.purchaseTotal
+    : Array.from(allMonthlyPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
 
   const allMonthGenExpMap = new Map();
   monthGenExpList.forEach(e => allMonthGenExpMap.set(String(e._id || e.id), e));
@@ -592,6 +626,43 @@ const ExpenseReportsTab = () => {
           paymentMode: pur.paymentMode || pur.paymentMethod || 'Bank Transfer',
           amount: Number(pur.amount || pur.totalAmount) || 0
         });
+      }
+    });
+
+    (reportData?.supplierCredits || []).forEach(sc => {
+      const scId = String(sc._id || sc.id);
+      if (!addedIds.has(scId)) {
+        addedIds.add(scId);
+        combined.push({
+          _id: scId,
+          flowType: 'PURCHASE',
+          date: sc.date,
+          title: sc.itemDescription ? `Vendor Credit: ${sc.itemDescription}` : `Vendor Credit Purchase (${sc.category || 'Raw Material'})`,
+          category: 'Vendor Credit Purchase',
+          payee: sc.vendorName || 'Supplier',
+          paymentMode: 'Credit / Pay Later',
+          amount: Number(sc.amount || 0)
+        });
+      }
+    });
+
+    (reportData?.vendors || []).forEach(v => {
+      const ob = Number(v.openingBalance || 0);
+      if (ob > 0) {
+        const vId = `ob_${v._id || v.id}`;
+        if (!addedIds.has(vId)) {
+          addedIds.add(vId);
+          combined.push({
+            _id: vId,
+            flowType: 'PURCHASE',
+            date: v.createdAt || new Date().toISOString(),
+            title: `Opening Credit Balance: ${v.name}`,
+            category: 'Vendor Credit Purchase',
+            payee: v.name,
+            paymentMode: 'Credit / Pay Later',
+            amount: ob
+          });
+        }
       }
     });
 
@@ -1381,13 +1452,17 @@ const ExpenseReportsTab = () => {
             {/* 4. Total Purchases */}
             <div className="bg-white dark:bg-slate-900 border border-purple-500/20 dark:border-purple-500/30 rounded-2xl p-3.5 shadow-2xs min-w-0">
               <div className="flex items-center justify-between gap-1">
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Total Purchases">Total Purchases</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Total Purchases (Less Vendor Credit)">Total Purchases (Net)</p>
                 <ShoppingCart size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
               </div>
               <h4 className="text-base font-black text-purple-600 dark:text-purple-400 mt-1 font-mono min-w-0 truncate" title={`-₹${(reportData?.summary?.purchaseTotal || 0).toLocaleString('en-IN')}`}>
                 -₹{(reportData?.summary?.purchaseTotal || 0).toLocaleString('en-IN')}
               </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate" title="Vendor Inventory Procurement">Vendor Inventory Procurement</p>
+              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate" title={`Purchases: ₹${(reportData?.summary?.cashPurchaseTotal || 0).toLocaleString('en-IN')} - Vendor Credit: ₹${(((reportData?.summary?.directCreditTotal || 0) + (reportData?.summary?.vendorOpeningCreditTotal || 0))).toLocaleString('en-IN')}`}>
+                {((reportData?.summary?.directCreditTotal || 0) + (reportData?.summary?.vendorOpeningCreditTotal || 0)) > 0
+                  ? `Less Credit: -₹${(((reportData?.summary?.directCreditTotal || 0) + (reportData?.summary?.vendorOpeningCreditTotal || 0))).toLocaleString('en-IN')}`
+                  : "Vendor Inventory Procurement"}
+              </p>
             </div>
 
             {/* 5. Outstanding Supplier Credit */}
@@ -1441,14 +1516,14 @@ const ExpenseReportsTab = () => {
             {/* 9. Operating Net Profit / Loss */}
             <div className={`bg-white dark:bg-slate-900 border ${(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'border-emerald-500/20 dark:border-emerald-500/30' : 'border-rose-500/20 dark:border-rose-500/30'} rounded-2xl p-3.5 shadow-2xs min-w-0`}>
               <div className="flex items-center justify-between gap-1">
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Operating Net Profit">Operating Net Profit</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold min-w-0 truncate" title="Operating Net Profit (Revenue Inflows - Net Operating Expenses)">Operating Net Profit</p>
                 <TrendingUp size={16} className={`${(reportData?.summary?.operatingNetProfit || 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"} shrink-0`} />
               </div>
               <h4 className={`text-base font-black mt-1 font-mono min-w-0 truncate ${(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`} title={`${(reportData?.summary?.operatingNetProfit || 0) >= 0 ? '+' : ''}₹${(reportData?.summary?.operatingNetProfit || 0).toLocaleString('en-IN')}`}>
                 {(reportData?.summary?.operatingNetProfit || 0) >= 0 ? '+' : ''}₹{(reportData?.summary?.operatingNetProfit || 0).toLocaleString('en-IN')}
               </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate" title={(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'Lifetime Operating Surplus' : 'Lifetime Operating Deficit'}>
-                {(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'Lifetime Operating Surplus' : 'Lifetime Operating Deficit'}
+              <p className="text-[10px] text-slate-400 mt-0.5 min-w-0 truncate" title={(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'Operating Surplus (After Deducting Vendor Credit from Expenses)' : 'Operating Deficit'}>
+                {(reportData?.summary?.operatingNetProfit || 0) >= 0 ? 'Operating Surplus (Credit Deducted from Expenses)' : 'Operating Deficit'}
               </p>
             </div>
 
