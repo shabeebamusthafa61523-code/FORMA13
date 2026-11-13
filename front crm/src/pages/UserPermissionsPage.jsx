@@ -46,6 +46,7 @@ const ALL_SIDEBAR_ITEMS = [
   { label: 'Ledger', path: '/accounts/ledger', category: 'Finance & Accounts', desc: 'General ledger transaction logs' },
   { label: 'Day Book', path: '/accounts/cash-book', category: 'Finance & Accounts', desc: 'Daily cash book records' },
   { label: 'Profit and Loss', path: '/accounts/reports', category: 'Finance & Accounts', desc: 'P&L statements & financial reports' },
+  { label: 'Monthly P&L', path: '/monthly-pnl', category: 'Finance & Accounts', desc: 'Dedicated monthly Profit & Loss ledger summary' },
   { label: 'Share', path: '/accounts/share', category: 'Finance & Accounts', desc: 'Partner profit sharing, 50/50 dual equity & withdrawals ledger' }
 ];
 

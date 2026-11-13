@@ -2,6 +2,7 @@ export const AMOUNT_STATUSES = [
   'Beginning Stage',
   'Pending',
   'Urgent',
+  'WIP',
   'Completed'
 ];
 
@@ -23,6 +24,12 @@ export const AMOUNT_STATUS_CONFIG = {
     rowBg: 'bg-red-50/80 dark:bg-red-950/30 hover:bg-red-100/90 dark:hover:bg-red-900/40 border-l-red-500',
     badge: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700/80',
     dot: 'bg-red-500'
+  },
+  'WIP': {
+    label: 'WIP',
+    rowBg: 'bg-purple-50/70 dark:bg-purple-950/25 hover:bg-purple-100/80 dark:hover:bg-purple-900/35 border-l-purple-500',
+    badge: 'bg-purple-100/90 text-purple-800 border-purple-300 dark:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800/80',
+    dot: 'bg-purple-500'
   },
   'Completed': {
     label: 'Completed',

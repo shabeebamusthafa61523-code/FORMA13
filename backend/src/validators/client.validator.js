@@ -22,7 +22,7 @@ export const createClientValidator = [
   body('clientType').optional().isIn(['Enterprise', 'SMB', 'Startup', 'Government', 'Retainer', 'One-Time']),
   body('priority').optional().isIn(['Low', 'Medium', 'High', 'VIP']),
   body('ndaStatus').optional().isIn(['Signed', 'Pending', 'Not Applicable']),
-  body('amountStatus').optional().isIn(['Beginning Stage', 'Pending', 'Urgent', 'Completed'])
+  body('amountStatus').optional().isIn(['Beginning Stage', 'Pending', 'Urgent', 'WIP', 'Completed'])
 ];
 
 export const updateClientValidator = [
@@ -33,5 +33,5 @@ export const updateClientValidator = [
   optionalPhoneRule('alternativePhone'),
   body('status').optional().isIn(['Active', 'Inactive', 'On Hold', 'Lead', 'Archived']),
   body('priority').optional().isIn(['Low', 'Medium', 'High', 'VIP']),
-  body('amountStatus').optional().isIn(['Beginning Stage', 'Pending', 'Urgent', 'Completed'])
+  body('amountStatus').optional().isIn(['Beginning Stage', 'Pending', 'Urgent', 'WIP', 'Completed'])
 ];

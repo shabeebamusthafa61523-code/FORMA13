@@ -44,6 +44,15 @@ const dailyWageSchema = new mongoose.Schema({
   notes: { type: String, default: '', trim: true }
 }, { _id: true, timestamps: true });
 
+const wageCreditSchema = new mongoose.Schema({
+  date: { type: Date, required: true, default: Date.now },
+  employee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+  employeeName: { type: String, default: 'General / Advance', trim: true },
+  amount: { type: Number, required: true, min: 0 },
+  notes: { type: String, default: '', trim: true }
+}, { _id: true, timestamps: true });
+
+
 const purchaseExpenseSchema = new mongoose.Schema({
   date: { type: Date, required: true, default: Date.now },
   type: { 
@@ -119,6 +128,7 @@ const fabricationJobSchema = new mongoose.Schema({
   // Line items
   quotationItems: [quotationItemSchema],
   dailyWages: [dailyWageSchema],
+  wageCredits: [wageCreditSchema],
   purchasesAndExpenses: [purchaseExpenseSchema],
   clientPayments: [clientPaymentSchema],
 
@@ -135,6 +145,8 @@ const fabricationJobSchema = new mongoose.Schema({
     discountAmount: { type: Number, default: 0 },
     totalQuotation: { type: Number, default: 0 },
     totalPurchases: { type: Number, default: 0 },
+    grossWages: { type: Number, default: 0 },
+    totalWageCredit: { type: Number, default: 0 },
     totalWages: { type: Number, default: 0 },
     totalExpenses: { type: Number, default: 0 },
     totalDirectCost: { type: Number, default: 0 },
@@ -218,7 +230,9 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
 
   const totalQuotation = Math.max(0, grossQuotation - overallDiscountAmount);
 
-  const totalWages = (this.dailyWages || []).reduce((sum, item) => sum + (Number(item.totalWage) || 0), 0);
+  const grossWages = (this.dailyWages || []).reduce((sum, item) => sum + (Number(item.totalWage) || 0), 0);
+  const totalWageCredit = (this.wageCredits || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const totalWages = Math.max(0, grossWages - totalWageCredit);
 
   let totalPurchases = 0;
   let totalExpenses = 0;
@@ -241,6 +255,8 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
     discountAmount: Math.round(overallDiscountAmount * 100) / 100,
     totalQuotation: Math.round(totalQuotation * 100) / 100,
     totalPurchases: Math.round(totalPurchases * 100) / 100,
+    grossWages: Math.round(grossWages * 100) / 100,
+    totalWageCredit: Math.round(totalWageCredit * 100) / 100,
     totalWages: Math.round(totalWages * 100) / 100,
     totalExpenses: Math.round(totalExpenses * 100) / 100,
     totalDirectCost: Math.round(totalDirectCost * 100) / 100,

@@ -10,6 +10,7 @@ import {
   ReceiptText,
   Wallet, 
   ShieldCheck,
+  TrendingUp,
   X,
   LogOut,
   ChevronLeft,
@@ -122,6 +123,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
   const showFabrication = isSuper || hasPerm('Workspace', '/fabrication') || hasPerm('Fabrication', '/fabrication') || hasPerm('Fabrication Works', '/fabrication') || !userPermissions || userPermissions.length === 0;
   const showGeneralExpense = isSuper || hasPerm('General expense', '/general-expenses') || hasPerm('General Expense', '/general-expenses') || hasPerm('Expense', '/accounts/expenses') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
+  const showMonthlyPnL = isSuper || hasPerm('Monthly P&L', '/monthly-pnl') || hasPerm('Monthly Profit & Loss', '/monthly-pnl') || hasPerm('Profit and Loss', '/accounts/reports') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showShare = isSuper || hasPerm('Share', '/accounts/share') || hasPerm('Share', '/share') || hasPerm('Partner Share', '/accounts/share');
   const showPermissions = isSuper || hasPerm('Sidebar Permissions', '/sidebar-permissions');
 
@@ -356,6 +358,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
                 </div>
               )}
             </div>
+          )}
+
+          {/* Monthly Profit & Loss (Pure P&L) */}
+          {showMonthlyPnL && (
+            <Link
+              to="/monthly-pnl"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/monthly-pnl'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Monthly P&L' : undefined}
+            >
+              <TrendingUp size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Monthly P&L</span>}
+            </Link>
           )}
 
           {/* Share (Partner Profit & Equity Share) */}
@@ -604,6 +622,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
                 </div>
               )}
             </div>
+          )}
+
+          {/* Monthly Profit & Loss (Mobile) */}
+          {showMonthlyPnL && (
+            <Link
+              to="/monthly-pnl"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/monthly-pnl'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <TrendingUp size={20} className="shrink-0" />
+              <span>Monthly P&L</span>
+            </Link>
           )}
 
           {/* Share (Mobile) */}

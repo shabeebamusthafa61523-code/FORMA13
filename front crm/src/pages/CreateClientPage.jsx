@@ -161,6 +161,7 @@ const CreateClientPage = () => {
             <option value="Beginning Stage">Beginning Stage</option>
             <option value="Pending">Pending</option>
             <option value="Urgent">Urgent</option>
+            <option value="WIP">WIP</option>
             <option value="Completed">Completed</option>
           </select>
         </div>

@@ -330,3 +330,9 @@ export const deleteSupplierCredit = async (vendorId, creditId) => {
   const response = await safeDelete(`/vendors/${vendorId}/credits/${creditId}`);
   return response.data;
 };
+
+export const getMonthlyPnLSummary = async (year) => {
+  const params = year ? { year } : {};
+  const response = await safeGet('/reports/monthly-pnl-summary', params);
+  return response.data;
+};

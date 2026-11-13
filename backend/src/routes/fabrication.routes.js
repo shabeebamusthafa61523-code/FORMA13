@@ -31,6 +31,10 @@ router.post('/jobs/:id/wages', fabricationController.addDailyWage);
 router.put('/jobs/:id/wages/:wageId', fabricationController.updateDailyWage);
 router.delete('/jobs/:id/wages/:wageId', fabricationController.deleteDailyWage);
 
+// 3B. Wage Credits (Advances & Deductions)
+router.post('/jobs/:id/wage-credits', fabricationController.addWageCredit);
+router.delete('/jobs/:id/wage-credits/:creditId', fabricationController.deleteWageCredit);
+
 // 4. Purchases & Expenses CRUD (Dropdown for Sq.Ft/Inches/etc., Rate, Quantity, Auto-Calculate)
 router.post('/jobs/:id/expenses', fabricationController.addPurchaseExpense);
 router.put('/jobs/:id/expenses/:expenseId', fabricationController.updatePurchaseExpense);

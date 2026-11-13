@@ -464,7 +464,9 @@ const FabricationPage = () => {
 
   // Aggregated totals
   const totalPurchasesSum = useMemo(() => allPurchases.reduce((s, p) => s + (Number(p.amount) || 0), 0), [allPurchases]);
-  const totalWagesSum = useMemo(() => allDailyWages.reduce((s, w) => s + (Number(w.totalWage) || 0), 0), [allDailyWages]);
+  const grossWagesSum = useMemo(() => allDailyWages.reduce((s, w) => s + (Number(w.totalWage) || 0), 0), [allDailyWages]);
+  const totalWageCreditsSum = useMemo(() => (jobs || []).reduce((s, j) => s + (Number(j.financials?.totalWageCredit) || 0), 0), [jobs]);
+  const totalWagesSum = Math.max(0, grossWagesSum - totalWageCreditsSum);
   const totalSiteExpSum = useMemo(() => allSiteExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0), [allSiteExpenses]);
   const totalPaymentsSum = useMemo(() => allClientPayments.reduce((s, cp) => s + (Number(cp.amount) || 0), 0), [allClientPayments]);
 
@@ -1068,8 +1070,13 @@ const FabricationPage = () => {
               <div className="text-right">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Total Disbursed Wages</span>
                 <span className="text-sm font-black text-blue-600 dark:text-blue-400 font-mono">
-                  ₹{filteredDailyWages.reduce((s, w) => s + (Number(w.totalWage) || 0), 0).toLocaleString('en-IN')}
+                  ₹{Math.max(0, filteredDailyWages.reduce((s, w) => s + (Number(w.totalWage) || 0), 0) - totalWageCreditsSum).toLocaleString('en-IN')}
                 </span>
+                {totalWageCreditsSum > 0 && (
+                  <span className="text-[10px] text-amber-500 font-semibold block">
+                    (₹{totalWageCreditsSum.toLocaleString('en-IN')} credit deducted)
+                  </span>
+                )}
               </div>
 
               <ExcelExportButton
