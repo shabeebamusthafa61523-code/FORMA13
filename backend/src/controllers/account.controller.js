@@ -1067,12 +1067,13 @@ export const getDailyReport = async (req, res) => {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [expenses, incomes, obRecord, allCategories, supplierCredits] = await Promise.all([
+    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits] = await Promise.all([
       Expense.find({ date: { $gte: startOfDay, $lte: endOfDay } }).sort({ date: -1 }),
       Income.find({ date: { $gte: startOfDay, $lte: endOfDay } }).sort({ date: -1 }),
       OpeningBalance.findOne().sort({ updatedAt: -1 }),
       ExpenseCategory.find(),
-      SupplierCredit.find({ date: { $gte: startOfDay, $lte: endOfDay } }).lean()
+      SupplierCredit.find({ date: { $gte: startOfDay, $lte: endOfDay } }).lean(),
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
     ]);
 
     const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
@@ -1110,7 +1111,15 @@ export const getDailyReport = async (req, res) => {
     const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
     const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const purchaseTotal = Math.max(0, expensePurchaseTotal - directCreditTotal);
-    const salaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const rawSalaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const dailyWageCreditTotal = (jobsWithCredits || []).reduce((sum, j) => {
+      const dayCredits = (j.wageCredits || []).filter(wc => {
+        const d = new Date(wc.date || wc.createdAt);
+        return d >= startOfDay && d <= endOfDay;
+      });
+      return sum + dayCredits.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    }, 0);
+    const salaryTotal = Math.max(0, rawSalaryTotal - dailyWageCreditTotal);
     const generalExpenseTotal = expenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const ownerDrawingTotal = expenses.filter(isOwnerDrawing).reduce((sum, e) => sum + (e.amount || 0), 0);
     
@@ -1135,6 +1144,10 @@ export const getDailyReport = async (req, res) => {
         totalAmount: totalOutflow,
         totalOutflow,
         effectiveTotalOutflow,
+        grossSalaryTotal: rawSalaryTotal,
+        wageCreditTotal: dailyWageCreditTotal,
+        grossSalaryTotal: rawSalaryTotal,
+        wageCreditTotal: monthlyWageCreditTotal,
         salaryTotal,
         purchaseTotal,
         cashPurchaseTotal: expensePurchaseTotal,
@@ -1167,12 +1180,13 @@ export const getMonthlyReport = async (req, res) => {
     const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
     const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
-    const [expenses, incomes, obRecord, allCategories, supplierCredits] = await Promise.all([
+    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits] = await Promise.all([
       Expense.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).sort({ date: -1 }),
       Income.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).sort({ date: -1 }),
       OpeningBalance.findOne().sort({ updatedAt: -1 }),
       ExpenseCategory.find(),
-      SupplierCredit.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).lean()
+      SupplierCredit.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).lean(),
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
     ]);
 
     const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
@@ -1210,7 +1224,15 @@ export const getMonthlyReport = async (req, res) => {
     const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
     const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const purchaseTotal = Math.max(0, expensePurchaseTotal - directCreditTotal);
-    const salaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const rawSalaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const monthlyWageCreditTotal = (jobsWithCredits || []).reduce((sum, j) => {
+      const monthCredits = (j.wageCredits || []).filter(wc => {
+        const d = new Date(wc.date || wc.createdAt);
+        return d >= startOfMonth && d <= endOfMonth;
+      });
+      return sum + monthCredits.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    }, 0);
+    const salaryTotal = Math.max(0, rawSalaryTotal - monthlyWageCreditTotal);
     const generalExpenseTotal = expenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const ownerDrawingTotal = expenses.filter(isOwnerDrawing).reduce((sum, e) => sum + (e.amount || 0), 0);
     
@@ -1263,10 +1285,11 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
     const { year } = req.query;
     const filterYear = year && year !== 'all' ? parseInt(year, 10) : null;
 
-    const [expenses, incomes, supplierCredits] = await Promise.all([
+    const [expenses, incomes, supplierCredits, jobsWithCredits] = await Promise.all([
       Expense.find({ status: { $ne: 'rejected' } }).lean(),
       Income.find({}).lean(),
-      SupplierCredit.find({}).lean()
+      SupplierCredit.find({}).lean(),
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
     ]);
 
     const monthNames = [
@@ -1326,6 +1349,8 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
           netPurchases: 0,
           generalExpenses: 0,
           salaries: 0,
+          wageCredits: 0,
+          netSalaries: 0,
           totalExpenses: 0,
           netProfit: 0,
           status: 'Profit'
@@ -1371,13 +1396,26 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
       }
     });
 
+    // 3B. Wage Credits (deducted from salaries)
+    (jobsWithCredits || []).forEach(job => {
+      (job.wageCredits || []).forEach(wc => {
+        const date = wc.date || wc.createdAt;
+        const key = getMonthKey(date);
+        if (key) {
+          const m = initMonth(key);
+          m.wageCredits = (m.wageCredits || 0) + (Number(wc.amount) || 0);
+        }
+      });
+    });
+
     // 4. Calculate Net Profit & Loss
     const resultList = Object.keys(monthsMap)
       .sort((a, b) => b.localeCompare(a))
       .map(key => {
         const item = monthsMap[key];
         item.netPurchases = Math.max(0, item.grossPurchases - item.supplierCredits);
-        item.totalExpenses = item.netPurchases + item.generalExpenses + item.salaries;
+        item.netSalaries = Math.max(0, item.salaries - (item.wageCredits || 0));
+        item.totalExpenses = item.netPurchases + item.generalExpenses + item.netSalaries;
         item.netProfit = Math.round((item.incomeTotal - item.totalExpenses) * 100) / 100;
         item.status = item.netProfit >= 0 ? 'Profit' : 'Loss';
         return item;
@@ -1512,7 +1550,7 @@ export const getTotalReport = async (req, res) => {
       ExpenseCategory.find(),
       SalaryPayment.find().populate('employee', 'name email designation department salary employeeId').sort({ paymentDate: -1 }),
       Vendor.find({ isActive: true }).sort({ name: 1 }).lean(),
-      FabricationJob.find({ 'purchasesAndExpenses.0': { $exists: true } }, { purchasesAndExpenses: 1 }).lean(),
+      FabricationJob.find({ $or: [{ 'purchasesAndExpenses.0': { $exists: true } }, { 'wageCredits.0': { $exists: true } }] }, { purchasesAndExpenses: 1, wageCredits: 1 }).lean(),
       SupplierPayment.find({}).lean(),
       SupplierCredit.find({}).lean()
     ]);
@@ -1638,7 +1676,9 @@ export const getTotalReport = async (req, res) => {
     const vendorOpeningCreditTotal = vendors.reduce((sum, v) => sum + (Number(v.openingBalance) || 0), 0);
     const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
     const totalPurchases = Math.max(0, purchaseTotal - totalVendorCredit);
-    const totalOperatingOutflow = totalPurchases + generalExpenseTotal + salaryTotal;
+    const totalWageCreditAll = (jobs || []).reduce((sum, j) => sum + (j.wageCredits || []).reduce((s, c) => s + (Number(c.amount) || 0), 0), 0);
+    const netSalaryTotal = Math.max(0, salaryTotal - totalWageCreditAll);
+    const totalOperatingOutflow = totalPurchases + generalExpenseTotal + netSalaryTotal;
     const effectiveTotalIncome = incomeOpeningBalance + totalIncome + totalCapital;
     const effectiveTotalOutflow = expenseOpeningBalance + totalOperatingOutflow;
 
@@ -1665,7 +1705,9 @@ export const getTotalReport = async (req, res) => {
         totalVendorCredit,
         generalExpenseTotal,
         ownerDrawingTotal,
-        salaryTotal,
+        grossSalaryTotal: salaryTotal,
+        wageCreditTotal: totalWageCreditAll,
+        salaryTotal: netSalaryTotal,
         totalOwnerDrawings,
         supplierCreditTotal,
         totalOperatingOutflow,
@@ -3745,7 +3787,9 @@ export const getPartnerShareSummary = async (req, res) => {
     }, 0);
     const salaryTotal = salaryPaymentsTotal > 0 ? salaryPaymentsTotal : allExpenses.filter(e => !isOwnerDrawing(e) && isSal(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    const totalOperatingCosts = purchaseTotal + generalExpenseTotal + salaryTotal;
+    const totalWageCreditAll = (jobs || []).reduce((sum, j) => sum + (j.wageCredits || []).reduce((s, c) => s + (Number(c.amount) || 0), 0), 0);
+    const netSalaryTotal = Math.max(0, salaryTotal - totalWageCreditAll);
+    const totalOperatingCosts = purchaseTotal + generalExpenseTotal + netSalaryTotal;
 
     const getPaidIncomeAmt = (inc) => {
       let paid = 0;

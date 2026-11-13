@@ -62,6 +62,13 @@ const MonthlyPnLPage = () => {
     return monthlyData.map((m, idx) => ({
       index: idx + 1,
       month: m.monthName,
+      incomeTotal: m.incomeTotal || 0,
+      netPurchases: m.netPurchases || 0,
+      grossSalaries: m.salaries || 0,
+      wageCredits: m.wageCredits || 0,
+      netSalaries: m.netSalaries !== undefined ? m.netSalaries : m.salaries,
+      generalExpenses: m.generalExpenses || 0,
+      totalExpenses: m.totalExpenses || 0,
       netProfit: m.netProfit,
       status: m.status
     }));
@@ -70,6 +77,13 @@ const MonthlyPnLPage = () => {
   const excelColumns = useMemo(() => [
     { header: '#', key: 'index', width: 8 },
     { header: 'Month', key: 'month', width: 22 },
+    { header: 'Total Income (₹)', key: 'incomeTotal', width: 18 },
+    { header: 'Net Purchases (₹)', key: 'netPurchases', width: 18 },
+    { header: 'Gross Salaries (₹)', key: 'grossSalaries', width: 18 },
+    { header: 'Wage Credits Deducted (₹)', key: 'wageCredits', width: 24 },
+    { header: 'Net Salaries (₹)', key: 'netSalaries', width: 18 },
+    { header: 'General Expenses (₹)', key: 'generalExpenses', width: 20 },
+    { header: 'Total Expenses (₹)', key: 'totalExpenses', width: 18 },
     { header: 'Profit & Loss (₹)', key: 'netProfit', width: 20 },
     { header: 'Status', key: 'status', width: 14 }
   ], []);
