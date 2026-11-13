@@ -332,6 +332,7 @@ const QuotationInvoiceModal = ({
   const totalQuoted = financials.totalQuotation || Math.max(0, grossTotal - discountAmount);
   const amountReceived = financials.totalAmountReceived || 0;
   const balanceDue = financials.balanceDue ?? Math.max(0, totalQuoted - amountReceived);
+  const isFullyPaid = (balanceDue <= 0.01) && (amountReceived > 0 || (totalQuoted > 0 && amountReceived >= totalQuoted));
 
   // Overall Direct Costs & Margins
   const totalPurchases = financials.totalPurchases || 0;
@@ -575,9 +576,17 @@ const QuotationInvoiceModal = ({
               <strong className="font-bold">{formatCurrency(amountReceived)}</strong>
             </div>
 
-            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-amber-800 shadow-xs">
-              <span className="text-amber-600 text-[11px]">Balance:</span>
-              <strong className="font-bold">{formatCurrency(balanceDue)}</strong>
+            <div className={`flex items-center gap-1 border px-2.5 py-1 rounded-lg shadow-xs ${
+              isFullyPaid 
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              <span className={isFullyPaid ? 'text-emerald-700 text-[11px] font-bold' : 'text-amber-600 text-[11px]'}>
+                {isFullyPaid ? 'Status:' : 'Balance:'}
+              </span>
+              <strong className="font-bold">
+                {isFullyPaid ? 'Settled (Paid)' : formatCurrency(balanceDue)}
+              </strong>
             </div>
 
             <div className="flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1 rounded-lg text-slate-700 shadow-xs">
@@ -1042,7 +1051,7 @@ const QuotationInvoiceModal = ({
                 style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}
               >
                 <div className="flex justify-between items-center text-slate-600">
-                  <span>Gross Quoted Total:</span>
+                  <span>{discountAmount > 0 ? 'Gross Quoted Total:' : 'Net Quoted Total:'}</span>
                   <span className="font-mono font-bold text-slate-900 text-xs">{formatCurrency(grossTotal)}</span>
                 </div>
 
@@ -1062,25 +1071,28 @@ const QuotationInvoiceModal = ({
                   </div>
                 )}
 
-                {amountReceived > 0 && (
+                {/* Advance / Amount Received: ONLY shown if there is an unpaid balance remaining */}
+                {!isFullyPaid && amountReceived > 0 && (
                   <div className="flex justify-between items-center text-emerald-700 font-semibold">
                     <span>Advance / Amount Received:</span>
                     <span className="font-mono font-bold">− {formatCurrency(amountReceived)}</span>
                   </div>
                 )}
 
-                {/* Final Net Balance Due Standout Box */}
-                <div 
-                  className="p-2.5 rounded-lg border mt-1 flex justify-between items-center"
-                  style={{ backgroundColor: '#0f172a', borderColor: '#0f172a', color: '#ffffff' }}
-                >
-                  <span className="font-bold text-[10.5px] uppercase tracking-wider" style={{ color: '#ffffff' }}>
-                    Net Balance Due:
-                  </span>
-                  <span className="font-mono font-black text-base" style={{ color: '#34d399' }}>
-                    {formatCurrency(balanceDue)}
-                  </span>
-                </div>
+                {/* Final Net Balance Due Standout Box: ONLY shown if there is an unpaid balance */}
+                {!isFullyPaid && balanceDue > 0 && (
+                  <div 
+                    className="p-2.5 rounded-lg border mt-1 flex justify-between items-center"
+                    style={{ backgroundColor: '#0f172a', borderColor: '#0f172a', color: '#ffffff' }}
+                  >
+                    <span className="font-bold text-[10.5px] uppercase tracking-wider" style={{ color: '#ffffff' }}>
+                      Net Balance Due:
+                    </span>
+                    <span className="font-mono font-black text-base" style={{ color: '#34d399' }}>
+                      {formatCurrency(balanceDue)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
