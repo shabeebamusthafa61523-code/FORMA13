@@ -1257,6 +1257,147 @@ export const getMonthlyReport = async (req, res) => {
   }
 };
 
+
+export const getMonthlyPnLSummaryList = async (req, res) => {
+  try {
+    const { year } = req.query;
+    const filterYear = year && year !== 'all' ? parseInt(year, 10) : null;
+
+    const [expenses, incomes, supplierCredits] = await Promise.all([
+      Expense.find({ status: { $ne: 'rejected' } }).lean(),
+      Income.find({}).lean(),
+      SupplierCredit.find({}).lean()
+    ]);
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const getPaidIncomeAmt = (inc) => {
+      let paid = 0;
+      if (Array.isArray(inc.payments) && inc.payments.length > 0) {
+        paid = inc.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      }
+      if (paid <= 0 && typeof inc.receiptAmount === 'number' && inc.receiptAmount > 0) {
+        paid = inc.receiptAmount;
+      }
+      if (paid <= 0 && (inc.status || '').toLowerCase() === 'paid') {
+        paid = parseFloat(inc.totalAmount || inc.amount || 0);
+      }
+      return paid;
+    };
+
+    const isOwnerDrawing = (e) => {
+      const cat = String(e.categoryName || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      return cat.includes('owner drawing') || cat.includes('partner drawing') || desc.includes('[owner 1]') || desc.includes('[owner 2]');
+    };
+    const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
+    const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+
+    const monthsMap = {};
+
+    const getMonthKey = (dateVal) => {
+      if (!dateVal) return null;
+      try {
+        const d = new Date(dateVal);
+        if (isNaN(d.getTime())) return null;
+        const y = d.getFullYear();
+        if (filterYear && y !== filterYear) return null;
+        const m = d.getMonth() + 1;
+        return `${y}-${String(m).padStart(2, '0')}`;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const initMonth = (key) => {
+      if (!monthsMap[key]) {
+        const [y, m] = key.split('-').map(Number);
+        monthsMap[key] = {
+          period: key,
+          year: y,
+          month: m,
+          monthName: `${monthNames[m - 1]} ${y}`,
+          incomeTotal: 0,
+          grossPurchases: 0,
+          supplierCredits: 0,
+          netPurchases: 0,
+          generalExpenses: 0,
+          salaries: 0,
+          totalExpenses: 0,
+          netProfit: 0,
+          status: 'Profit'
+        };
+      }
+      return monthsMap[key];
+    };
+
+    // 1. Incomes
+    incomes.forEach(inc => {
+      const date = inc.date || inc.createdAt;
+      const key = getMonthKey(date);
+      if (key) {
+        const m = initMonth(key);
+        m.incomeTotal += getPaidIncomeAmt(inc);
+      }
+    });
+
+    // 2. Expenses
+    expenses.forEach(e => {
+      if (isOwnerDrawing(e)) return;
+      const date = e.date || e.createdAt;
+      const key = getMonthKey(date);
+      if (!key) return;
+      const m = initMonth(key);
+      const amt = Number(e.amount) || 0;
+      if (isPur(e)) {
+        m.grossPurchases += amt;
+      } else if (isSalary(e)) {
+        m.salaries += amt;
+      } else {
+        m.generalExpenses += amt;
+      }
+    });
+
+    // 3. Supplier Credits (deducted from purchases)
+    supplierCredits.forEach(sc => {
+      const date = sc.date || sc.createdAt;
+      const key = getMonthKey(date);
+      if (key) {
+        const m = initMonth(key);
+        m.supplierCredits += Number(sc.amount) || 0;
+      }
+    });
+
+    // 4. Calculate Net Profit & Loss
+    const resultList = Object.keys(monthsMap)
+      .sort((a, b) => b.localeCompare(a))
+      .map(key => {
+        const item = monthsMap[key];
+        item.netPurchases = Math.max(0, item.grossPurchases - item.supplierCredits);
+        item.totalExpenses = item.netPurchases + item.generalExpenses + item.salaries;
+        item.netProfit = Math.round((item.incomeTotal - item.totalExpenses) * 100) / 100;
+        item.status = item.netProfit >= 0 ? 'Profit' : 'Loss';
+        return item;
+      });
+
+    const totalNetProfit = resultList.reduce((sum, item) => sum + item.netProfit, 0);
+    const availableYears = Array.from(new Set(Object.values(monthsMap).map(m => m.year))).sort((a, b) => b - a);
+
+    return res.status(200).json({
+      success: true,
+      data: resultList,
+      totalNetProfit,
+      availableYears: availableYears.length > 0 ? availableYears : [new Date().getFullYear()]
+    });
+  } catch (error) {
+    console.error('getMonthlyPnLSummaryList Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getCategoryWiseReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;

@@ -78,6 +78,7 @@ import VisibleWorkPage from './pages/VisibleWorkPage';
 import ProjectReportsPage from './pages/ProjectReportsPage';
 import FabricationPage from './pages/FabricationPage';
 import FabricationJobDetailsPage from './pages/FabricationJobDetailsPage';
+import MonthlyPnLPage from './pages/MonthlyPnLPage';
 
 
 
@@ -270,6 +271,7 @@ function App() {
         <Route path="/accounts/reports" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/share" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/share" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
+        <Route path="/monthly-pnl" element={<ProtectedRoute><MainLayout><MonthlyPnLPage /></MainLayout></ProtectedRoute>} />
 
         {/* Client & Project Management Module Routes */}
         <Route path="/clients" element={<ProtectedRoute><MainLayout><RestrictedRoute><ClientsPage /></RestrictedRoute></MainLayout></ProtectedRoute>} />

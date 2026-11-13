@@ -20,6 +20,7 @@ import {
   getCashBook,
   getDailyReport,
   getMonthlyReport,
+  getMonthlyPnLSummaryList,
   getCategoryWiseReport,
   getSalaryReport,
   getTotalReport,
@@ -153,6 +154,7 @@ router.delete('/operations/:id', deleteOperation);
 // ── Reports Routes ──
 router.get('/reports/daily', getDailyReport);
 router.get('/reports/monthly', getMonthlyReport);
+router.get('/reports/monthly-pnl-summary', getMonthlyPnLSummaryList);
 router.get('/reports/category-wise', getCategoryWiseReport);
 router.get('/reports/salary', getSalaryReport);
 router.get('/reports/total', getTotalReport);
