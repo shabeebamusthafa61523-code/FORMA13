@@ -20,6 +20,8 @@ import {
   addDailyWage,
   updateDailyWage,
   deleteDailyWage,
+  addWageCredit,
+  deleteWageCredit,
   addPurchaseExpense,
   updatePurchaseExpense,
   deletePurchaseExpense,
@@ -166,6 +168,17 @@ const FabricationJobDetailsPage = () => {
   // Overall Quotation Discount state
   const [overallDiscount, setOverallDiscount] = useState({ type: 'fixed', value: '' });
   const [savingDiscount, setSavingDiscount] = useState(false);
+
+// Wage Credit state & modal
+  const [isWageCreditModalOpen, setIsWageCreditModalOpen] = useState(false);
+  const [savingWageCredit, setSavingWageCredit] = useState(false);
+  const [wageCreditForm, setWageCreditForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    employee: '',
+    employeeName: 'General / Advance',
+    amount: '',
+    notes: ''
+  });
 
   const [isWageModalOpen, setIsWageModalOpen] = useState(false);
   const [editingWage, setEditingWage] = useState(null);
@@ -849,6 +862,64 @@ const FabricationJobDetailsPage = () => {
           }
         } catch (err) {
           showToast('Failed to delete wage record', 'error');
+        } finally {
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+// Wage Credit Handlers
+  const handleSaveWageCredit = async (e) => {
+    e.preventDefault();
+    if (!job?._id) return;
+    const amt = parseFloat(wageCreditForm.amount);
+    if (!amt || amt <= 0) {
+      showToast('Please enter a valid credit amount', 'warning');
+      return;
+    }
+    setSavingWageCredit(true);
+    try {
+      const res = await addWageCredit(job._id, {
+        date: wageCreditForm.date,
+        employee: wageCreditForm.employee || undefined,
+        employeeName: wageCreditForm.employeeName || 'General / Advance',
+        amount: amt,
+        notes: (wageCreditForm.notes || '').trim()
+      });
+      if (res && res.success) {
+        showToast('Wage credit added and deducted from total wage', 'success');
+        setJob(res.data);
+        setIsWageCreditModalOpen(false);
+        setWageCreditForm({
+          date: new Date().toISOString().split('T')[0],
+          employee: '',
+          employeeName: 'General / Advance',
+          amount: '',
+          notes: ''
+        });
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to add wage credit', 'error');
+    } finally {
+      setSavingWageCredit(false);
+    }
+  };
+
+  const promptDeleteWageCredit = (credit) => {
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Remove Wage Credit',
+      message: `Remove credited amount of ${formatCurrency(credit.amount)} (${credit.employeeName || 'General'})? This will restore the total wage.`,
+      onConfirm: async () => {
+        try {
+          const res = await deleteWageCredit(job._id, credit._id);
+          if (res && res.success) {
+            showToast('Wage credit removed', 'success');
+            setJob(res.data);
+          }
+        } catch (err) {
+          showToast('Failed to remove wage credit', 'error');
         } finally {
           setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
         }
@@ -2562,11 +2633,30 @@ const FabricationJobDetailsPage = () => {
             </div>
           </div>
 
-          <div className="text-right">
-            <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Wages Incurred</span>
-            <span className="text-lg font-black text-rose-600 dark:text-rose-400">
-              {formatCurrency(fin.totalWages)}
-            </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsWageCreditModalOpen(true)}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+              title="Add Credit to deduct from Total Wage"
+            >
+              <CreditCard size={14} />
+              <span>+ Add Credit</span>
+            </button>
+
+            <div className="text-right">
+              <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Wages Incurred</span>
+              <div className="flex items-baseline justify-end gap-1.5">
+                {Number(fin.totalWageCredit || 0) > 0 && (
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title={`Gross: ${formatCurrency(fin.grossWages || fin.totalWages)} | Credit: -${formatCurrency(fin.totalWageCredit)}`}>
+                    -{formatCurrency(fin.totalWageCredit)}
+                  </span>
+                )}
+                <span className="text-lg font-black text-rose-600 dark:text-rose-400">
+                  {formatCurrency(fin.totalWages)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2783,16 +2873,58 @@ const FabricationJobDetailsPage = () => {
                       ))}
                     </React.Fragment>
                   ))}
-                  {/* Subtotal row */}
+                  {/* Gross Total row */}
                   <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
                     <td colSpan={4} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
-                      Total Employee Daily Wages:
+                      Gross Daily Wages:
                     </td>
-                    <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400">
-                      {formatCurrency(fin.totalWages)}
+                    <td className="py-2.5 px-4 text-right text-sm text-slate-800 dark:text-slate-200 font-mono">
+                      {formatCurrency(fin.grossWages || fin.totalWages)}
                     </td>
                     <td></td>
                   </tr>
+
+                  {/* Wage Credit rows (deductions from wage) */}
+                  {(job?.wageCredits || []).map((credit) => (
+                    <tr key={credit._id} className="bg-amber-50/50 dark:bg-amber-950/20 text-xs border-t border-amber-200/50 dark:border-amber-900/30">
+                      <td colSpan={2} className="py-2 px-4 text-amber-800 dark:text-amber-300 font-semibold">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-200 mr-2">
+                          Credit / Advance
+                        </span>
+                        <span>{credit.employeeName || 'General / Worker Advance'}</span>
+                        {credit.notes && <span className="text-slate-400 font-normal ml-2">({credit.notes})</span>}
+                      </td>
+                      <td colSpan={2} className="py-2 px-4 text-right text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                        Credited Amount:
+                      </td>
+                      <td className="py-2 px-4 text-right font-black font-mono text-amber-600 dark:text-amber-400">
+                        - {formatCurrency(credit.amount)}
+                      </td>
+                      <td className="py-2 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => promptDeleteWageCredit(credit)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded transition cursor-pointer"
+                          title="Remove this Credit"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Net Total row (when credits exist) */}
+                  {(job?.wageCredits || []).length > 0 && (
+                    <tr className="bg-rose-50/40 dark:bg-rose-950/20 font-black border-t border-rose-200 dark:border-rose-900/50">
+                      <td colSpan={4} className="py-2.5 px-4 text-right text-[11px] uppercase text-rose-700 dark:text-rose-300 tracking-wider">
+                        Net Total Wages Incurred (After Credit):
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-base text-rose-600 dark:text-rose-400 font-mono">
+                        {formatCurrency(fin.totalWages)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -3538,6 +3670,126 @@ const FabricationJobDetailsPage = () => {
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2B. Add Wage Credit Modal */}
+      {isWageCreditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-amber-100 dark:bg-amber-950/50 text-amber-600 rounded-xl">
+                  <CreditCard size={18} />
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Add Wage Credit / Advance
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    This credited amount will deduct directly from Total Wages.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWageCreditModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWageCredit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Credit Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  required
+                  autoFocus
+                  placeholder="e.g. 500"
+                  value={wageCreditForm.amount}
+                  onChange={(e) => setWageCreditForm({ ...wageCreditForm, amount: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={wageCreditForm.date}
+                    onChange={(e) => setWageCreditForm({ ...wageCreditForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Employee / Worker
+                  </label>
+                  <select
+                    value={wageCreditForm.employee}
+                    onChange={(e) => {
+                      const empId = e.target.value;
+                      const emp = employees.find(em => (em._id || em.id) === empId);
+                      setWageCreditForm({
+                        ...wageCreditForm,
+                        employee: empId,
+                        employeeName: emp ? (emp.name || emp.username) : 'General / Advance'
+                      });
+                    }}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="">General / All Workers</option>
+                    {employees.map(emp => (
+                      <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                        {emp.name || emp.username}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Reason / Remarks
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Worker advance, food/travel allowance, deduction"
+                  value={wageCreditForm.notes}
+                  onChange={(e) => setWageCreditForm({ ...wageCreditForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsWageCreditModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingWageCredit}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {savingWageCredit ? 'Saving...' : 'Deduct from Total Wage'}
                 </button>
               </div>
             </form>

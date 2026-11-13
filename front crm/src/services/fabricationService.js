@@ -108,6 +108,17 @@ export const deleteDailyWage = async (jobId, wageId) => {
   return response.data;
 };
 
+// 3B. Wage Credits (Advances & Deductions)
+export const addWageCredit = async (jobId, creditData) => {
+  const response = await axios.post(`${getBaseUrl()}/jobs/${jobId}/wage-credits`, creditData, getAuthHeaders());
+  return response.data;
+};
+
+export const deleteWageCredit = async (jobId, creditId) => {
+  const response = await axios.delete(`${getBaseUrl()}/jobs/${jobId}/wage-credits/${creditId}`, getAuthHeaders());
+  return response.data;
+};
+
 // 4. Purchases & Expenses CRUD (Dropdown unit, Rate, Quantity, Auto-calc)
 export const addPurchaseExpense = async (jobId, expenseData) => {
   const response = await axios.post(`${getBaseUrl()}/jobs/${jobId}/expenses`, expenseData, getAuthHeaders());

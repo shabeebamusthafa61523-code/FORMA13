@@ -223,7 +223,8 @@ export const getFabricationJobById = async (req, res) => {
     const { id } = req.params;
     const job = await FabricationJob.findById(id)
       .populate('client', 'companyName clientName phone email address')
-      .populate('dailyWages.employee', 'name email designation phone');
+      .populate('dailyWages.employee', 'name email designation phone')
+      .populate('wageCredits.employee', 'name email designation phone');
 
     if (!job) {
       return res.status(404).json({
@@ -263,7 +264,8 @@ export const getOrCreateClientJob = async (req, res) => {
 
     let job = await FabricationJob.findOne({ $or: queryOr })
       .populate('client', 'companyName clientName phone email address')
-      .populate('dailyWages.employee', 'name email designation phone');
+      .populate('dailyWages.employee', 'name email designation phone')
+      .populate('wageCredits.employee', 'name email designation phone');
 
     if (!job) {
       const jobId = await generateJobId();
@@ -914,6 +916,63 @@ export const deleteDailyWage = async (req, res) => {
     });
   } catch (error) {
     console.error('Error deleting daily wage:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// 7B. WAGE CREDITS (Advances / Deductions)
+// ==========================================
+export const addWageCredit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, employee, employeeName, amount, notes = '' } = req.body;
+
+    const creditAmount = Number(amount);
+    if (!creditAmount || creditAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid credit amount is required' });
+    }
+
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    job.wageCredits.push({
+      date: date ? new Date(date) : new Date(),
+      employee: employee || undefined,
+      employeeName: employeeName || 'General / Advance',
+      amount: creditAmount,
+      notes: (notes || '').trim()
+    });
+
+    await job.save();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Wage credit added successfully and deducted from total wage',
+      data: job
+    });
+  } catch (error) {
+    console.error('Error adding wage credit:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteWageCredit = async (req, res) => {
+  try {
+    const { id, creditId } = req.params;
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    job.wageCredits.pull(creditId);
+    await job.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Wage credit removed successfully',
+      data: job
+    });
+  } catch (error) {
+    console.error('Error deleting wage credit:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
