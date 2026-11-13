@@ -1071,12 +1071,11 @@ const QuotationInvoiceModal = ({
                   </div>
                 )}
 
-                {amountReceived > 0 && (
+                {/* Advance / Amount Received: ONLY shown if there is an unpaid balance remaining */}
+                {!isFullyPaid && amountReceived > 0 && (
                   <div className="flex justify-between items-center text-emerald-700 font-semibold">
-                    <span>{isFullyPaid ? 'Amount Received:' : 'Advance / Amount Received:'}</span>
-                    <span className="font-mono font-bold">
-                      {isFullyPaid ? formatCurrency(amountReceived) : `− ${formatCurrency(amountReceived)}`}
-                    </span>
+                    <span>Advance / Amount Received:</span>
+                    <span className="font-mono font-bold">− {formatCurrency(amountReceived)}</span>
                   </div>
                 )}
 
@@ -1091,22 +1090,6 @@ const QuotationInvoiceModal = ({
                     </span>
                     <span className="font-mono font-black text-base" style={{ color: '#34d399' }}>
                       {formatCurrency(balanceDue)}
-                    </span>
-                  </div>
-                )}
-
-                {/* If Fully Paid: Clean settlement confirmation pill (Net Balance Due box is hidden) */}
-                {isFullyPaid && (
-                  <div 
-                    className="p-2 rounded-lg border mt-1 flex items-center justify-between"
-                    style={{ backgroundColor: '#ecfdf5', borderColor: '#a7f3d0', color: '#065f46' }}
-                  >
-                    <span className="font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 text-emerald-800">
-                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                      Status:
-                    </span>
-                    <span className="font-black text-xs uppercase tracking-wider text-emerald-700 font-mono">
-                      Paid in Full (Settled)
                     </span>
                   </div>
                 )}
