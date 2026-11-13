@@ -142,7 +142,7 @@ const clientSchema = new mongoose.Schema({
   },
   amountStatus: {
     type: String,
-    enum: ['Beginning Stage', 'Pending', 'Urgent', 'Completed'],
+    enum: ['Beginning Stage', 'Pending', 'Urgent', 'WIP', 'Completed'],
     default: 'Beginning Stage',
     trim: true
   },
