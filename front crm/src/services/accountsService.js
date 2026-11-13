@@ -332,7 +332,7 @@ export const deleteSupplierCredit = async (vendorId, creditId) => {
 };
 
 export const getMonthlyPnLSummary = async (year) => {
-  const query = year ? `?year=${year}` : '';
-  const response = await safeGet(`/accounts/reports/monthly-pnl-summary${query}`);
+  const params = year ? { year } : {};
+  const response = await safeGet('/reports/monthly-pnl-summary', params);
   return response.data;
 };
