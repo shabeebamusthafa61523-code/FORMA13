@@ -834,21 +834,6 @@ const ClientDetailsPage = () => {
     });
   };
 
-const handleQuickChangePaymentMode = async (entry, newMode) => {
-    if (!job?._id || !entry?._id || entry.paymentMode === newMode) return;
-    try {
-      const res = await updatePurchaseExpense(job._id, entry._id, {
-        paymentMode: newMode
-      });
-      if (res && res.success) {
-        showToast(`Payment mode updated to ${newMode}`, 'success');
-        setJob(res.data);
-      }
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to update payment mode', 'error');
-    }
-  };
-
   // ================= 4. CLIENT PAYMENTS HANDLERS ("Amount Given") =================
   const handleSavePayment = async (e) => {
     e.preventDefault();
@@ -1985,26 +1970,17 @@ const handleQuickChangePaymentMode = async (entry, newMode) => {
                           {formatCurrency(entry.amount)}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <select
-                            value={entry.paymentMode || 'Cash'}
-                            onChange={(e) => handleQuickChangePaymentMode(entry, e.target.value)}
-                            className={`px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer border transition-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                              entry.paymentMode === 'Credit/Pay Later'
-                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100'
-                                : entry.paymentMode === 'UPI'
-                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
-                                : entry.paymentMode === 'Bank Transfer'
-                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-100'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                            }`}
-                            title="Click to change payment mode (e.g. mark settled credit as Cash/Bank)"
-                          >
-                            {PAYMENT_MODES.map(m => (
-                              <option key={m} value={m} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-semibold">
-                                {m}
-                              </option>
-                            ))}
-                          </select>
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                            entry.paymentMode === 'Credit/Pay Later'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : entry.paymentMode === 'UPI'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : entry.paymentMode === 'Bank Transfer'
+                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {entry.paymentMode || 'Cash'}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                           {entry.notes?.trim() || (entry.itemDescription?.trim() && entry.itemDescription.trim() !== 'Material Purchase' && entry.itemDescription.trim() !== 'Site Operational Expense' ? entry.itemDescription.trim() : null) || <span className="text-slate-400 italic">No remarks</span>}
@@ -2097,26 +2073,17 @@ const handleQuickChangePaymentMode = async (entry, newMode) => {
                           {formatCurrency(entry.amount)}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <select
-                            value={entry.paymentMode || 'Cash'}
-                            onChange={(e) => handleQuickChangePaymentMode(entry, e.target.value)}
-                            className={`px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer border transition-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                              entry.paymentMode === 'Credit/Pay Later'
-                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100'
-                                : entry.paymentMode === 'UPI'
-                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
-                                : entry.paymentMode === 'Bank Transfer'
-                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-100'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                            }`}
-                            title="Click to change payment mode (e.g. mark settled credit as Cash/Bank)"
-                          >
-                            {PAYMENT_MODES.map(m => (
-                              <option key={m} value={m} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-semibold">
-                                {m}
-                              </option>
-                            ))}
-                          </select>
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                            entry.paymentMode === 'Credit/Pay Later'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : entry.paymentMode === 'UPI'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : entry.paymentMode === 'Bank Transfer'
+                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {entry.paymentMode || 'Cash'}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
@@ -3605,6 +3572,50 @@ const handleQuickChangePaymentMode = async (entry, newMode) => {
                       </div>
                     </>
                   )}
+
+                  {/* Payment Mode & Bill Number for Purchase */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Payment Mode
+                      </label>
+                      <select
+                        value={expenseForm.paymentMode || 'Cash'}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                        className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        {PAYMENT_MODES.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Bill / Invoice Number
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. INV-8492 (Optional)"
+                        value={expenseForm.billNumber || ''}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, billNumber: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Remarks (If any)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Supplier notes, delivery remarks"
+                      value={expenseForm.notes || ''}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </>
               )}
 
