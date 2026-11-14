@@ -2463,8 +2463,16 @@ const FabricationJobDetailsPage = () => {
                         <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
                           {formatCurrency(entry.amount)}
                         </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300">
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                            entry.paymentMode === 'Credit/Pay Later'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : entry.paymentMode === 'UPI'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : entry.paymentMode === 'Bank Transfer'
+                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
                             {entry.paymentMode || 'Cash'}
                           </span>
                         </td>
@@ -2558,8 +2566,18 @@ const FabricationJobDetailsPage = () => {
                         <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
                           {formatCurrency(entry.amount)}
                         </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap text-slate-500">
-                          {entry.paymentMode}
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                            entry.paymentMode === 'Credit/Pay Later'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              : entry.paymentMode === 'UPI'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : entry.paymentMode === 'Bank Transfer'
+                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {entry.paymentMode || 'Cash'}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
@@ -4222,6 +4240,50 @@ const FabricationJobDetailsPage = () => {
                       </div>
                     </>
                   )}
+
+                  {/* Payment Mode & Bill Number for Purchase */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Payment Mode
+                      </label>
+                      <select
+                        value={expenseForm.paymentMode || 'Cash'}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
+                        className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        {PAYMENT_MODES.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Bill / Invoice Number
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. INV-8492 (Optional)"
+                        value={expenseForm.billNumber || ''}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, billNumber: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Remarks (If any)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Supplier notes, delivery remarks"
+                      value={expenseForm.notes || ''}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </>
               )}
 
