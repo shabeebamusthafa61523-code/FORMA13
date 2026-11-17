@@ -112,6 +112,7 @@ const SuppliersPage = () => {
   // Credits Tab & Settle Modal Data
   const [creditPurchasesData, setCreditPurchasesData] = useState([]);
   const [creditSearch, setCreditSearch] = useState('');
+  const [creditStatusFilter, setCreditStatusFilter] = useState('ALL'); // 'ALL' | 'DUE' | 'SETTLED'
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [selectedCreditToSettle, setSelectedCreditToSettle] = useState(null);
   const [settleSubmitting, setSettleSubmitting] = useState(false);
@@ -554,6 +555,11 @@ const SuppliersPage = () => {
     // Filtered Credit Purchases for Drawer
   const filteredCreditPurchases = useMemo(() => {
     let list = Array.isArray(creditPurchasesData) ? [...creditPurchasesData] : [];
+    if (creditStatusFilter === 'DUE') {
+      list = list.filter(c => !c.isSettled);
+    } else if (creditStatusFilter === 'SETTLED') {
+      list = list.filter(c => c.isSettled);
+    }
     if (creditSearch.trim()) {
       const q = creditSearch.toLowerCase().trim();
       list = list.filter(c =>
@@ -566,7 +572,7 @@ const SuppliersPage = () => {
       );
     }
     return list;
-  }, [creditPurchasesData, creditSearch]);
+  }, [creditPurchasesData, creditSearch, creditStatusFilter]);
 
 // Drawer Purchases Filter
   const filteredDrawerPurchases = useMemo(() => {
@@ -1777,19 +1783,45 @@ const SuppliersPage = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl p-2">
-                    <div className="relative w-44 sm:w-60">
-                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search credit bill, job #, item..."
-                        value={creditSearch}
-                        onChange={(e) => setCreditSearch(e.target.value)}
-                        className="w-full pl-7 pr-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-hidden"
-                      />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="relative w-44 sm:w-56">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search credit bill, job #, item..."
+                          value={creditSearch}
+                          onChange={(e) => setCreditSearch(e.target.value)}
+                          className="w-full pl-7 pr-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div className="inline-flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('ALL')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'ALL' ? 'bg-white text-indigo-700 dark:bg-slate-700 dark:text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          All ({creditPurchasesData.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('DUE')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'DUE' ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          Pending Due ({creditPurchasesData.filter(c => !c.isSettled).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('SETTLED')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'SETTLED' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          Settled History ({creditPurchasesData.filter(c => c.isSettled).length})
+                        </button>
+                      </div>
                     </div>
 
                     <span className="text-xs font-semibold text-slate-500">
-                      {filteredCreditPurchases.length} credit entries
+                      Showing {filteredCreditPurchases.length} of {creditPurchasesData.length} records
                     </span>
                   </div>
 
@@ -1862,24 +1894,47 @@ const SuppliersPage = () => {
                                   ₹{Number(item.credit || item.amount || 0).toLocaleString('en-IN')}
                                 </td>
                                 <td className="py-2 px-3 text-center whitespace-nowrap">
-                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                    Number(activeSupplier.creditBalance || 0) <= 0
-                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300'
-                                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300'
-                                  }`}>
-                                    {Number(activeSupplier.creditBalance || 0) <= 0 ? 'Settled' : 'Credit Due'}
-                                  </span>
+                                  {item.isSettled ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300">
+                                        <CheckCircle2 size={10} />
+                                        <span>Settled</span>
+                                      </span>
+                                      {item.settlementInfo?.settledDate && (
+                                        <span className="text-[9.5px] text-slate-400 mt-0.5">
+                                          {new Date(item.settlementInfo.settledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300">
+                                      Credit Due
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="py-2 px-3 text-center whitespace-nowrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenSettleModal(item)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer"
-                                    title="Settle this specific credit bill"
-                                  >
-                                    <CheckCircle2 size={12} />
-                                    <span>Settle Bill</span>
-                                  </button>
+                                  {item.isSettled ? (
+                                    <div className="text-left text-[10.5px]">
+                                      <span className="font-bold text-slate-700 dark:text-slate-300 block">
+                                        Paid via {item.settlementInfo?.settledPaymentMode || 'Bank'}
+                                      </span>
+                                      {item.settlementInfo?.referenceNo && (
+                                        <span className="text-slate-400 font-mono block text-[9.5px] truncate max-w-[120px]" title={item.settlementInfo.referenceNo}>
+                                          Ref: {item.settlementInfo.referenceNo}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSettleModal(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer"
+                                      title="Settle this specific credit bill"
+                                    >
+                                      <CheckCircle2 size={12} />
+                                      <span>Settle Bill</span>
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             ))

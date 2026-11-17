@@ -83,7 +83,17 @@ const purchaseExpenseSchema = new mongoose.Schema({
     default: 'Cash' 
   },
   receiptUrl: { type: String, default: '' },
-  notes: { type: String, default: '', trim: true }
+  notes: { type: String, default: '', trim: true },
+  isCreditPurchase: { type: Boolean, default: false },
+  creditSettlement: {
+    isSettled: { type: Boolean, default: false },
+    settledDate: { type: Date, default: null },
+    settledPaymentMode: { type: String, default: '' },
+    settledAmount: { type: Number, default: 0 },
+    referenceNo: { type: String, default: '', trim: true },
+    notes: { type: String, default: '', trim: true },
+    supplierPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierPayment', default: null }
+  }
 }, { _id: true, timestamps: true });
 
 const clientPaymentSchema = new mongoose.Schema({
