@@ -83,7 +83,17 @@ const purchaseExpenseSchema = new mongoose.Schema({
     default: 'Cash' 
   },
   receiptUrl: { type: String, default: '' },
-  notes: { type: String, default: '', trim: true }
+  notes: { type: String, default: '', trim: true },
+  isCreditPurchase: { type: Boolean, default: false },
+  creditSettlement: {
+    isSettled: { type: Boolean, default: false },
+    settledDate: { type: Date, default: null },
+    settledPaymentMode: { type: String, default: '' },
+    settledAmount: { type: Number, default: 0 },
+    referenceNo: { type: String, default: '', trim: true },
+    notes: { type: String, default: '', trim: true },
+    supplierPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierPayment', default: null }
+  }
 }, { _id: true, timestamps: true });
 
 const clientPaymentSchema = new mongoose.Schema({
@@ -144,6 +154,8 @@ const fabricationJobSchema = new mongoose.Schema({
     grossQuotation: { type: Number, default: 0 },
     discountAmount: { type: Number, default: 0 },
     totalQuotation: { type: Number, default: 0 },
+    grossPurchases: { type: Number, default: 0 },
+    totalPurchaseCredit: { type: Number, default: 0 },
     totalPurchases: { type: Number, default: 0 },
     grossWages: { type: Number, default: 0 },
     totalWageCredit: { type: Number, default: 0 },
@@ -234,16 +246,22 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
   const totalWageCredit = (this.wageCredits || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const totalWages = Math.max(0, grossWages - totalWageCredit);
 
-  let totalPurchases = 0;
+    let grossPurchases = 0;
+  let totalPurchaseCredit = 0;
   let totalExpenses = 0;
   (this.purchasesAndExpenses || []).forEach(item => {
     const amt = Number(item.amount) || 0;
     if (item.type === 'Purchase') {
-      totalPurchases += amt;
+      grossPurchases += amt;
+      if (item.paymentMode === 'Credit/Pay Later') {
+        totalPurchaseCredit += amt;
+      }
     } else {
       totalExpenses += amt;
     }
   });
+
+  const totalPurchases = Math.max(0, grossPurchases - totalPurchaseCredit);
 
   const totalDirectCost = totalPurchases + totalWages + totalExpenses;
   const totalAmountReceived = (this.clientPayments || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -254,6 +272,8 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
     grossQuotation: Math.round(grossQuotation * 100) / 100,
     discountAmount: Math.round(overallDiscountAmount * 100) / 100,
     totalQuotation: Math.round(totalQuotation * 100) / 100,
+    grossPurchases: Math.round(grossPurchases * 100) / 100,
+    totalPurchaseCredit: Math.round(totalPurchaseCredit * 100) / 100,
     totalPurchases: Math.round(totalPurchases * 100) / 100,
     grossWages: Math.round(grossWages * 100) / 100,
     totalWageCredit: Math.round(totalWageCredit * 100) / 100,

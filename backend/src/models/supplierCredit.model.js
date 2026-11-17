@@ -41,6 +41,12 @@ const supplierCreditSchema = new mongoose.Schema({
     default: '',
     trim: true
   },
+  isSettled: { type: Boolean, default: false },
+  settledDate: { type: Date, default: null },
+  settledPaymentMode: { type: String, default: '' },
+  settlementReference: { type: String, default: '', trim: true },
+  settlementNotes: { type: String, default: '', trim: true },
+  supplierPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierPayment', default: null },
   recordedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

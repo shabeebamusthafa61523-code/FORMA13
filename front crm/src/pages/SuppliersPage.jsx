@@ -45,7 +45,8 @@ import {
   recordSupplierPayment,
   getSupplierLedger,
   deleteSupplierPayment,
-  deleteSupplierCredit
+  deleteSupplierCredit,
+  settleSupplierCredit
 } from '../services/accountsService';
 import { useToast } from '../components/ToastProvider';
 import ConfirmModal from '../components/ConfirmModal';
@@ -108,6 +109,21 @@ const SuppliersPage = () => {
   const [purchaseCategoryFilter, setPurchaseCategoryFilter] = useState('ALL');
   const [purchasePaymentModeFilter, setPurchasePaymentModeFilter] = useState('ALL');
 
+  // Credits Tab & Settle Modal Data
+  const [creditPurchasesData, setCreditPurchasesData] = useState([]);
+  const [creditSearch, setCreditSearch] = useState('');
+  const [creditStatusFilter, setCreditStatusFilter] = useState('ALL'); // 'ALL' | 'DUE' | 'SETTLED'
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [selectedCreditToSettle, setSelectedCreditToSettle] = useState(null);
+  const [settleSubmitting, setSettleSubmitting] = useState(false);
+  const [settleForm, setSettleForm] = useState({
+    amount: '',
+    paymentMode: 'Bank Transfer',
+    date: new Date().toISOString().split('T')[0],
+    referenceNo: '',
+    notes: ''
+  });
+
   // Ledger Tab Data
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const [ledgerSummary, setLedgerSummary] = useState(null);
@@ -166,9 +182,11 @@ const SuppliersPage = () => {
       if (ledgerRes.status === 'fulfilled' && ledgerRes.value?.success) {
         setLedgerEntries(ledgerRes.value.data?.ledger || []);
         setLedgerSummary(ledgerRes.value.data?.summary || null);
+        setCreditPurchasesData(ledgerRes.value.data?.creditPurchases || []);
       } else {
         setLedgerEntries([]);
         setLedgerSummary(null);
+        setCreditPurchasesData([]);
       }
     } catch (err) {
       console.error('Error loading drawer data:', err);
@@ -186,6 +204,58 @@ const SuppliersPage = () => {
     loadDrawerContent(sup, 'ledger');
   };
 
+  const handleOpenDrawerCredits = (sup) => {
+    loadDrawerContent(sup, 'credits');
+  };
+
+  const handleOpenSettleModal = (creditItem) => {
+    setSelectedCreditToSettle(creditItem);
+    setSettleForm({
+      amount: String(creditItem.credit || creditItem.amount || ''),
+      paymentMode: 'Bank Transfer',
+      date: new Date().toISOString().split('T')[0],
+      referenceNo: creditItem.refNo || creditItem.billNumber || '',
+      notes: ''
+    });
+    setIsSettleModalOpen(true);
+  };
+
+  const handleSaveSettleCredit = async (e) => {
+    e.preventDefault();
+    if (!activeSupplier || !selectedCreditToSettle) return;
+    setSettleSubmitting(true);
+    try {
+      const supId = activeSupplier._id || activeSupplier.id;
+      const payload = {
+        source: selectedCreditToSettle.source || 'Fabrication',
+        jobId: selectedCreditToSettle.jobId || selectedCreditToSettle.jobMongoId,
+        itemId: selectedCreditToSettle.itemId || selectedCreditToSettle._id,
+        creditId: selectedCreditToSettle.creditId,
+        amount: Number(settleForm.amount),
+        paymentMode: settleForm.paymentMode,
+        referenceNo: settleForm.referenceNo,
+        date: settleForm.date,
+        notes: settleForm.notes
+      };
+
+      const res = await settleSupplierCredit(supId, payload);
+      if (res && res.success !== false) {
+        showToast(res.message || 'Credit bill settled successfully', 'success');
+        setIsSettleModalOpen(false);
+        setSelectedCreditToSettle(null);
+        fetchSuppliersList(true);
+        loadDrawerContent(activeSupplier, drawerActiveTab);
+      } else {
+        showToast(res?.message || 'Failed to settle credit', 'error');
+      }
+    } catch (err) {
+      console.error('Error settling credit:', err);
+      showToast(err.response?.data?.message || 'Failed to settle credit bill', 'error');
+    } finally {
+      setSettleSubmitting(false);
+    }
+  };
+
   const handleCloseDrawer = () => {
     setIsDrawerOpen(false);
     setActiveSupplier(null);
@@ -193,6 +263,7 @@ const SuppliersPage = () => {
     setPurchasesSummary(null);
     setLedgerEntries([]);
     setLedgerSummary(null);
+    setCreditPurchasesData([]);
   };
 
   // Open Record Payment Modal
@@ -481,7 +552,29 @@ const SuppliersPage = () => {
     };
   }, [suppliers]);
 
-  // Drawer Purchases Filter
+    // Filtered Credit Purchases for Drawer
+  const filteredCreditPurchases = useMemo(() => {
+    let list = Array.isArray(creditPurchasesData) ? [...creditPurchasesData] : [];
+    if (creditStatusFilter === 'DUE') {
+      list = list.filter(c => !c.isSettled);
+    } else if (creditStatusFilter === 'SETTLED') {
+      list = list.filter(c => c.isSettled);
+    }
+    if (creditSearch.trim()) {
+      const q = creditSearch.toLowerCase().trim();
+      list = list.filter(c =>
+        (c.title && c.title.toLowerCase().includes(q)) ||
+        (c.jobId && c.jobId.toLowerCase().includes(q)) ||
+        (c.clientName && c.clientName.toLowerCase().includes(q)) ||
+        (c.category && c.category.toLowerCase().includes(q)) ||
+        (c.itemDescription && c.itemDescription.toLowerCase().includes(q)) ||
+        (c.refNo && String(c.refNo).toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [creditPurchasesData, creditSearch, creditStatusFilter]);
+
+// Drawer Purchases Filter
   const filteredDrawerPurchases = useMemo(() => {
     return purchasesData.filter((p) => {
       if (purchaseSearch.trim()) {
@@ -1106,6 +1199,15 @@ const SuppliersPage = () => {
                             <span>Pay</span>
                           </button>
 
+                          {/* View Credits Button */}
+                          <button
+                            onClick={() => handleOpenDrawerCredits(sup)}
+                            className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition cursor-pointer"
+                            title="View Credit Purchases & Bills"
+                          >
+                            <CreditCard size={13} />
+                          </button>
+
                           {/* Ledger & Statement Button */}
                           <button
                             onClick={() => handleOpenDrawerLedger(sup)}
@@ -1412,6 +1514,19 @@ const SuppliersPage = () => {
 
               <button
                 type="button"
+                onClick={() => setDrawerActiveTab('credits')}
+                className={`flex items-center gap-2 px-3 py-2 text-xs font-bold border-b-2 transition cursor-pointer ${
+                  drawerActiveTab === 'credits'
+                    ? 'border-amber-600 text-amber-600 dark:text-amber-400 bg-white dark:bg-slate-900 rounded-t-lg'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <CreditCard size={13} />
+                <span>Credit Bills ({creditPurchasesData.length})</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setDrawerActiveTab('ledger')}
                 className={`flex items-center gap-2 px-3 py-2 text-xs font-bold border-b-2 transition cursor-pointer ${
                   drawerActiveTab === 'ledger'
@@ -1626,8 +1741,211 @@ const SuppliersPage = () => {
                     </>
                   )}
                 </>
+              ) : drawerActiveTab === 'credits' ? (
+                /* ── TAB 2: CREDIT PURCHASES & BILLS TAB ── */
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Credit Bills
+                      </span>
+                      <div className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
+                        {creditPurchasesData.length}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 block">
+                        Total Credit Incurred
+                      </span>
+                      <div className="text-base font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                        ₹{creditPurchasesData.reduce((s, c) => s + Number(c.credit || c.amount || 0), 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 block">
+                        Total Paid
+                      </span>
+                      <div className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        ₹{(ledgerSummary?.totalPaid || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 block">
+                        Balance Due
+                      </span>
+                      <div className="text-base font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                        ₹{Number(activeSupplier.creditBalance || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl p-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="relative w-44 sm:w-56">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search credit bill, job #, item..."
+                          value={creditSearch}
+                          onChange={(e) => setCreditSearch(e.target.value)}
+                          className="w-full pl-7 pr-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div className="inline-flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('ALL')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'ALL' ? 'bg-white text-indigo-700 dark:bg-slate-700 dark:text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          All ({creditPurchasesData.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('DUE')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'DUE' ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          Pending Due ({creditPurchasesData.filter(c => !c.isSettled).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreditStatusFilter('SETTLED')}
+                          className={`px-2.5 py-0.5 rounded-md transition cursor-pointer ${creditStatusFilter === 'SETTLED' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 dark:text-slate-400'}`}
+                        >
+                          Settled History ({creditPurchasesData.filter(c => c.isSettled).length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <span className="text-xs font-semibold text-slate-500">
+                      Showing {filteredCreditPurchases.length} of {creditPurchasesData.length} records
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto max-h-[46vh] overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
+                          <tr>
+                            <th className="py-2.5 px-3">Date</th>
+                            <th className="py-2.5 px-3">Job ID & Client</th>
+                            <th className="py-2.5 px-3">Category</th>
+                            <th className="py-2.5 px-3">Description</th>
+                            <th className="py-2.5 px-3">Bill / Ref #</th>
+                            <th className="py-2.5 px-3 text-right">Amount (₹)</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                            <th className="py-2.5 px-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
+                          {filteredCreditPurchases.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="py-12 text-center text-slate-400">
+                                <CreditCard size={28} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                                <p className="font-semibold text-xs">No credit purchases recorded under {activeSupplier.name}.</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Items marked "Credit/Pay Later" in Workspace automatically appear here.</p>
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredCreditPurchases.map((item, idx) => (
+                              <tr key={item._id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400 font-medium">
+                                  {item.date ? new Date(item.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap font-semibold">
+                                  {item.jobId ? (
+                                    <div className="flex flex-col">
+                                      <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
+                                        {item.jobId}
+                                      </span>
+                                      {item.clientName && (
+                                        <span className="text-[10px] text-slate-500 truncate max-w-[140px]">
+                                          {item.clientName}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic">Direct Credit</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
+                                    {item.category || 'Raw Material'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 max-w-xs truncate" title={item.itemDescription || item.title}>
+                                  <span className="font-medium text-slate-900 dark:text-white">
+                                    {item.itemDescription || item.title || 'Credit Purchase'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap font-mono text-[11px]">
+                                  {item.refNo || item.billNumber ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                                      {item.refNo || item.billNumber}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-slate-600">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right whitespace-nowrap font-bold text-rose-600 dark:text-rose-400 font-mono">
+                                  ₹{Number(item.credit || item.amount || 0).toLocaleString('en-IN')}
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  {item.isSettled ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300">
+                                        <CheckCircle2 size={10} />
+                                        <span>Settled</span>
+                                      </span>
+                                      {item.settlementInfo?.settledDate && (
+                                        <span className="text-[9.5px] text-slate-400 mt-0.5">
+                                          {new Date(item.settlementInfo.settledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300">
+                                      Credit Due
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  {item.isSettled ? (
+                                    <div className="text-left text-[10.5px]">
+                                      <span className="font-bold text-slate-700 dark:text-slate-300 block">
+                                        Paid via {item.settlementInfo?.settledPaymentMode || 'Bank'}
+                                      </span>
+                                      {item.settlementInfo?.referenceNo && (
+                                        <span className="text-slate-400 font-mono block text-[9.5px] truncate max-w-[120px]" title={item.settlementInfo.referenceNo}>
+                                          Ref: {item.settlementInfo.referenceNo}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSettleModal(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer"
+                                      title="Settle this specific credit bill"
+                                    >
+                                      <CheckCircle2 size={12} />
+                                      <span>Settle Bill</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               ) : (
-                /* ── TAB 2: CREDIT LEDGER & STATEMENT TAB ── */
+                /* ── TAB 3: CREDIT LEDGER & STATEMENT TAB ── */
                 <>
                   {/* Ledger Financial Summary Strip */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -1826,6 +2144,161 @@ const SuppliersPage = () => {
                 Close View
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* ── 9. Settle Specific Credit Bill Modal ── */}
+      {isSettleModalOpen && selectedCreditToSettle && activeSupplier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0" onClick={() => setIsSettleModalOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative z-10 w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-4 text-xs text-slate-800 dark:text-slate-100"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                  <CheckCircle2 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Settle Credit Bill
+                  </h3>
+                  <p className="text-[11px] text-slate-500">{activeSupplier.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSettleModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Bill Info Banner */}
+            <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-amber-800 dark:text-amber-300">
+                  {selectedCreditToSettle.source === 'Fabrication' ? `Job: ${selectedCreditToSettle.jobId || 'Workspace'}` : 'Direct Credit'}
+                </span>
+                <span className="text-base font-black text-rose-600 dark:text-rose-400">
+                  ₹{Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                {selectedCreditToSettle.title || selectedCreditToSettle.itemDescription}
+              </div>
+              {selectedCreditToSettle.clientName && (
+                <div className="text-[11px] text-slate-500">
+                  Client: {selectedCreditToSettle.clientName} {selectedCreditToSettle.refNo ? `• Bill: ${selectedCreditToSettle.refNo}` : ''}
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveSettleCredit} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Settlement Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="any"
+                  value={settleForm.amount}
+                  onChange={(e) => setSettleForm({ ...settleForm, amount: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Settlement Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={settleForm.date}
+                    onChange={(e) => setSettleForm({ ...settleForm, date: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Payment Mode
+                  </label>
+                  <select
+                    value={settleForm.paymentMode}
+                    onChange={(e) => setSettleForm({ ...settleForm, paymentMode: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Reference / UTR / Cheque # (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR-98347102 or Cheque-48201"
+                  value={settleForm.referenceNo}
+                  onChange={(e) => setSettleForm({ ...settleForm, referenceNo: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Settlement Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Paid from Bank Account"
+                  value={settleForm.notes}
+                  onChange={(e) => setSettleForm({ ...settleForm, notes: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsSettleModalOpen(false)}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={settleSubmitting}
+                  className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {settleSubmitting ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Settling...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={13} />
+                      <span>Confirm Settlement</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}

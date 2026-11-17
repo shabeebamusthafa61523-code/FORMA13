@@ -53,6 +53,7 @@ import {
   recordSupplierPayment,
   getSupplierPayments,
   deleteSupplierPayment,
+  settleSupplierCredit,
   getSupplierLedger,
   createVendor,
   updateVendor,
@@ -166,6 +167,7 @@ router.get('/vendors/:id/purchases', getVendorPurchases);
 router.post('/vendors/:id/credits', recordSupplierCredit);
 router.delete('/vendors/:id/credits/:creditId', deleteSupplierCredit);
 router.post('/vendors/:id/payments', recordSupplierPayment);
+router.post('/vendors/:id/settle-credit', settleSupplierCredit);
 router.get('/vendors/:id/payments', getSupplierPayments);
 router.delete('/vendors/:id/payments/:paymentId', deleteSupplierPayment);
 router.get('/vendors/:id/ledger', getSupplierLedger);

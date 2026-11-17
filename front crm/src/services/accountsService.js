@@ -336,3 +336,8 @@ export const getMonthlyPnLSummary = async (year) => {
   const response = await safeGet('/reports/monthly-pnl-summary', params);
   return response.data;
 };
+
+export const settleSupplierCredit = async (vendorId, data) => {
+  const response = await safePost(`/vendors/${vendorId}/settle-credit`, data);
+  return response.data;
+};

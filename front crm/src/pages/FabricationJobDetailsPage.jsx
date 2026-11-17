@@ -1152,6 +1152,8 @@ const FabricationJobDetailsPage = () => {
 
   const fin = job.financials || {
     totalQuotation: 0,
+    grossPurchases: 0,
+    totalPurchaseCredit: 0,
     totalPurchases: 0,
     totalWages: 0,
     totalExpenses: 0,
@@ -1942,9 +1944,19 @@ const FabricationJobDetailsPage = () => {
             </button>
             <div className="text-right">
               <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Purchases & Expenses</span>
-              <span className="text-lg font-black text-rose-600 dark:text-rose-400">
-                {formatCurrency(fin.totalPurchases + fin.totalExpenses)}
-              </span>
+              <div className="flex items-baseline justify-end gap-1.5">
+                {Number(fin.totalPurchaseCredit || 0) > 0 && (
+                  <span
+                    className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800"
+                    title={`Gross: ${formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)} | Supplier Credit: -${formatCurrency(fin.totalPurchaseCredit)}`}
+                  >
+                    -{formatCurrency(fin.totalPurchaseCredit)} Credit
+                  </span>
+                )}
+                <span className="text-lg font-black text-rose-600 dark:text-rose-400">
+                  {formatCurrency(fin.totalPurchases + fin.totalExpenses)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2611,9 +2623,39 @@ const FabricationJobDetailsPage = () => {
                       </td>
                       <td colSpan={3}></td>
                     </tr>
+                  ) : Number(fin.totalPurchaseCredit || 0) > 0 ? (
+                    <>
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+                        <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-2 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                          {expenseFilter === 'Purchase' ? 'Gross Material Purchases:' : 'Gross Purchases & Site Expenses:'}
+                        </td>
+                        <td className="py-2 px-4 text-right text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatCurrency(expenseFilter === 'Purchase' ? (fin.grossPurchases || fin.totalPurchases) : ((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses))}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      <tr className="bg-amber-50/50 dark:bg-amber-950/20 font-bold">
+                        <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-1.5 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                          Less: Supplier Credit (Pay Later):
+                        </td>
+                        <td className="py-1.5 px-4 text-right text-xs font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                          -{formatCurrency(fin.totalPurchaseCredit)}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      <tr className="bg-slate-100 dark:bg-slate-800 font-bold border-t border-slate-200 dark:border-slate-700">
+                        <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-2.5 px-4 text-right text-[11px] uppercase text-indigo-700 dark:text-indigo-400 tracking-wider">
+                          {expenseFilter === 'Purchase' ? 'Net Material Purchases (Paid):' : 'Net Purchases & Site Expenses (Paid):'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right text-sm font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {formatCurrency(expenseFilter === 'Purchase' ? fin.totalPurchases : (fin.totalPurchases + fin.totalExpenses))}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </>
                   ) : (
                     <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
-                      <td colSpan={7} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
+                      <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
                         {expenseFilter === 'Purchase' ? 'Material Purchases Total:' : 'Purchases & Site Expenses Total:'}
                       </td>
                       <td className="py-2.5 px-4 text-right text-sm text-rose-600 dark:text-rose-400 whitespace-nowrap">

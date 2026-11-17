@@ -1,3 +1,4 @@
+import { syncPurchaseOrExpense } from '../services/fabricationAccountsSync.service.js';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -4089,6 +4090,9 @@ export const getSupplierLedger = async (req, res) => {
           const isCredit = item.paymentMode === 'Credit/Pay Later';
           ledgerEntries.push({
             _id: item._id,
+            itemId: item._id,
+            source: 'Fabrication',
+            jobMongoId: job._id,
             date: item.date || item.createdAt || new Date(),
             type: 'PURCHASE',
             title: `[${job.jobId}] ${item.itemDescription || item.category || 'Purchase'}`,
@@ -4096,6 +4100,7 @@ export const getSupplierLedger = async (req, res) => {
             jobId: job.jobId,
             clientName: job.clientName,
             category: item.category || 'Raw Material',
+            itemDescription: item.itemDescription || '',
             paymentMode: item.paymentMode || 'Cash',
             isCreditMode: isCredit,
             debit: 0,
@@ -4148,12 +4153,87 @@ export const getSupplierLedger = async (req, res) => {
 
     let running = 0;
     const entriesWithBalance = ledgerEntries.map(entry => {
-      running += (entry.credit - entry.debit);
+      const creditEffect = (entry.isCreditMode || entry.type === 'OPENING_BALANCE') ? entry.credit : 0;
+      running += (creditEffect - entry.debit);
       return {
         ...entry,
         runningBalance: running
       };
     });
+
+    const creditPurchases = [];
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        if (regex.test(item.vendorName || '')) {
+          const amt = Number(item.amount || 0);
+          const isCurrentlyCredit = item.paymentMode === 'Credit/Pay Later';
+          const isSettledCredit = Boolean(item.creditSettlement?.isSettled || (item.isCreditPurchase && !isCurrentlyCredit));
+
+          if (isCurrentlyCredit || isSettledCredit) {
+            creditPurchases.push({
+              _id: item._id,
+              itemId: item._id,
+              source: 'Fabrication',
+              jobMongoId: job._id,
+              jobId: job.jobId,
+              clientName: job.clientName,
+              date: item.date || item.createdAt || new Date(),
+              type: 'PURCHASE',
+              category: item.category || 'Raw Material',
+              itemDescription: item.itemDescription || '',
+              billNumber: item.billNumber || '',
+              refNo: item.billNumber || job.jobId,
+              amount: amt,
+              credit: amt,
+              paymentMode: item.paymentMode || 'Credit/Pay Later',
+              isCreditMode: isCurrentlyCredit,
+              isSettled: isSettledCredit,
+              settlementInfo: isSettledCredit ? {
+                settledDate: item.creditSettlement?.settledDate || item.updatedAt,
+                settledPaymentMode: item.creditSettlement?.settledPaymentMode || item.paymentMode,
+                settledAmount: item.creditSettlement?.settledAmount || amt,
+                referenceNo: item.creditSettlement?.referenceNo || '',
+                notes: item.creditSettlement?.notes || ''
+              } : null,
+              notes: item.notes || ''
+            });
+          }
+        }
+      });
+    });
+
+    directCreditsLedger.forEach(c => {
+      const isSettled = Boolean(c.isSettled);
+      creditPurchases.push({
+        _id: c._id,
+        creditId: c._id,
+        source: 'Direct Credit',
+        jobMongoId: null,
+        jobId: null,
+        clientName: '',
+        date: c.date || c.createdAt || new Date(),
+        type: 'PURCHASE',
+        category: c.category || 'Raw Material',
+        itemDescription: c.itemDescription || 'Direct Credit Bill',
+        billNumber: c.billNumber || '',
+        refNo: c.billNumber || 'CREDIT-BILL',
+        amount: Number(c.amount || 0),
+        credit: Number(c.amount || 0),
+        paymentMode: 'Credit/Pay Later',
+        isCreditMode: !isSettled,
+        isSettled: isSettled,
+        settlementInfo: isSettled ? {
+          settledDate: c.settledDate || c.updatedAt,
+          settledPaymentMode: c.settledPaymentMode || 'Bank Transfer',
+          settledAmount: Number(c.amount || 0),
+          referenceNo: c.settlementReference || '',
+          notes: c.settlementNotes || ''
+        } : null,
+        notes: c.notes || ''
+      });
+    });
+
+    creditPurchases.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
     entriesWithBalance.reverse();
 
@@ -4182,6 +4262,7 @@ export const getSupplierLedger = async (req, res) => {
             ? 'ADVANCE'
             : 'SETTLED'
         },
+        creditPurchases,
         ledger: entriesWithBalance,
         payments
       }
@@ -4243,6 +4324,111 @@ export const deleteSupplierCredit = async (req, res) => {
     });
   } catch (error) {
     console.error('deleteSupplierCredit Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const settleSupplierCredit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      source,
+      jobId,
+      itemId,
+      creditId,
+      amount,
+      paymentMode = 'Bank Transfer',
+      referenceNo = '',
+      date = new Date(),
+      notes = ''
+    } = req.body;
+
+    const vendor = await Vendor.findById(id);
+    if (!vendor) return res.status(404).json({ success: false, message: 'Supplier not found' });
+
+    const settleAmount = Number(amount || 0);
+
+    if (source === 'Fabrication' || itemId) {
+      const job = await FabricationJob.findOne({
+        $or: [
+          { _id: mongoose.Types.ObjectId.isValid(jobId) ? jobId : null },
+          { jobId: jobId },
+          { 'purchasesAndExpenses._id': itemId }
+        ]
+      });
+
+      if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+      const item = job.purchasesAndExpenses.id(itemId);
+      if (!item) return res.status(404).json({ success: false, message: 'Purchase item not found in job' });
+
+      const payment = await SupplierPayment.create({
+        vendor: vendor._id,
+        vendorName: vendor.name,
+        date: date ? new Date(date) : new Date(),
+        amount: settleAmount || Number(item.amount || 0),
+        paymentMode: paymentMode || 'Bank Transfer',
+        referenceNo: referenceNo || item.billNumber || `SETTLE-${job.jobId}`,
+        fabricationJobId: job.jobId,
+        notes: notes || `Settled Credit for Job ${job.jobId}: ${item.itemDescription || item.category}`,
+        recordedBy: req.user?._id || null
+      });
+
+      item.paymentMode = paymentMode || 'Bank Transfer';
+      item.isCreditPurchase = true;
+      item.creditSettlement = {
+        isSettled: true,
+        settledDate: date ? new Date(date) : new Date(),
+        settledPaymentMode: paymentMode || 'Bank Transfer',
+        settledAmount: payment.amount,
+        referenceNo: payment.referenceNo,
+        notes: notes || '',
+        supplierPaymentId: payment._id
+      };
+      await job.save();
+
+      try {
+        await syncPurchaseOrExpense(job, item);
+      } catch (syncErr) {
+        console.error('[SettleCredit] Sync error:', syncErr);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Credit bill of ₹${payment.amount} settled via ${payment.paymentMode}. Job ${job.jobId} updated.`,
+        data: { payment, job }
+      });
+    } else if (source === 'Direct Credit' || creditId) {
+      const credit = await SupplierCredit.findById(creditId);
+      const payment = await SupplierPayment.create({
+        vendor: vendor._id,
+        vendorName: vendor.name,
+        date: date ? new Date(date) : new Date(),
+        amount: settleAmount || (credit ? Number(credit.amount || 0) : 0),
+        paymentMode: paymentMode || 'Bank Transfer',
+        referenceNo: referenceNo || (credit ? credit.billNumber : 'SETTLE-CREDIT'),
+        notes: notes || `Settled Direct Credit Bill ${credit?.billNumber || ''}`,
+        recordedBy: req.user?._id || null
+      });
+
+      if (credit) {
+        credit.isSettled = true;
+        credit.settledDate = date ? new Date(date) : new Date();
+        credit.settledPaymentMode = paymentMode || 'Bank Transfer';
+        credit.settlementReference = payment.referenceNo;
+        credit.supplierPaymentId = payment._id;
+        await credit.save();
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Direct credit bill of ₹${payment.amount} settled via ${payment.paymentMode}.`,
+        data: { payment }
+      });
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid credit settlement target.' });
+    }
+  } catch (error) {
+    console.error('settleSupplierCredit Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

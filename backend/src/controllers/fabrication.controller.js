@@ -1022,6 +1022,7 @@ export const addPurchaseExpense = async (req, res) => {
       rate: Number(rate) || 0,
       amount: calcAmount,
       paymentMode,
+      isCreditPurchase: paymentMode === 'Credit/Pay Later',
       receiptUrl,
       notes
     });
@@ -1077,7 +1078,10 @@ export const updatePurchaseExpense = async (req, res) => {
     if (quantity !== undefined) entry.quantity = Number(quantity);
     if (unit !== undefined) entry.unit = unit;
     if (rate !== undefined) entry.rate = Number(rate);
-    if (paymentMode !== undefined) entry.paymentMode = paymentMode;
+    if (paymentMode !== undefined) {
+        entry.paymentMode = paymentMode;
+        if (paymentMode === 'Credit/Pay Later') entry.isCreditPurchase = true;
+      }
     if (receiptUrl !== undefined) entry.receiptUrl = receiptUrl;
     if (notes !== undefined) entry.notes = notes;
 
