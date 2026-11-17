@@ -551,7 +551,24 @@ const SuppliersPage = () => {
     };
   }, [suppliers]);
 
-  // Drawer Purchases Filter
+    // Filtered Credit Purchases for Drawer
+  const filteredCreditPurchases = useMemo(() => {
+    let list = Array.isArray(creditPurchasesData) ? [...creditPurchasesData] : [];
+    if (creditSearch.trim()) {
+      const q = creditSearch.toLowerCase().trim();
+      list = list.filter(c =>
+        (c.title && c.title.toLowerCase().includes(q)) ||
+        (c.jobId && c.jobId.toLowerCase().includes(q)) ||
+        (c.clientName && c.clientName.toLowerCase().includes(q)) ||
+        (c.category && c.category.toLowerCase().includes(q)) ||
+        (c.itemDescription && c.itemDescription.toLowerCase().includes(q)) ||
+        (c.refNo && String(c.refNo).toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [creditPurchasesData, creditSearch]);
+
+// Drawer Purchases Filter
   const filteredDrawerPurchases = useMemo(() => {
     return purchasesData.filter((p) => {
       if (purchaseSearch.trim()) {
