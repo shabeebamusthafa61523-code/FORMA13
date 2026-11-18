@@ -1948,9 +1948,18 @@ const FabricationJobDetailsPage = () => {
                 {Number(fin.totalPurchaseCredit || 0) > 0 && (
                   <span
                     className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800"
-                    title={`Gross: ${formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)} | Supplier Credit: -${formatCurrency(fin.totalPurchaseCredit)}`}
+                    title={`Gross: ${formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)} | Pending Supplier Credit: -${formatCurrency(fin.totalPurchaseCredit)}`}
                   >
-                    -{formatCurrency(fin.totalPurchaseCredit)} Credit
+                    -{formatCurrency(fin.totalPurchaseCredit)} Credit Due
+                  </span>
+                )}
+                {Number(fin.totalSettledCredit || 0) > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800"
+                    title={`Supplier Credit Settled via Accounts: ${formatCurrency(fin.totalSettledCredit)}`}
+                  >
+                    <CheckCircle2 size={11} />
+                    <span>{formatCurrency(fin.totalSettledCredit)} Settled</span>
                   </span>
                 )}
                 <span className="text-lg font-black text-rose-600 dark:text-rose-400">
@@ -2476,17 +2485,36 @@ const FabricationJobDetailsPage = () => {
                           {formatCurrency(entry.amount)}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                            entry.paymentMode === 'Credit/Pay Later'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              : entry.paymentMode === 'UPI'
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                              : entry.paymentMode === 'Bank Transfer'
-                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                          }`}>
-                            {entry.paymentMode || 'Cash'}
-                          </span>
+                          {entry.creditSettlement?.isSettled ? (
+                            <div className="flex flex-col items-center">
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300"
+                                title={`Settled on ${new Date(entry.creditSettlement.settledDate || entry.updatedAt).toLocaleDateString('en-IN')}${entry.creditSettlement.referenceNo ? ` | Ref: ${entry.creditSettlement.referenceNo}` : ''}`}
+                              >
+                                <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>Settled ({entry.creditSettlement.settledPaymentMode || entry.paymentMode || 'Paid'})</span>
+                              </span>
+                              <span
+                                className="text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5 max-w-[130px] truncate"
+                                title={entry.creditSettlement.referenceNo ? `Ref: ${entry.creditSettlement.referenceNo}` : ''}
+                              >
+                                {entry.creditSettlement.settledDate ? new Date(entry.creditSettlement.settledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Settled'}
+                                {entry.creditSettlement.referenceNo ? ` • ${entry.creditSettlement.referenceNo}` : ''}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                              entry.paymentMode === 'Credit/Pay Later'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                : entry.paymentMode === 'UPI'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                : entry.paymentMode === 'Bank Transfer'
+                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                            }`}>
+                              {entry.paymentMode || 'Cash'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                           {entry.notes?.trim() || (entry.itemDescription?.trim() && entry.itemDescription.trim() !== 'Material Purchase' && entry.itemDescription.trim() !== 'Site Operational Expense' ? entry.itemDescription.trim() : null) || <span className="text-slate-400 italic">No remarks</span>}
@@ -2579,17 +2607,36 @@ const FabricationJobDetailsPage = () => {
                           {formatCurrency(entry.amount)}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                            entry.paymentMode === 'Credit/Pay Later'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              : entry.paymentMode === 'UPI'
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                              : entry.paymentMode === 'Bank Transfer'
-                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                          }`}>
-                            {entry.paymentMode || 'Cash'}
-                          </span>
+                          {entry.creditSettlement?.isSettled ? (
+                            <div className="flex flex-col items-center">
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300"
+                                title={`Settled on ${new Date(entry.creditSettlement.settledDate || entry.updatedAt).toLocaleDateString('en-IN')}${entry.creditSettlement.referenceNo ? ` | Ref: ${entry.creditSettlement.referenceNo}` : ''}`}
+                              >
+                                <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>Settled ({entry.creditSettlement.settledPaymentMode || entry.paymentMode || 'Paid'})</span>
+                              </span>
+                              <span
+                                className="text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5 max-w-[130px] truncate"
+                                title={entry.creditSettlement.referenceNo ? `Ref: ${entry.creditSettlement.referenceNo}` : ''}
+                              >
+                                {entry.creditSettlement.settledDate ? new Date(entry.creditSettlement.settledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Settled'}
+                                {entry.creditSettlement.referenceNo ? ` • ${entry.creditSettlement.referenceNo}` : ''}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                              entry.paymentMode === 'Credit/Pay Later'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                : entry.paymentMode === 'UPI'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                : entry.paymentMode === 'Bank Transfer'
+                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                            }`}>
+                              {entry.paymentMode || 'Cash'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
@@ -2623,7 +2670,7 @@ const FabricationJobDetailsPage = () => {
                       </td>
                       <td colSpan={3}></td>
                     </tr>
-                  ) : Number(fin.totalPurchaseCredit || 0) > 0 ? (
+                  ) : (Number(fin.totalPurchaseCredit || 0) > 0 || Number(fin.totalSettledCredit || 0) > 0) ? (
                     <>
                       <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
                         <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-2 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
@@ -2634,15 +2681,31 @@ const FabricationJobDetailsPage = () => {
                         </td>
                         <td colSpan={2}></td>
                       </tr>
-                      <tr className="bg-amber-50/50 dark:bg-amber-950/20 font-bold">
-                        <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-1.5 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
-                          Less: Supplier Credit (Pay Later):
-                        </td>
-                        <td className="py-1.5 px-4 text-right text-xs font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap">
-                          -{formatCurrency(fin.totalPurchaseCredit)}
-                        </td>
-                        <td colSpan={2}></td>
-                      </tr>
+                      {Number(fin.totalPurchaseCredit || 0) > 0 && (
+                        <tr className="bg-amber-50/50 dark:bg-amber-950/20 font-bold">
+                          <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-1.5 px-4 text-right text-[11px] uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                            Less: Pending Supplier Credit (Pay Later):
+                          </td>
+                          <td className="py-1.5 px-4 text-right text-xs font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                            -{formatCurrency(fin.totalPurchaseCredit)}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      )}
+                      {Number(fin.totalSettledCredit || 0) > 0 && (
+                        <tr className="bg-emerald-50/40 dark:bg-emerald-950/20 font-bold">
+                          <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-1.5 px-4 text-right text-[11px] uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
+                            <span className="inline-flex items-center gap-1">
+                              <CheckCircle2 size={11} />
+                              <span>Supplier Credit Settled via Accounts:</span>
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-4 text-right text-xs font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
+                            {formatCurrency(fin.totalSettledCredit)}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      )}
                       <tr className="bg-slate-100 dark:bg-slate-800 font-bold border-t border-slate-200 dark:border-slate-700">
                         <td colSpan={hideTableQtyUnit ? 4 : 7} className="py-2.5 px-4 text-right text-[11px] uppercase text-indigo-700 dark:text-indigo-400 tracking-wider">
                           {expenseFilter === 'Purchase' ? 'Net Material Purchases (Paid):' : 'Net Purchases & Site Expenses (Paid):'}
@@ -4011,6 +4074,21 @@ const FabricationJobDetailsPage = () => {
                 <X size={18} />
               </button>
             </div>
+
+            {editingExpense?.creditSettlement?.isSettled && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+                <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold">
+                    Settled via Supplier Accounts
+                  </div>
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                    Paid via {editingExpense.creditSettlement.settledPaymentMode || editingExpense.paymentMode} on {new Date(editingExpense.creditSettlement.settledDate || editingExpense.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {editingExpense.creditSettlement.referenceNo ? ` • Ref: ${editingExpense.creditSettlement.referenceNo}` : ''}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSaveExpense} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
