@@ -1080,7 +1080,11 @@ export const updatePurchaseExpense = async (req, res) => {
     if (rate !== undefined) entry.rate = Number(rate);
     if (paymentMode !== undefined) {
         entry.paymentMode = paymentMode;
-        if (paymentMode === 'Credit/Pay Later') entry.isCreditPurchase = true;
+        if (paymentMode === 'Credit/Pay Later') {
+          entry.isCreditPurchase = true;
+        } else if (!entry.creditSettlement?.isSettled) {
+          entry.isCreditPurchase = false;
+        }
       }
     if (receiptUrl !== undefined) entry.receiptUrl = receiptUrl;
     if (notes !== undefined) entry.notes = notes;

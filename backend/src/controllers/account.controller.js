@@ -1643,7 +1643,8 @@ export const getTotalReport = async (req, res) => {
               const amt = Number(item.amount || 0);
               stats.count += 1;
               stats.totalAmount += amt;
-              if (item.paymentMode === 'Credit/Pay Later') {
+              const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement?.isSettled);
+              if (isCredit) {
                 stats.creditPurchases += amt;
               }
             }
@@ -3401,7 +3402,8 @@ export const getVendors = async (req, res) => {
               const amt = Number(item.amount || 0);
               stats.count += 1;
               stats.totalAmount += amt;
-              if (item.paymentMode === 'Credit/Pay Later') {
+              const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement?.isSettled);
+              if (isCredit) {
                 stats.creditPurchases += amt;
               }
             }
@@ -4087,7 +4089,7 @@ export const getSupplierLedger = async (req, res) => {
       (job.purchasesAndExpenses || []).forEach(item => {
         if (regex.test(item.vendorName || '')) {
           const amt = Number(item.amount || 0);
-          const isCredit = item.paymentMode === 'Credit/Pay Later';
+          const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement?.isSettled);
           ledgerEntries.push({
             _id: item._id,
             itemId: item._id,
