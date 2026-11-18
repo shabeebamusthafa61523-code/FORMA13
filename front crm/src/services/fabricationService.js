@@ -303,3 +303,9 @@ export const resetFabricationUnits = async () => {
   return response.data;
 };
 
+
+
+export const settleJobPurchaseCredit = async (jobId, expenseId, data) => {
+  const response = await axios.post(`${getBaseUrl()}/jobs/${jobId}/expenses/${expenseId}/settle-credit`, data, getAuthHeaders());
+  return response.data;
+};

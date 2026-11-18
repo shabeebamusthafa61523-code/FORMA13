@@ -19,6 +19,7 @@ import FabricationMaterial from '../models/fabricationMaterial.model.js';
 import FabricationWorkScope from '../models/fabricationWorkScope.model.js';
 import FabricationItemPreset from '../models/fabricationItemPreset.model.js';
 import Vendor from '../models/vendor.model.js';
+import SupplierPayment from '../models/supplierPayment.model.js';
 import ExpenseCategory from '../models/expenseCategory.model.js';
 
 export const DEFAULT_INVOICE_TERMS = [
@@ -1010,6 +1011,10 @@ export const addPurchaseExpense = async (req, res) => {
       ? Number(amount)
       : (Number(quantity) * Number(rate));
 
+    if (vendorName && vendorName.trim()) {
+      await ensureVendorExists(vendorName, category);
+    }
+
     job.purchasesAndExpenses.push({
       date: date ? new Date(date) : new Date(),
       type,
@@ -1073,7 +1078,12 @@ export const updatePurchaseExpense = async (req, res) => {
     if (type !== undefined) entry.type = type;
     if (category !== undefined) entry.category = category;
     if (itemDescription !== undefined) entry.itemDescription = (itemDescription || "").trim();
-    if (vendorName !== undefined) entry.vendorName = vendorName;
+    if (vendorName !== undefined) {
+      entry.vendorName = vendorName;
+      if (vendorName && vendorName.trim()) {
+        await ensureVendorExists(vendorName, category || entry.category);
+      }
+    }
     if (billNumber !== undefined) entry.billNumber = billNumber;
     if (quantity !== undefined) entry.quantity = Number(quantity);
     if (unit !== undefined) entry.unit = unit;
@@ -1838,6 +1848,101 @@ export const resetFabricationUnits = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Reset units to standard defaults', data: config.units });
   } catch (error) {
     console.error('Error resetting units:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+// Helper: Ensure vendor exists in Vendor collection
+export const ensureVendorExists = async (vendorName, category = 'Raw Material') => {
+  if (!vendorName || !vendorName.trim()) return null;
+  const clean = vendorName.trim();
+  const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let vendor = await Vendor.findOne({ name: { $regex: new RegExp(`^${escaped}$`, 'i') } });
+  if (!vendor) {
+    vendor = await Vendor.create({
+      name: clean,
+      isActive: true,
+      category: category || 'Raw Material',
+      openingBalance: 0,
+      creditLimit: 0,
+      paymentTermsDays: 30
+    });
+  }
+  return vendor;
+};
+
+// Settle Credit purchase directly from Workspace Job
+export const settleJobPurchaseCredit = async (req, res) => {
+  try {
+    const { id, expenseId } = req.params;
+    const {
+      amount,
+      paymentMode = 'Bank Transfer',
+      referenceNo = '',
+      date = new Date(),
+      notes = ''
+    } = req.body;
+
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const item = job.purchasesAndExpenses.id(expenseId);
+    if (!item) return res.status(404).json({ success: false, message: 'Purchase/expense record not found' });
+
+    const settleAmount = Number(amount || item.amount || 0);
+
+    // 1. Resolve or create Vendor
+    let vendor = null;
+    const vName = (item.vendorName || '').trim();
+    if (vName) {
+      vendor = await ensureVendorExists(vName, item.category);
+    }
+
+    // 2. Create SupplierPayment
+    let payment = null;
+    if (vendor) {
+      payment = await SupplierPayment.create({
+        vendor: vendor._id,
+        vendorName: vendor.name,
+        date: date ? new Date(date) : new Date(),
+        amount: settleAmount,
+        paymentMode: paymentMode || 'Bank Transfer',
+        referenceNo: referenceNo || item.billNumber || `SETTLE-${job.jobId}`,
+        fabricationJobId: job.jobId,
+        notes: notes || `Settled Credit from Workspace Job ${job.jobId}: ${item.itemDescription || item.category || 'Purchase'}`,
+        recordedBy: req.user?._id || null
+      });
+    }
+
+    // 3. Mark line item as settled
+    item.paymentMode = paymentMode || 'Bank Transfer';
+    item.isCreditPurchase = true;
+    item.creditSettlement = {
+      isSettled: true,
+      settledDate: date ? new Date(date) : new Date(),
+      settledPaymentMode: paymentMode || 'Bank Transfer',
+      settledAmount: settleAmount,
+      referenceNo: payment ? payment.referenceNo : (referenceNo || `SETTLE-${job.jobId}`),
+      notes: notes || '',
+      supplierPaymentId: payment ? payment._id : null
+    };
+
+    await job.save();
+
+    try {
+      await syncPurchaseOrExpense(job, item);
+    } catch (syncErr) {
+      console.error('[settleJobPurchaseCredit] Sync error:', syncErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Credit purchase of ₹${settleAmount} settled via ${paymentMode}.`,
+      data: job
+    });
+  } catch (error) {
+    console.error('settleJobPurchaseCredit error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

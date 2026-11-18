@@ -22,6 +22,7 @@ import {
   addPurchaseExpense,
   updatePurchaseExpense,
   deletePurchaseExpense,
+  settleJobPurchaseCredit,
   addClientPayment,
   updateClientPayment,
   deleteClientPayment,
@@ -173,6 +174,58 @@ const ClientDetailsPage = () => {
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+
+  // Settle Credit Purchase Modal State & Handlers
+  const [isSettleCreditModalOpen, setIsSettleCreditModalOpen] = useState(false);
+  const [creditItemToSettle, setCreditItemToSettle] = useState(null);
+  const [creditSettleForm, setCreditSettleForm] = useState({
+    amount: '',
+    paymentMode: 'Bank Transfer',
+    date: new Date().toISOString().split('T')[0],
+    referenceNo: '',
+    notes: ''
+  });
+  const [creditSettleSubmitting, setCreditSettleSubmitting] = useState(false);
+
+  const handleOpenSettleCredit = (entry) => {
+    setCreditItemToSettle(entry);
+    setCreditSettleForm({
+      amount: String(entry.amount || ''),
+      paymentMode: 'Bank Transfer',
+      date: new Date().toISOString().split('T')[0],
+      referenceNo: entry.billNumber || '',
+      notes: ''
+    });
+    setIsSettleCreditModalOpen(true);
+  };
+
+  const handleConfirmSettleCredit = async (e) => {
+    e.preventDefault();
+    if (!creditItemToSettle || !job) return;
+    setCreditSettleSubmitting(true);
+    try {
+      const res = await settleJobPurchaseCredit(job._id, creditItemToSettle._id, {
+        amount: Number(creditSettleForm.amount),
+        paymentMode: creditSettleForm.paymentMode,
+        date: creditSettleForm.date,
+        referenceNo: creditSettleForm.referenceNo,
+        notes: creditSettleForm.notes
+      });
+      if (res && res.success) {
+        showToast(res.message || 'Credit purchase settled successfully', 'success');
+        setJob(res.data);
+        setIsSettleCreditModalOpen(false);
+        setCreditItemToSettle(null);
+      } else {
+        showToast(res?.message || 'Failed to settle credit', 'error');
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to settle credit purchase', 'error');
+    } finally {
+      setCreditSettleSubmitting(false);
+    }
+  };
+
 
   // Modals for Category & Description/Vendor management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -2027,6 +2080,17 @@ const ClientDetailsPage = () => {
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
+                            {entry.paymentMode === 'Credit/Pay Later' && !entry.creditSettlement?.isSettled && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSettleCredit(entry)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer mr-1"
+                                title="Settle this specific credit bill"
+                              >
+                                <CheckCircle2 size={11} />
+                                <span>Settle</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => openEditExpenseModal(entry)}
                               className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
@@ -2146,6 +2210,17 @@ const ClientDetailsPage = () => {
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
+                            {entry.paymentMode === 'Credit/Pay Later' && !entry.creditSettlement?.isSettled && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSettleCredit(entry)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer mr-1"
+                                title="Settle this specific credit bill"
+                              >
+                                <CheckCircle2 size={11} />
+                                <span>Settle</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => openEditExpenseModal(entry)}
                               className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
@@ -3410,7 +3485,7 @@ const ClientDetailsPage = () => {
               </button>
             </div>
 
-            {editingExpense?.creditSettlement?.isSettled && (
+            {editingExpense?.creditSettlement?.isSettled ? (
               <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
                 <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
@@ -3423,7 +3498,27 @@ const ClientDetailsPage = () => {
                   </div>
                 </div>
               </div>
-            )}
+            ) : expenseForm.paymentMode === 'Credit/Pay Later' ? (
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                  <span className="text-amber-800 dark:text-amber-300 font-medium">This bill is on Credit / Pay Later.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = editingExpense;
+                    setIsExpenseModalOpen(false);
+                    setEditingExpense(null);
+                    handleOpenSettleCredit(target);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-2xs cursor-pointer"
+                >
+                  <CheckCircle2 size={12} />
+                  <span>Settle Bill Now</span>
+                </button>
+              </div>
+            ) : null}
 
             <form onSubmit={handleSaveExpense} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -3752,6 +3847,147 @@ const ClientDetailsPage = () => {
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3.1 Workspace Settle Credit Modal */}
+      {isSettleCreditModalOpen && creditItemToSettle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-500 text-white">
+                  <CheckCircle2 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Settle Supplier Credit
+                  </h3>
+                  <span className="text-[10px] text-slate-500">
+                    Clear credit purchase & sync directly to supplier ledger
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => { setIsSettleCreditModalOpen(false); setCreditItemToSettle(null); }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Supplier:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {creditItemToSettle.vendorName || 'Supplier'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Item / Category:</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
+                  {creditItemToSettle.itemDescription || creditItemToSettle.category}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Credit Bill Amount:</span>
+                <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
+                  {formatCurrency(creditItemToSettle.amount)}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmSettleCredit} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Settlement Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  value={creditSettleForm.amount}
+                  onChange={(e) => setCreditSettleForm({ ...creditSettleForm, amount: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                    Settlement Mode *
+                  </label>
+                  <select
+                    value={creditSettleForm.paymentMode}
+                    onChange={(e) => setCreditSettleForm({ ...creditSettleForm, paymentMode: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                    Settlement Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={creditSettleForm.date}
+                    onChange={(e) => setCreditSettleForm({ ...creditSettleForm, date: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Reference / UTR / Cheque #
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR8273641 / Cheque #"
+                  value={creditSettleForm.referenceNo}
+                  onChange={(e) => setCreditSettleForm({ ...creditSettleForm, referenceNo: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Notes / Remarks
+                </label>
+                <input
+                  type="text"
+                  placeholder="Optional remarks"
+                  value={creditSettleForm.notes}
+                  onChange={(e) => setCreditSettleForm({ ...creditSettleForm, notes: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setIsSettleCreditModalOpen(false); setCreditItemToSettle(null); }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creditSettleSubmitting}
+                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-600 text-white shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {creditSettleSubmitting && <Loader2 size={12} className="animate-spin" />}
+                  <span>Confirm Settlement</span>
                 </button>
               </div>
             </form>
