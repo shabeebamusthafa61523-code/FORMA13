@@ -3987,33 +3987,117 @@ export const recordSupplierPayment = async (req, res) => {
     const { amount, date, paymentMode, referenceNo, fabricationJobId, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid payment amount greater than 0 is required.' });
+      return res.status(400).json({ success: false, message: "Valid payment amount greater than 0 is required." });
     }
 
     const vendor = await Vendor.findById(id);
     if (!vendor) {
-      return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      return res.status(404).json({ success: false, message: "Supplier not found." });
     }
 
+    const paymentAmount = Number(amount);
     const payment = await SupplierPayment.create({
       vendor: vendor._id,
       vendorName: vendor.name,
       date: date ? new Date(date) : new Date(),
-      amount: Number(amount),
-      paymentMode: paymentMode || 'Bank Transfer',
-      referenceNo: referenceNo ? referenceNo.trim() : '',
+      amount: paymentAmount,
+      paymentMode: paymentMode || "Bank Transfer",
+      referenceNo: referenceNo ? referenceNo.trim() : "",
       fabricationJobId: fabricationJobId ? fabricationJobId.trim() : null,
-      notes: notes ? notes.trim() : '',
+      notes: notes ? notes.trim() : "",
       recordedBy: req.user?._id || null
     });
 
+    // Auto-apply payment to settle pending credit purchases for this supplier in Workspace
+    try {
+      const cleanVName = vendor.name.trim();
+
+      const jobQuery = {
+        purchasesAndExpenses: {
+          $elemMatch: {
+            vendorName: { $regex: new RegExp(cleanVName, "i") },
+            paymentMode: "Credit/Pay Later"
+          }
+        }
+      };
+      if (fabricationJobId) {
+        jobQuery.$or = [
+          { jobId: fabricationJobId },
+          { _id: mongoose.Types.ObjectId.isValid(fabricationJobId) ? fabricationJobId : null }
+        ];
+      }
+
+      const jobsWithCredit = await FabricationJob.find(jobQuery).sort({ startDate: 1, createdAt: 1 });
+      let remainingToApply = paymentAmount;
+
+      for (const job of jobsWithCredit) {
+        if (remainingToApply <= 0) break;
+        let jobUpdated = false;
+
+        for (const item of job.purchasesAndExpenses) {
+          if (remainingToApply <= 0) break;
+          const isPendingCredit = new RegExp(cleanVName, "i").test(item.vendorName || "") &&
+                                  item.paymentMode === "Credit/Pay Later" &&
+                                  !item.creditSettlement?.isSettled;
+
+          if (isPendingCredit) {
+            const itemAmt = Number(item.amount || 0);
+            item.paymentMode = paymentMode || "Bank Transfer";
+            item.isCreditPurchase = true;
+            item.creditSettlement = {
+              isSettled: true,
+              settledDate: date ? new Date(date) : new Date(),
+              settledPaymentMode: paymentMode || "Bank Transfer",
+              settledAmount: Math.min(itemAmt, remainingToApply),
+              referenceNo: referenceNo ? referenceNo.trim() : ("PAY-" + String(payment._id).slice(-6)),
+              notes: notes || ("Settled via Supplier Payment to " + vendor.name),
+              supplierPaymentId: payment._id
+            };
+            remainingToApply -= itemAmt;
+            jobUpdated = true;
+
+            try {
+              await syncPurchaseOrExpense(job, item);
+            } catch (syncErr) {
+              console.error("[recordSupplierPayment] sync error:", syncErr);
+            }
+          }
+        }
+
+        if (jobUpdated) {
+          await job.save();
+        }
+      }
+
+      // Also settle any standalone SupplierCredit bills if amount remains
+      if (remainingToApply > 0) {
+        const directCredits = await SupplierCredit.find({
+          vendor: vendor._id,
+          isSettled: { $ne: true }
+        }).sort({ date: 1, createdAt: 1 });
+
+        for (const dc of directCredits) {
+          if (remainingToApply <= 0) break;
+          dc.isSettled = true;
+          dc.settledDate = date ? new Date(date) : new Date();
+          dc.settledPaymentMode = paymentMode || "Bank Transfer";
+          dc.settlementReference = referenceNo ? referenceNo.trim() : ("PAY-" + String(payment._id).slice(-6));
+          dc.supplierPaymentId = payment._id;
+          await dc.save();
+          remainingToApply -= Number(dc.amount || 0);
+        }
+      }
+    } catch (settleErr) {
+      console.error("[recordSupplierPayment] Auto-settle credit purchases error:", settleErr);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Payment recorded successfully.',
+      message: "Payment recorded and credit purchases settled successfully.",
       data: payment
     });
   } catch (error) {
-    console.error('recordSupplierPayment Error:', error);
+    console.error("recordSupplierPayment Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
