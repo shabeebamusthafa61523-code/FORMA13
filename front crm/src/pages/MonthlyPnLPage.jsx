@@ -249,6 +249,11 @@ const MonthlyPnLPage = () => {
                         }`}>
                           {formatINR(item.netProfit)}
                         </span>
+                        {Number(item.supplierCredits || 0) > 0 && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold font-sans mt-0.5">
+                            (Credit -₹{Number(item.supplierCredits).toLocaleString('en-IN')} deducted)
+                          </p>
+                        )}
                       </td>
 
                       {/* Status Badge */}

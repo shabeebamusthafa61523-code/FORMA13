@@ -156,6 +156,7 @@ const fabricationJobSchema = new mongoose.Schema({
     totalQuotation: { type: Number, default: 0 },
     grossPurchases: { type: Number, default: 0 },
     totalPurchaseCredit: { type: Number, default: 0 },
+    totalSettledCredit: { type: Number, default: 0 },
     totalPurchases: { type: Number, default: 0 },
     grossWages: { type: Number, default: 0 },
     totalWageCredit: { type: Number, default: 0 },
@@ -248,13 +249,19 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
 
     let grossPurchases = 0;
   let totalPurchaseCredit = 0;
+  let totalSettledCredit = 0;
   let totalExpenses = 0;
   (this.purchasesAndExpenses || []).forEach(item => {
     const amt = Number(item.amount) || 0;
     if (item.type === 'Purchase') {
       grossPurchases += amt;
-      if (item.paymentMode === 'Credit/Pay Later') {
+      const isCredit = /credit/i.test(item.paymentMode || '') || item.isCreditPurchase;
+      const isSettled = Boolean(item.creditSettlement && item.creditSettlement.isSettled);
+      if (isCredit && !isSettled) {
         totalPurchaseCredit += amt;
+      }
+      if (isSettled) {
+        totalSettledCredit += amt;
       }
     } else {
       totalExpenses += amt;
@@ -274,6 +281,7 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
     totalQuotation: Math.round(totalQuotation * 100) / 100,
     grossPurchases: Math.round(grossPurchases * 100) / 100,
     totalPurchaseCredit: Math.round(totalPurchaseCredit * 100) / 100,
+    totalSettledCredit: Math.round(totalSettledCredit * 100) / 100,
     totalPurchases: Math.round(totalPurchases * 100) / 100,
     grossWages: Math.round(grossWages * 100) / 100,
     totalWageCredit: Math.round(totalWageCredit * 100) / 100,

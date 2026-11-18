@@ -160,6 +160,8 @@ export const syncPurchaseOrExpense = async (job, item) => {
       'syncSource.fabricationItemId': item._id
     });
 
+    const isPendingCredit = /credit/i.test(item.paymentMode || '') && !item.creditSettlement?.isSettled;
+
     const expenseData = {
       date: item.date || new Date(),
       category: categoryDoc ? categoryDoc._id : null,
@@ -172,7 +174,7 @@ export const syncPurchaseOrExpense = async (job, item) => {
       paidTo: item.vendorName || (isPurchase ? 'Material Vendor' : 'Service Provider'),
       description: `[${job.jobId}] ${item.itemDescription?.trim() || item.category || (isPurchase ? 'Material Purchase' : 'Operational Expense')}${item.billNumber ? ` (Bill #${item.billNumber})` : ''}`.trim(),
       attachment: item.receiptUrl || '',
-      status: 'APPROVED',
+      status: isPendingCredit ? 'PENDING' : 'APPROVED',
       syncSource: {
         module: 'Fabrication',
         fabricationJobId: job.jobId,

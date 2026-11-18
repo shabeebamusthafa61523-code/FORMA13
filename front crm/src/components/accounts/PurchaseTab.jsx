@@ -21,7 +21,7 @@ import ConfirmModal from '../ConfirmModal';
 import ExcelExportButton from '../ExcelExportButton';
 import VendorModal from './VendorModal';
 import AddItemOptionModal from './AddItemOptionModal';
-import { getVendors, deleteExpense } from '../../services/accountsService';
+import { getVendors, deleteExpense, getExpenses } from '../../services/accountsService';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -140,34 +140,27 @@ const PurchaseTab = () => {
     remarks: ''
   });
 
+  const isPendingCredit = (p) => {
+    return p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+  };
+
   const fetchPurchasesData = async () => {
     setLoading(true);
     try {
-      const savedLocal = JSON.parse(localStorage.getItem('crm_purchase_records') || '[]');
-
-      const res = await fetch(getApiEndpoint('/accounts/expenses'), { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
-          // Filter strictly for purchase procurement entries only (excludes general expenses)
-          const filtered = data.data.filter(item => {
-            const cat = String(item.categoryName || item.category || '').toLowerCase();
-            return cat.includes('purchase') || cat.includes('inventory') || cat.includes('vendor') || item.isPurchase === true;
-          });
-
-          const combinedMap = new Map();
-          savedLocal.forEach(p => combinedMap.set(String(p._id || p.id), p));
-          filtered.forEach(p => combinedMap.set(String(p._id || p.id), p));
-
-          setPurchases(Array.from(combinedMap.values()));
-        } else {
-          setPurchases(savedLocal);
-        }
+      const res = await getExpenses({ entryType: 'PURCHASE' });
+      if (res && res.success && Array.isArray(res.data)) {
+        const filtered = res.data.filter(item => {
+          const cat = String(item.categoryName || item.category || '').toLowerCase();
+          return cat.includes('purchase') || cat.includes('inventory') || cat.includes('vendor') || item.isPurchase === true;
+        });
+        setPurchases(filtered);
+        localStorage.setItem('crm_purchase_records', JSON.stringify(filtered));
       } else {
-        setPurchases(savedLocal);
+        const saved = localStorage.getItem('crm_purchase_records');
+        if (saved) setPurchases(JSON.parse(saved));
       }
     } catch (e) {
-      console.warn('Error loading purchase data:', e);
+      console.warn('Error loading purchase data via service, falling back:', e);
       const saved = localStorage.getItem('crm_purchase_records');
       if (saved) setPurchases(JSON.parse(saved));
     } finally {
@@ -275,14 +268,20 @@ const PurchaseTab = () => {
       (p.paidTo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.billNo || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || (p.status === 'APPROVED' ? 'PAID' : 'PENDING') === statusFilter.toUpperCase();
+    const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+    const computedStatus = isPending ? 'PENDING' : 'PAID';
+    const matchesStatus = statusFilter === 'ALL' || computedStatus === statusFilter.toUpperCase();
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate Metrics
-  const totalPurchaseOutflow = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
-  const totalPaidPurchase = purchases.reduce((sum, p) => sum + (p.status === 'APPROVED' || p.status === 'Paid' ? (Number(p.amount || p.totalAmount) || 0) : 0), 0);
-  const totalPendingPurchase = purchases.reduce((sum, p) => sum + (p.status === 'PENDING' || p.status === 'Pending' ? (Number(p.amount || p.totalAmount) || 0) : 0), 0);
+  // Calculate Metrics (Credit is deducted from total purchase outflow)
+  const totalGrossPurchase = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
+  const totalPendingPurchase = purchases.reduce((sum, p) => {
+    const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+    return sum + (isPending ? (Number(p.amount || p.totalAmount) || 0) : 0);
+  }, 0);
+  const totalPurchaseOutflow = Math.max(0, totalGrossPurchase - totalPendingPurchase);
+  const totalPaidPurchase = totalPurchaseOutflow;
 
   return (
     <div className="space-y-4">
@@ -598,13 +597,21 @@ const PurchaseTab = () => {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-slate-900 border border-purple-500/20 dark:border-purple-500/30 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Purchase Outflow</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Purchases (Paid Outflow)</p>
                 <TrendingDown size={16} className="text-purple-600 dark:text-purple-400" />
               </div>
               <h4 className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1.5 font-mono">
                 ₹{totalPurchaseOutflow.toLocaleString('en-IN')}
               </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5">{purchases.length} Purchase Orders / Bills</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {totalPendingPurchase > 0 ? (
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                    Gross ₹{totalGrossPurchase.toLocaleString('en-IN')} (-₹{totalPendingPurchase.toLocaleString('en-IN')} Credit Deducted)
+                  </span>
+                ) : (
+                  `${purchases.length} Purchase Orders / Bills`
+                )}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs">
@@ -679,15 +686,36 @@ const PurchaseTab = () => {
                         <td className="py-3 px-3">{p.description || 'Equipment Purchase'}</td>
                         <td className="py-3 px-3 text-slate-500">{new Date(p.date || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            (p.status === 'APPROVED' || p.status === 'Paid') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                            'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                          }`}>
-                            {(p.status === 'APPROVED' || p.status === 'Paid') ? 'PAID' : 'PENDING'}
-                          </span>
+                          {(() => {
+                            const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+                            return isPending ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/40">
+                                <Clock size={10} />
+                                <span>CREDIT DUE</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/40">
+                                <CheckCircle2 size={10} />
+                                <span>PAID ({p.paymentMode || 'DIRECT'})</span>
+                              </span>
+                            );
+                          })()}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                          ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                        <td className="py-3 px-3 text-right font-mono font-black">
+                          {isPendingCredit(p) ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-amber-600 dark:text-amber-400 font-black">
+                                ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">
+                                Credit (Deducted)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-900 dark:text-white">
+                              ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
