@@ -889,7 +889,10 @@ export const getCashBook = async (req, res) => {
           amount: outflowAmount,
           date: e.date || e.createdAt,
           referenceNo: e.receiptNo || e.billNo || e._id,
-          description: e.description || ''
+          description: e.description || '',
+          status: e.status || 'APPROVED',
+          billNo: e.billNo || '',
+          syncSource: e.syncSource || null
         };
       });
 

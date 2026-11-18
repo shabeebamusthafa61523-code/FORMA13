@@ -21,7 +21,7 @@ import ConfirmModal from '../ConfirmModal';
 import ExcelExportButton from '../ExcelExportButton';
 import VendorModal from './VendorModal';
 import AddItemOptionModal from './AddItemOptionModal';
-import { getVendors, deleteExpense } from '../../services/accountsService';
+import { getVendors, deleteExpense, getExpenses } from '../../services/accountsService';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
@@ -140,34 +140,27 @@ const PurchaseTab = () => {
     remarks: ''
   });
 
+  const isPendingCredit = (p) => {
+    return p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+  };
+
   const fetchPurchasesData = async () => {
     setLoading(true);
     try {
-      const savedLocal = JSON.parse(localStorage.getItem('crm_purchase_records') || '[]');
-
-      const res = await fetch(getApiEndpoint('/accounts/expenses'), { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
-          // Filter strictly for purchase procurement entries only (excludes general expenses)
-          const filtered = data.data.filter(item => {
-            const cat = String(item.categoryName || item.category || '').toLowerCase();
-            return cat.includes('purchase') || cat.includes('inventory') || cat.includes('vendor') || item.isPurchase === true;
-          });
-
-          const combinedMap = new Map();
-          savedLocal.forEach(p => combinedMap.set(String(p._id || p.id), p));
-          filtered.forEach(p => combinedMap.set(String(p._id || p.id), p));
-
-          setPurchases(Array.from(combinedMap.values()));
-        } else {
-          setPurchases(savedLocal);
-        }
+      const res = await getExpenses({ entryType: 'PURCHASE' });
+      if (res && res.success && Array.isArray(res.data)) {
+        const filtered = res.data.filter(item => {
+          const cat = String(item.categoryName || item.category || '').toLowerCase();
+          return cat.includes('purchase') || cat.includes('inventory') || cat.includes('vendor') || item.isPurchase === true;
+        });
+        setPurchases(filtered);
+        localStorage.setItem('crm_purchase_records', JSON.stringify(filtered));
       } else {
-        setPurchases(savedLocal);
+        const saved = localStorage.getItem('crm_purchase_records');
+        if (saved) setPurchases(JSON.parse(saved));
       }
     } catch (e) {
-      console.warn('Error loading purchase data:', e);
+      console.warn('Error loading purchase data via service, falling back:', e);
       const saved = localStorage.getItem('crm_purchase_records');
       if (saved) setPurchases(JSON.parse(saved));
     } finally {
@@ -708,8 +701,21 @@ const PurchaseTab = () => {
                             );
                           })()}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                          ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                        <td className="py-3 px-3 text-right font-mono font-black">
+                          {isPendingCredit(p) ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-amber-600 dark:text-amber-400 font-black">
+                                ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">
+                                Credit (Deducted)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-900 dark:text-white">
+                              ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
