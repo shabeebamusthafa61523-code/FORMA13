@@ -1723,8 +1723,8 @@ export const getTotalReport = async (req, res) => {
       .filter(e => /credit/i.test(e.paymentMode || '') || e.status === 'PENDING')
       .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const directCreditTotal = supplierCredits.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-    const vendorOpeningCreditTotal = vendors.reduce((sum, v) => sum + (Number(v.openingBalance) || 0), 0);
-    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal + purchaseCreditTotal;
+    const vendorOpeningCreditTotal = 0;
+    const totalVendorCredit = directCreditTotal + purchaseCreditTotal;
     const totalPurchases = Math.max(0, purchaseTotal - totalVendorCredit);
     const totalWageCreditAll = (jobs || []).reduce((sum, j) => sum + (j.wageCredits || []).reduce((s, c) => s + (Number(c.amount) || 0), 0), 0);
     const netSalaryTotal = Math.max(0, salaryTotal - totalWageCreditAll);
