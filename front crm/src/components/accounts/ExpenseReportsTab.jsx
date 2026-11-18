@@ -92,10 +92,10 @@ const ExpenseReportsTab = () => {
           const filteredPurchases = data.data.filter(item => !isOwnerDrawing(item) && isPur(item));
           const filteredGeneral = data.data.filter(item => !isOwnerDrawing(item) && !isPur(item) && !isSal(item));
 
-          const combinedPurchasesMap = new Map();
-          savedPurchasesLocal.forEach(p => combinedPurchasesMap.set(String(p._id || p.id), p));
-          filteredPurchases.forEach(p => combinedPurchasesMap.set(String(p._id || p.id), p));
-          setPurchases(Array.from(combinedPurchasesMap.values()));
+          setPurchases(filteredPurchases);
+          try {
+            localStorage.setItem('crm_purchase_records', JSON.stringify(filteredPurchases));
+          } catch (e) {}
 
           setGeneralExpenses(filteredGeneral);
           return;
@@ -119,6 +119,9 @@ const ExpenseReportsTab = () => {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
           setCapitals(data.data);
+          try {
+            localStorage.setItem('crm_capital_records', JSON.stringify(data.data));
+          } catch (e) {}
           return;
         }
       }
@@ -439,7 +442,8 @@ const ExpenseReportsTab = () => {
   monthBackendPurchases.forEach(p => allMonthlyPurchasesMap.set(String(p._id || p.id), p));
   (reportData?.supplierCredits || []).forEach(sc => {
     const scDate = sc.date ? new Date(sc.date).toISOString().split('T')[0] : '';
-    if (scDate.startsWith(monthlyYearMonth)) {
+    const targetPeriod = `${monthlyYear}-${String(monthlyMonth).padStart(2, '0')}`;
+    if (scDate.startsWith(targetPeriod)) {
       allMonthlyPurchasesMap.set(String(sc._id || sc.id), {
         _id: sc._id,
         isPurchase: true,

@@ -70,11 +70,12 @@ const CashBookTab = () => {
 
       let backendEntries = cashRes.success ? (cashRes.data || []) : [];
 
-      // Merge local purchases from crm_purchase_records if available
+      // Merge only un-synced offline purchases (starting with 'pur_') if available
       try {
         const localPurchasesRaw = JSON.parse(localStorage.getItem('crm_purchase_records') || '[]');
-        if (localPurchasesRaw.length > 0) {
-          const formattedLocalPurchases = localPurchasesRaw.map(p => ({
+        const offlinePurchases = localPurchasesRaw.filter(p => String(p._id || p.id || '').startsWith('pur_'));
+        if (offlinePurchases.length > 0) {
+          const formattedLocalPurchases = offlinePurchases.map(p => ({
             _id: p._id || p.id,
             entryType: 'EXPENSE',
             isPurchase: true,
@@ -99,11 +100,12 @@ const CashBookTab = () => {
         console.warn('Error reading local purchase records:', localErr);
       }
 
-      // Merge local capital records from crm_capital_records if available
+      // Merge only un-synced offline capital records (starting with 'cap_') if available
       try {
         const localCapitalRaw = JSON.parse(localStorage.getItem('crm_capital_records') || '[]');
-        if (localCapitalRaw.length > 0) {
-          const formattedCapital = localCapitalRaw.map(c => ({
+        const offlineCapital = localCapitalRaw.filter(c => String(c._id || c.id || '').startsWith('cap_'));
+        if (offlineCapital.length > 0) {
+          const formattedCapital = offlineCapital.map(c => ({
             _id: c._id || c.id,
             entryType: 'INCOME',
             isCapital: true,
