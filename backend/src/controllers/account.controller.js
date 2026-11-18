@@ -3826,9 +3826,12 @@ export const getPartnerShareSummary = async (req, res) => {
     const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
     const isSal = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
 
-    const vendorOpeningCreditTotal = (allVendors || []).reduce((sum, v) => sum + (Number(v.openingBalance) || 0), 0);
+    const purchaseCreditExpenses = allExpenses
+      .filter(e => !isOwnerDrawing(e) && isPur(e) && (/credit/i.test(e.paymentMode || '') || e.status === 'PENDING'))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const directCreditTotal = (allSupplierCredits || []).reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
+    const vendorOpeningCreditTotal = 0;
+    const totalVendorCredit = directCreditTotal + purchaseCreditExpenses;
     const expensePurchaseTotal = allExpenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const purchaseTotal = Math.max(0, expensePurchaseTotal - totalVendorCredit);
     const generalExpenseTotal = allExpenses.filter(e => !isOwnerDrawing(e) && !isPur(e) && !isSal(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
