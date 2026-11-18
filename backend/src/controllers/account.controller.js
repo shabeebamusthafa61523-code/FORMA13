@@ -4123,6 +4123,49 @@ export const deleteSupplierPayment = async (req, res) => {
     if (!payment) {
       return res.status(404).json({ success: false, message: 'Payment record not found.' });
     }
+
+    // Revert any settled job purchases linked to this payment
+    try {
+      const jobsWithPayment = await FabricationJob.find({
+        'purchasesAndExpenses.creditSettlement.supplierPaymentId': payment._id
+      });
+      for (const job of jobsWithPayment) {
+        let jobUpdated = false;
+        for (const item of job.purchasesAndExpenses) {
+          if (String(item.creditSettlement?.supplierPaymentId) === String(payment._id)) {
+            item.paymentMode = 'Credit/Pay Later';
+            item.isCreditPurchase = true;
+            item.creditSettlement = undefined;
+            jobUpdated = true;
+            try {
+              await syncPurchaseOrExpense(job, item);
+            } catch (syncErr) {
+              console.error('[deleteSupplierPayment] sync error:', syncErr);
+            }
+          }
+        }
+        if (jobUpdated) {
+          await job.save();
+        }
+      }
+
+      // Revert any standalone supplier credits linked to this payment
+      await SupplierCredit.updateMany(
+        { supplierPaymentId: payment._id },
+        {
+          $set: {
+            isSettled: false,
+            settledDate: null,
+            settledPaymentMode: '',
+            settlementReference: '',
+            supplierPaymentId: null
+          }
+        }
+      );
+    } catch (revertErr) {
+      console.error('[deleteSupplierPayment] Revert error:', revertErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Payment record deleted successfully.'
