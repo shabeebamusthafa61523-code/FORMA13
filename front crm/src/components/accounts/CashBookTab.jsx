@@ -153,10 +153,21 @@ const CashBookTab = () => {
         ? cashRes.summary.expenseOpeningBalance
         : (baseExpOb + categoryObTotal);
 
+      const isCreditEntry = (e) => e.paymentMode === 'Credit/Pay Later' && e.status !== 'APPROVED';
       const totInc = backendEntries.filter(e => e.entryType === 'INCOME').reduce((s, i) => s + (i.amount || 0), 0);
-      const totPur = backendEntries.filter(e => e.entryType === 'EXPENSE' && (e.isPurchase || (e.categoryName || '').toLowerCase().includes('purchase') || e.type === 'Purchase')).reduce((s, i) => s + (i.amount || 0), 0);
-      const totGenExp = backendEntries.filter(e => e.entryType === 'EXPENSE' && !e.isPurchase && !(e.categoryName || '').toLowerCase().includes('purchase') && e.type !== 'Purchase').reduce((s, i) => s + (i.amount || 0), 0);
-      const totOutflow = totGenExp + totPur;
+      const totPurGross = backendEntries.filter(e => e.entryType === 'EXPENSE' && (e.isPurchase || (e.categoryName || '').toLowerCase().includes('purchase') || e.type === 'Purchase')).reduce((s, i) => s + (i.amount || 0), 0);
+      const totPurCredit = backendEntries.filter(e => e.entryType === 'EXPENSE' && (e.isPurchase || (e.categoryName || '').toLowerCase().includes('purchase') || e.type === 'Purchase') && isCreditEntry(e)).reduce((s, i) => s + (i.amount || 0), 0);
+      const totPur = (cashRes.success && cashRes.summary && typeof cashRes.summary.totalPurchase === 'number')
+        ? cashRes.summary.totalPurchase
+        : Math.max(0, totPurGross - totPurCredit);
+
+      const totGenExp = (cashRes.success && cashRes.summary && typeof cashRes.summary.totalGeneralExpense === 'number')
+        ? cashRes.summary.totalGeneralExpense
+        : backendEntries.filter(e => e.entryType === 'EXPENSE' && !e.isPurchase && !(e.categoryName || '').toLowerCase().includes('purchase') && e.type !== 'Purchase' && !isCreditEntry(e)).reduce((s, i) => s + (i.amount || 0), 0);
+
+      const totOutflow = (cashRes.success && cashRes.summary && typeof cashRes.summary.totalExpense === 'number')
+        ? cashRes.summary.totalExpense
+        : (totGenExp + totPur);
       
       const effInc = incOb + totInc;
       const effExp = expOb + totOutflow;

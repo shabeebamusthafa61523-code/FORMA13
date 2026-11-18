@@ -951,10 +951,14 @@ export const getCashBook = async (req, res) => {
     const expenseOpeningBalance = baseExpenseOpeningBalance + categoryOpeningBalanceTotal;
 
     // Calculate Summary Stats (Income, General Expense, Purchase Outflow, Net Profit/Loss)
+    // When a purchase or expense is on Credit/Pay Later and pending, deduct it so it does not falsely count as cash outflow
+    const isCreditExpense = (e) => e.paymentMode === 'Credit/Pay Later' && e.status !== 'APPROVED';
     const totalIncome = incomes.reduce((sum, item) => sum + (item.amount || 0), 0);
-    const totalPurchase = expenses.filter(e => e.isPurchase).reduce((sum, item) => sum + (item.amount || 0), 0);
-    const totalGeneralExpense = expenses.filter(e => !e.isPurchase).reduce((sum, item) => sum + (item.amount || 0), 0);
-    const totalExpense = totalGeneralExpense + totalPurchase; // Total Outflow
+    const grossPurchase = expenses.filter(e => e.isPurchase).reduce((sum, item) => sum + (item.amount || 0), 0);
+    const pendingPurchaseCredit = expenses.filter(e => e.isPurchase && isCreditExpense(e)).reduce((sum, item) => sum + (item.amount || 0), 0);
+    const totalPurchase = Math.max(0, grossPurchase - pendingPurchaseCredit);
+    const totalGeneralExpense = expenses.filter(e => !e.isPurchase && !isCreditExpense(e)).reduce((sum, item) => sum + (item.amount || 0), 0);
+    const totalExpense = totalGeneralExpense + totalPurchase; // Total Paid Cash Outflow
 
     const effectiveTotalIncome = incomeOpeningBalance + totalIncome;
     const effectiveTotalOutflow = expenseOpeningBalance + totalExpense;
@@ -971,6 +975,8 @@ export const getCashBook = async (req, res) => {
         openingBalance: incomeOpeningBalance - expenseOpeningBalance,
         totalIncome,
         effectiveTotalIncome,
+        grossPurchase,
+        pendingPurchaseCredit,
         totalGeneralExpense,
         totalPurchase,
         totalExpense,
@@ -1380,6 +1386,9 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
       const amt = Number(e.amount) || 0;
       if (isPur(e)) {
         m.grossPurchases += amt;
+        if (e.paymentMode === 'Credit/Pay Later' && e.status !== 'APPROVED') {
+          m.supplierCredits += amt;
+        }
       } else if (isSalary(e)) {
         m.salaries += amt;
       } else {

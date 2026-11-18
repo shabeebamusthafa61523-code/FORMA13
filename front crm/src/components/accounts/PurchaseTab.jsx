@@ -281,13 +281,14 @@ const PurchaseTab = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate Metrics
-  const totalPurchaseOutflow = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
+  // Calculate Metrics (Credit is deducted from total purchase outflow)
+  const totalGrossPurchase = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
   const totalPendingPurchase = purchases.reduce((sum, p) => {
     const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
     return sum + (isPending ? (Number(p.amount || p.totalAmount) || 0) : 0);
   }, 0);
-  const totalPaidPurchase = Math.max(0, totalPurchaseOutflow - totalPendingPurchase);
+  const totalPurchaseOutflow = Math.max(0, totalGrossPurchase - totalPendingPurchase);
+  const totalPaidPurchase = totalPurchaseOutflow;
 
   return (
     <div className="space-y-4">
@@ -603,13 +604,21 @@ const PurchaseTab = () => {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-slate-900 border border-purple-500/20 dark:border-purple-500/30 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Purchase Outflow</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Purchases (Paid Outflow)</p>
                 <TrendingDown size={16} className="text-purple-600 dark:text-purple-400" />
               </div>
               <h4 className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1.5 font-mono">
                 ₹{totalPurchaseOutflow.toLocaleString('en-IN')}
               </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5">{purchases.length} Purchase Orders / Bills</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {totalPendingPurchase > 0 ? (
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                    Gross ₹{totalGrossPurchase.toLocaleString('en-IN')} (-₹{totalPendingPurchase.toLocaleString('en-IN')} Credit Deducted)
+                  </span>
+                ) : (
+                  `${purchases.length} Purchase Orders / Bills`
+                )}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs">
