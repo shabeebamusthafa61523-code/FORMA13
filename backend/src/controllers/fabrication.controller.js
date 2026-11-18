@@ -1027,7 +1027,7 @@ export const addPurchaseExpense = async (req, res) => {
       rate: Number(rate) || 0,
       amount: calcAmount,
       paymentMode,
-      isCreditPurchase: paymentMode === 'Credit/Pay Later',
+      isCreditPurchase: /credit/i.test(paymentMode || ''),
       receiptUrl,
       notes
     });
@@ -1090,10 +1090,16 @@ export const updatePurchaseExpense = async (req, res) => {
     if (rate !== undefined) entry.rate = Number(rate);
     if (paymentMode !== undefined) {
         entry.paymentMode = paymentMode;
-        if (paymentMode === 'Credit/Pay Later') {
+        if (/credit/i.test(paymentMode)) {
           entry.isCreditPurchase = true;
-        } else if (!entry.creditSettlement?.isSettled) {
+          if (entry.creditSettlement) {
+            entry.creditSettlement.isSettled = false;
+          }
+        } else {
           entry.isCreditPurchase = false;
+          if (entry.creditSettlement) {
+            entry.creditSettlement.isSettled = false;
+          }
         }
       }
     if (receiptUrl !== undefined) entry.receiptUrl = receiptUrl;

@@ -249,9 +249,14 @@ const ExpenseReportsTab = () => {
       });
     }
   });
+  const dayGrossPurchases = Array.from(allDayPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+  const dayCreditPurchases = Array.from(allDayPurchasesMap.values()).reduce((sum, item) => {
+    const isCredit = /credit/i.test(item.paymentMode || '') || item.status === 'PENDING';
+    return sum + (isCredit ? (Number(item.amount || item.totalAmount) || 0) : 0);
+  }, 0);
   const dayPurchaseTotal = reportData?.summary?.purchaseTotal !== undefined
     ? reportData.summary.purchaseTotal
-    : Array.from(allDayPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+    : Math.max(0, dayGrossPurchases - dayCreditPurchases);
 
   const allDayGenExpMap = new Map();
   dayGenExpList.forEach(e => allDayGenExpMap.set(String(e._id || e.id), e));
@@ -447,9 +452,14 @@ const ExpenseReportsTab = () => {
       });
     }
   });
+  const monthGrossPurchases = Array.from(allMonthlyPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+  const monthCreditPurchases = Array.from(allMonthlyPurchasesMap.values()).reduce((sum, item) => {
+    const isCredit = /credit/i.test(item.paymentMode || '') || item.status === 'PENDING';
+    return sum + (isCredit ? (Number(item.amount || item.totalAmount) || 0) : 0);
+  }, 0);
   const monthPurchaseTotal = reportData?.summary?.purchaseTotal !== undefined
     ? reportData.summary.purchaseTotal
-    : Array.from(allMonthlyPurchasesMap.values()).reduce((sum, item) => sum + (Number(item.amount || item.totalAmount) || 0), 0);
+    : Math.max(0, monthGrossPurchases - monthCreditPurchases);
 
   const allMonthGenExpMap = new Map();
   monthGenExpList.forEach(e => allMonthGenExpMap.set(String(e._id || e.id), e));
@@ -1859,31 +1869,47 @@ const ExpenseReportsTab = () => {
           </div>
 
           {/* Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-purple-500/20 dark:border-purple-500/30 rounded-2xl p-4 shadow-2xs">
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Procurement Outflow</p>
-              <h4 className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 font-mono">
-                ₹{purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0).toLocaleString('en-IN')}
-              </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5">Inventory & Vendor Orders</p>
-            </div>
+          {(() => {
+            const purGross = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
+            const purCredit = purchases.filter(p => /credit/i.test(p.paymentMode || '') || p.status === 'PENDING').reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
+            const purNetOutflow = Math.max(0, purGross - purCredit);
+            const purApproved = purchases.filter(p => !(/credit/i.test(p.paymentMode || '')) && (p.status === 'APPROVED' || p.status === 'Paid')).reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-slate-900 border border-purple-500/20 dark:border-purple-500/30 rounded-2xl p-4 shadow-2xs">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Total Procurement (Paid Outflow)</p>
+                  <h4 className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 font-mono">
+                    ₹{purNetOutflow.toLocaleString('en-IN')}
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {purCredit > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                        Gross ₹{purGross.toLocaleString('en-IN')} (-₹{purCredit.toLocaleString('en-IN')} Credit Deducted)
+                      </span>
+                    ) : (
+                      "Inventory & Vendor Orders"
+                    )}
+                  </p>
+                </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs">
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Approved Vendor Bills</p>
-              <h4 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
-                ₹{purchases.filter(p => p.status === 'APPROVED' || p.status === 'Paid').reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0).toLocaleString('en-IN')}
-              </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5">Settled Accounts Payable</p>
-            </div>
+                <div className="bg-white dark:bg-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-2xl p-4 shadow-2xs">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Approved & Paid Purchases</p>
+                  <h4 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+                    ₹{purApproved.toLocaleString('en-IN')}
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Disbursed Cash & Bank Outflows</p>
+                </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-4 shadow-2xs">
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Pending Vendor Bills</p>
-              <h4 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 font-mono">
-                ₹{purchases.filter(p => p.status !== 'APPROVED' && p.status !== 'Paid').reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0).toLocaleString('en-IN')}
-              </h4>
-              <p className="text-[10px] text-slate-400 mt-0.5">Unsettled / Approval Pending</p>
-            </div>
-          </div>
+                <div className="bg-white dark:bg-slate-900 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-4 shadow-2xs">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Pending / Credit Purchases</p>
+                  <h4 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 font-mono">
+                    ₹{purCredit.toLocaleString('en-IN')}
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Unsettled Credit / Pay Later</p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Table */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
@@ -1934,7 +1960,14 @@ const ExpenseReportsTab = () => {
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-black text-purple-600 dark:text-purple-400 whitespace-nowrap">
-                          - ₹{(Number(pur.amount || pur.totalAmount) || 0).toLocaleString('en-IN')}
+                          {/credit/i.test(pur.paymentMode || '') || pur.status === 'PENDING' ? (
+                            <div>
+                              <span className="text-amber-600 dark:text-amber-400">- ₹{(Number(pur.amount || pur.totalAmount) || 0).toLocaleString('en-IN')}</span>
+                              <span className="block text-[9px] text-amber-500 font-sans font-semibold">Credit (Deducted)</span>
+                            </div>
+                          ) : (
+                            <span>- ₹{(Number(pur.amount || pur.totalAmount) || 0).toLocaleString('en-IN')}</span>
+                          )}
                         </td>
                       </tr>
                     ))

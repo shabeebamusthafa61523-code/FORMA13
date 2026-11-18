@@ -452,7 +452,36 @@ export const updateExpense = async (req, res) => {
       expense.amount = Number(amount);
       expense.totalAmount = Number(amount);
     }
-    if (paymentMode) expense.paymentMode = paymentMode;
+    if (paymentMode) {
+      expense.paymentMode = paymentMode;
+      if (/credit/i.test(paymentMode)) {
+        expense.status = 'PENDING';
+      } else {
+        expense.status = 'APPROVED';
+      }
+    }
+    if (expense.syncSource?.fabricationJobId && expense.syncSource?.fabricationItemId) {
+      try {
+        const job = await FabricationJob.findOne({ jobId: expense.syncSource.fabricationJobId });
+        if (job) {
+          const jobItem = job.purchasesAndExpenses.id(expense.syncSource.fabricationItemId);
+          if (jobItem) {
+            if (paymentMode) {
+              jobItem.paymentMode = paymentMode;
+              jobItem.isCreditPurchase = /credit/i.test(paymentMode);
+              if (jobItem.creditSettlement) {
+                jobItem.creditSettlement.isSettled = !/credit/i.test(paymentMode);
+              }
+            }
+            if (amount !== undefined) jobItem.amount = Number(amount);
+            if (paidTo !== undefined) jobItem.vendorName = paidTo.trim();
+            await job.save();
+          }
+        }
+      } catch (err) {
+        console.warn('Sync back to FabricationJob error:', err);
+      }
+    }
     if (paidTo !== undefined) expense.paidTo = paidTo ? paidTo.trim() : '';
     if (description !== undefined) expense.description = description.trim();
 
@@ -1116,11 +1145,12 @@ export const getDailyReport = async (req, res) => {
     const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
     const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
 
+    const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const purchaseCreditExpenses = expenses.filter(e => !isOwnerDrawing(e) && isPur(e) && (/credit/i.test(e.paymentMode || '') || e.status === 'PENDING')).reduce((sum, e) => sum + (e.amount || 0), 0);
     const directCreditTotal = (supplierCredits || []).reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
     const vendorOpeningCreditTotal = 0;
-    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
-    const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const purchaseTotal = Math.max(0, expensePurchaseTotal - directCreditTotal);
+    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal + purchaseCreditExpenses;
+    const purchaseTotal = Math.max(0, expensePurchaseTotal - totalVendorCredit);
     const rawSalaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const dailyWageCreditTotal = (jobsWithCredits || []).reduce((sum, j) => {
       const dayCredits = (j.wageCredits || []).filter(wc => {
@@ -1156,11 +1186,11 @@ export const getDailyReport = async (req, res) => {
         effectiveTotalOutflow,
         grossSalaryTotal: rawSalaryTotal,
         wageCreditTotal: dailyWageCreditTotal,
-        grossSalaryTotal: rawSalaryTotal,
-        wageCreditTotal: monthlyWageCreditTotal,
         salaryTotal,
         purchaseTotal,
-        cashPurchaseTotal: expensePurchaseTotal,
+        grossPurchaseTotal: expensePurchaseTotal,
+        purchaseCreditTotal: purchaseCreditExpenses,
+        cashPurchaseTotal: purchaseTotal,
         directCreditTotal,
         vendorOpeningCreditTotal,
         totalVendorCredit,
@@ -1229,11 +1259,12 @@ export const getMonthlyReport = async (req, res) => {
     const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
     const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
 
+    const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const purchaseCreditExpenses = expenses.filter(e => !isOwnerDrawing(e) && isPur(e) && (/credit/i.test(e.paymentMode || '') || e.status === 'PENDING')).reduce((sum, e) => sum + (e.amount || 0), 0);
     const directCreditTotal = (supplierCredits || []).reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
     const vendorOpeningCreditTotal = 0;
-    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
-    const expensePurchaseTotal = expenses.filter(e => !isOwnerDrawing(e) && isPur(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const purchaseTotal = Math.max(0, expensePurchaseTotal - directCreditTotal);
+    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal + purchaseCreditExpenses;
+    const purchaseTotal = Math.max(0, expensePurchaseTotal - totalVendorCredit);
     const rawSalaryTotal = expenses.filter(e => !isOwnerDrawing(e) && isSalary(e)).reduce((sum, e) => sum + (e.amount || 0), 0);
     const monthlyWageCreditTotal = (jobsWithCredits || []).reduce((sum, j) => {
       const monthCredits = (j.wageCredits || []).filter(wc => {
@@ -1269,7 +1300,9 @@ export const getMonthlyReport = async (req, res) => {
         effectiveTotalOutflow,
         salaryTotal,
         purchaseTotal,
-        cashPurchaseTotal: expensePurchaseTotal,
+        grossPurchaseTotal: expensePurchaseTotal,
+        purchaseCreditTotal: purchaseCreditExpenses,
+        cashPurchaseTotal: purchaseTotal,
         directCreditTotal,
         vendorOpeningCreditTotal,
         totalVendorCredit,
@@ -1389,7 +1422,7 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
       const amt = Number(e.amount) || 0;
       if (isPur(e)) {
         m.grossPurchases += amt;
-        if (e.paymentMode === 'Credit/Pay Later' && e.status !== 'APPROVED') {
+        if (/credit/i.test(e.paymentMode || '') || (e.isPurchase && e.status === 'PENDING')) {
           m.supplierCredits += amt;
         }
       } else if (isSalary(e)) {
@@ -1686,9 +1719,12 @@ export const getTotalReport = async (req, res) => {
     });
 
     // 5. Operating Outflows & Profits (Credit value minused from total expenses)
+    const purchaseCreditTotal = purchaseExpenses
+      .filter(e => /credit/i.test(e.paymentMode || '') || e.status === 'PENDING')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const directCreditTotal = supplierCredits.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
     const vendorOpeningCreditTotal = vendors.reduce((sum, v) => sum + (Number(v.openingBalance) || 0), 0);
-    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal;
+    const totalVendorCredit = directCreditTotal + vendorOpeningCreditTotal + purchaseCreditTotal;
     const totalPurchases = Math.max(0, purchaseTotal - totalVendorCredit);
     const totalWageCreditAll = (jobs || []).reduce((sum, j) => sum + (j.wageCredits || []).reduce((s, c) => s + (Number(c.amount) || 0), 0), 0);
     const netSalaryTotal = Math.max(0, salaryTotal - totalWageCreditAll);
@@ -1713,7 +1749,8 @@ export const getTotalReport = async (req, res) => {
         totalCapital,
         purchaseTotal: totalPurchases,
         grossPurchaseTotal: purchaseTotal,
-        cashPurchaseTotal: purchaseTotal,
+        purchaseCreditTotal,
+        cashPurchaseTotal: totalPurchases,
         directCreditTotal,
         vendorOpeningCreditTotal,
         totalVendorCredit,

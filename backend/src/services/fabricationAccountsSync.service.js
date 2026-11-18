@@ -160,7 +160,7 @@ export const syncPurchaseOrExpense = async (job, item) => {
       'syncSource.fabricationItemId': item._id
     });
 
-    const isPendingCredit = item.paymentMode === 'Credit/Pay Later' && !item.creditSettlement?.isSettled;
+    const isPendingCredit = /credit/i.test(item.paymentMode || '') && !item.creditSettlement?.isSettled;
 
     const expenseData = {
       date: item.date || new Date(),

@@ -255,10 +255,12 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
     const amt = Number(item.amount) || 0;
     if (item.type === 'Purchase') {
       grossPurchases += amt;
-      if (item.paymentMode === 'Credit/Pay Later') {
+      const isCredit = /credit/i.test(item.paymentMode || '') || item.isCreditPurchase;
+      const isSettled = Boolean(item.creditSettlement && item.creditSettlement.isSettled);
+      if (isCredit && !isSettled) {
         totalPurchaseCredit += amt;
       }
-      if (item.creditSettlement && item.creditSettlement.isSettled) {
+      if (isSettled) {
         totalSettledCredit += amt;
       }
     } else {
