@@ -275,14 +275,19 @@ const PurchaseTab = () => {
       (p.paidTo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.billNo || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || (p.status === 'APPROVED' ? 'PAID' : 'PENDING') === statusFilter.toUpperCase();
+    const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+    const computedStatus = isPending ? 'PENDING' : 'PAID';
+    const matchesStatus = statusFilter === 'ALL' || computedStatus === statusFilter.toUpperCase();
     return matchesSearch && matchesStatus;
   });
 
   // Calculate Metrics
   const totalPurchaseOutflow = purchases.reduce((sum, p) => sum + (Number(p.amount || p.totalAmount) || 0), 0);
-  const totalPaidPurchase = purchases.reduce((sum, p) => sum + (p.status === 'APPROVED' || p.status === 'Paid' ? (Number(p.amount || p.totalAmount) || 0) : 0), 0);
-  const totalPendingPurchase = purchases.reduce((sum, p) => sum + (p.status === 'PENDING' || p.status === 'Pending' ? (Number(p.amount || p.totalAmount) || 0) : 0), 0);
+  const totalPendingPurchase = purchases.reduce((sum, p) => {
+    const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+    return sum + (isPending ? (Number(p.amount || p.totalAmount) || 0) : 0);
+  }, 0);
+  const totalPaidPurchase = Math.max(0, totalPurchaseOutflow - totalPendingPurchase);
 
   return (
     <div className="space-y-4">
@@ -679,12 +684,20 @@ const PurchaseTab = () => {
                         <td className="py-3 px-3">{p.description || 'Equipment Purchase'}</td>
                         <td className="py-3 px-3 text-slate-500">{new Date(p.date || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            (p.status === 'APPROVED' || p.status === 'Paid') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                            'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                          }`}>
-                            {(p.status === 'APPROVED' || p.status === 'Paid') ? 'PAID' : 'PENDING'}
-                          </span>
+                          {(() => {
+                            const isPending = p.status === 'PENDING' || p.status === 'Pending' || (p.paymentMode === 'Credit/Pay Later' && p.status !== 'APPROVED');
+                            return isPending ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/40">
+                                <Clock size={10} />
+                                <span>CREDIT DUE</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/40">
+                                <CheckCircle2 size={10} />
+                                <span>PAID ({p.paymentMode || 'DIRECT'})</span>
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-black text-slate-900 dark:text-white">
                           ₹{(Number(p.amount || p.totalAmount) || 0).toLocaleString('en-IN')}

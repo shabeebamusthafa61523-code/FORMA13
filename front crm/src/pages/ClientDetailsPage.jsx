@@ -1508,12 +1508,17 @@ const ClientDetailsPage = () => {
               <span className="text-[11px] font-bold uppercase text-slate-400 block">Total Purchases & Expenses</span>
               <div className="flex items-baseline justify-end gap-1.5">
                 {Number(fin.totalPurchaseCredit || 0) > 0 && (
-                  <span
-                    className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800"
-                    title={`Gross: ${formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)} | Pending Supplier Credit: -${formatCurrency(fin.totalPurchaseCredit)}`}
-                  >
-                    -{formatCurrency(fin.totalPurchaseCredit)} Credit Due
-                  </span>
+                  <>
+                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mr-0.5">
+                      Gross: {formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)}
+                    </span>
+                    <span
+                      className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800"
+                      title={`Gross: ${formatCurrency((fin.grossPurchases || fin.totalPurchases) + fin.totalExpenses)} | Pending Supplier Credit: -${formatCurrency(fin.totalPurchaseCredit)}`}
+                    >
+                      -{formatCurrency(fin.totalPurchaseCredit)} Credit Due
+                    </span>
+                  </>
                 )}
                 {Number(fin.totalSettledCredit || 0) > 0 && (
                   <span
