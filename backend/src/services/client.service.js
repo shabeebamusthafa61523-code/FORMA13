@@ -1,6 +1,7 @@
 import Client from '../models/client.model.js';
 import ClientLead from '../models/clientLead.model.js';
 import FabricationJob from '../models/fabricationJob.model.js';
+import { syncQuotationToSales } from './fabricationAccountsSync.service.js';
 
 export const generateClientId = async () => {
   const currentYear = new Date().getFullYear();
@@ -226,12 +227,32 @@ export const syncClientChangesToLeadsAndWorkspace = async (client) => {
     if (client.clientName) jobUpdateFields.clientName = client.clientName;
     if (client.phone) jobUpdateFields.clientPhone = client.phone;
     if (client.email) jobUpdateFields.clientEmail = client.email;
+    if (client.clientDate) {
+      jobUpdateFields.startDate = new Date(client.clientDate);
+    }
+
+    const jobQuery = {
+      $or: [
+        { client: client._id },
+        ...(client.phone ? [{ clientPhone: client.phone }] : [])
+      ]
+    };
 
     if (Object.keys(jobUpdateFields).length > 0) {
       await FabricationJob.updateMany(
-        { client: client._id },
+        jobQuery,
         { $set: jobUpdateFields }
       );
+
+      // Re-sync Quotation to Accounts Income for all updated jobs so sales invoice dates stay harmonized
+      try {
+        const affectedJobs = await FabricationJob.find(jobQuery);
+        for (const j of affectedJobs) {
+          await syncQuotationToSales(j);
+        }
+      } catch (syncErr) {
+        console.warn('Warning: syncQuotationToSales failed during client sync:', syncErr.message);
+      }
     }
 
     // 2. Cascade update to linked ClientLead records
@@ -248,6 +269,9 @@ export const syncClientChangesToLeadsAndWorkspace = async (client) => {
     if (client.companyName) leadUpdateFields.companyName = client.companyName;
     if (client.phone) leadUpdateFields.phone = client.phone;
     if (client.email) leadUpdateFields.email = client.email;
+    if (client.clientDate) {
+      leadUpdateFields.leadsReceivedDate = new Date(client.clientDate);
+    }
 
     if (Object.keys(leadUpdateFields).length > 0) {
       await ClientLead.updateMany(

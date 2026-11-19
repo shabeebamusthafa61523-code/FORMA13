@@ -27,8 +27,10 @@ import {
   Layers,
   ArrowRight,
   Wallet,
-  Database
+  Database,
+  MessageCircle
 } from 'lucide-react';
+import { useToast } from '../ToastProvider';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -107,7 +109,9 @@ const QuotationInvoiceModal = ({
   financials = {}
 }) => {
   const invoiceRef = useRef(null);
+  const { showToast } = useToast();
   const [downloading, setDownloading] = useState(false);
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
 
   // Overall Financial View toggle (default OFF per user preference)
@@ -344,6 +348,225 @@ const QuotationInvoiceModal = ({
   // Enabled terms to display on invoice
   const activeTerms = terms.filter(t => t.enabled);
 
+  // Helper to sanitize cloned doc for html2canvas
+  const sanitizeClonedDocStyles = (clonedDoc) => {
+    try {
+      function oklchToRgb(l, c, h) {
+        const hr = (h || 0) * Math.PI / 180;
+        const a = (c || 0) * Math.cos(hr);
+        const b = (c || 0) * Math.sin(hr);
+
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+        const toRgb = (x) => {
+          x = Math.max(0, Math.min(1, x));
+          return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        };
+
+        const R = Math.round(toRgb(r) * 255);
+        const G = Math.round(toRgb(g) * 255);
+        const B = Math.round(toRgb(bl) * 255);
+
+        return `rgb(${R}, ${G}, ${B})`;
+      }
+
+      const replaceOklch = (str) => {
+        if (!str || typeof str !== 'string') return str;
+        return str
+          .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
+            let lNum = parseFloat(l);
+            if (l.includes('%') || lNum > 1) lNum = lNum / 100;
+            return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
+          })
+          .replace(/oklch\([^)]+\)/gi, '#475569')
+          .replace(/oklab\([^)]+\)/gi, '#475569')
+          .replace(/color-mix\([^)]+\)/gi, '#475569');
+      };
+
+      const styleElements = clonedDoc.querySelectorAll('style');
+      styleElements.forEach((style) => {
+        try {
+          if (style.textContent) style.textContent = replaceOklch(style.textContent);
+        } catch (e) {}
+      });
+
+      const allElements = clonedDoc.querySelectorAll('*');
+      allElements.forEach((el) => {
+        try {
+          const inlineStyle = el.getAttribute('style');
+          if (inlineStyle && (inlineStyle.includes('oklab') || inlineStyle.includes('oklch') || inlineStyle.includes('color-mix'))) {
+            el.setAttribute('style', replaceOklch(inlineStyle));
+          }
+        } catch (e) {}
+      });
+
+      // Ensure container matches full A4 width cleanly without dialog shadows or rounded borders
+      const target = clonedDoc.getElementById('printable-quotation-invoice');
+      if (target) {
+        target.style.boxShadow = 'none';
+        target.style.border = 'none';
+        target.style.borderRadius = '0';
+        target.style.width = '800px';
+        target.style.maxWidth = '800px';
+        target.style.minWidth = '800px';
+        target.style.margin = '0 auto';
+        target.style.padding = '24px 32px';
+        if (target.parentElement) {
+          target.parentElement.style.padding = '0';
+          target.parentElement.style.margin = '0';
+          target.parentElement.style.display = 'flex';
+          target.parentElement.style.justifyContent = 'center';
+          target.parentElement.style.backgroundColor = '#ffffff';
+        }
+      }
+
+      // Hide interactive-only buttons/icons from PDF / Image export
+      const noPrint = clonedDoc.querySelectorAll('.print\\:hidden, .no-print');
+      noPrint.forEach((el) => {
+        el.style.display = 'none';
+      });
+    } catch (e) {}
+  };
+
+  // Generate Quotation Bill Image File
+  const generateQuotationImageFile = async () => {
+    const element = invoiceRef.current;
+    if (!element) return null;
+    const cleanClient = (clientName || 'Client').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `Quotation_Bill_${cleanClient}_${job?.jobId || 'FAB'}.png`;
+
+    const targetWidth = 800;
+    const targetHeight = element.scrollHeight || element.offsetHeight || 1200;
+
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: targetWidth,
+      height: targetHeight,
+      windowWidth: targetWidth,
+      windowHeight: targetHeight,
+      onclone: sanitizeClonedDocStyles
+    });
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.98));
+    if (!blob) return null;
+
+    const file = new File([blob], filename, { type: 'image/png' });
+    return { file, blob, filename };
+  };
+
+  // WhatsApp Bill Image Sender
+  const handleSendWhatsApp = async () => {
+    let targetPhone = phone || client?.phone || job?.clientPhone || client?.mobile || '';
+    let digits = String(targetPhone || '').replace(/\D/g, '');
+
+    if (!digits) {
+      const inputPhone = prompt(`Enter WhatsApp / Phone Number for ${clientName}:`);
+      if (!inputPhone) return;
+      digits = inputPhone.replace(/\D/g, '');
+    }
+
+    if (digits.length === 10) {
+      digits = `91${digits}`;
+    }
+
+    if (digits.length < 10) {
+      if (showToast) showToast('Invalid phone number for WhatsApp.', 'error');
+      else alert('Invalid phone number for WhatsApp.');
+      return;
+    }
+
+    setIsSendingWhatsApp(true);
+    if (showToast) showToast('Generating Quotation Image for WhatsApp...', 'info');
+
+    try {
+      const imgData = await generateQuotationImageFile();
+      if (!imgData) {
+        throw new Error('Could not generate quotation image.');
+      }
+
+      const text = `Hello *${clientName}*,
+
+Here is your *Fabrication Quotation & Work Measurements* from *FABTEC*:
+📋 Ref: *${invoiceNumber}*
+📅 Date: ${issueDate}
+💰 Total Quotation: *₹${Math.round(totalQuoted).toLocaleString('en-IN')}*
+💵 Advance Required: *₹${Math.round(totalQuoted * 0.5).toLocaleString('en-IN')}*
+⚠️ Balance Remaining: *₹${Math.round(balanceDue).toLocaleString('en-IN')}*
+
+Thank you for choosing FABTEC!`;
+
+      // 1. Mobile & Modern Web Share API: Shares Picture Image file directly to WhatsApp
+      if (navigator.canShare && navigator.canShare({ files: [imgData.file] })) {
+        try {
+          await navigator.share({
+            files: [imgData.file],
+            title: `Quotation ${invoiceNumber}`,
+            text: text
+          });
+          if (showToast) showToast('Quotation image & text shared to WhatsApp!', 'success');
+          return;
+        } catch (shareError) {
+          if (shareError.name !== 'AbortError') {
+            console.warn('Web Share failed, using clipboard/web fallback:', shareError);
+          } else {
+            return;
+          }
+        }
+      }
+
+      // 2. Desktop: Copy Picture image to Clipboard so user can press Ctrl+V directly in WhatsApp Web
+      let copiedToClipboard = false;
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': imgData.blob })
+          ]);
+          copiedToClipboard = true;
+        } catch (clipErr) {
+          console.warn('Clipboard write image failed:', clipErr);
+        }
+      }
+
+      // 3. Download the picture image file as backup
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(imgData.blob);
+      link.download = imgData.filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+
+      // 4. Open WhatsApp Web / App with text pre-filled
+      const whatsappUrl = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(text)}`;
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+
+      if (showToast) {
+        if (copiedToClipboard) {
+          showToast(`Quotation Image copied to Clipboard! In WhatsApp, press Ctrl+V to paste the image.`, 'success');
+        } else {
+          showToast(`Quotation Image '${imgData.filename}' downloaded! Click 📎 in WhatsApp to attach the picture image.`, 'success');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to send WhatsApp image:', err);
+      if (showToast) showToast('Failed to prepare Quotation image. Please try again.', 'error');
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
+
   const handleDownloadPdf = async () => {
     const element = invoiceRef.current;
     if (!element) return;
@@ -353,84 +576,7 @@ const QuotationInvoiceModal = ({
       const cleanClient = clientName.replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `Quotation_Invoice_${cleanClient}_${job?.jobId || 'FAB'}.pdf`;
 
-      // Helper to sanitize cloned doc for html2canvas
-      const sanitizeClonedDocStyles = (clonedDoc) => {
-        try {
-          function oklchToRgb(l, c, h) {
-            const hr = (h || 0) * Math.PI / 180;
-            const a = (c || 0) * Math.cos(hr);
-            const b = (c || 0) * Math.sin(hr);
 
-            const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-            const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-            const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
-
-            const l3 = l_ * l_ * l_;
-            const m3 = m_ * m_ * m_;
-            const s3 = s_ * s_ * s_;
-
-            let r = +4.0767434720 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-            let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-            let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
-
-            const toRgb = (x) => {
-              x = Math.max(0, Math.min(1, x));
-              return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
-            };
-
-            const R = Math.round(toRgb(r) * 255);
-            const G = Math.round(toRgb(g) * 255);
-            const B = Math.round(toRgb(bl) * 255);
-
-            return `rgb(${R}, ${G}, ${B})`;
-          }
-
-          const replaceOklch = (str) => {
-            if (!str || typeof str !== 'string') return str;
-            return str
-              .replace(/oklch\(\s*([\d.]+)(?:%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)/gi, (match, l, c, h) => {
-                let lNum = parseFloat(l);
-                if (l.includes('%') || lNum > 1) lNum = lNum / 100;
-                return oklchToRgb(lNum, parseFloat(c), parseFloat(h));
-              })
-              .replace(/oklch\([^)]+\)/gi, '#475569')
-              .replace(/oklab\([^)]+\)/gi, '#475569')
-              .replace(/color-mix\([^)]+\)/gi, '#475569');
-          };
-
-          const styleElements = clonedDoc.querySelectorAll('style');
-          styleElements.forEach((style) => {
-            try {
-              if (style.textContent) style.textContent = replaceOklch(style.textContent);
-            } catch (e) {}
-          });
-
-          const allElements = clonedDoc.querySelectorAll('*');
-          allElements.forEach((el) => {
-            try {
-              const inlineStyle = el.getAttribute('style');
-              if (inlineStyle && (inlineStyle.includes('oklab') || inlineStyle.includes('oklch') || inlineStyle.includes('color-mix'))) {
-                el.setAttribute('style', replaceOklch(inlineStyle));
-              }
-            } catch (e) {}
-          });
-          // Ensure container matches full A4 width cleanly without dialog shadows or rounded borders
-          const target = clonedDoc.getElementById('printable-quotation-invoice');
-          if (target) {
-            target.style.boxShadow = 'none';
-            target.style.border = 'none';
-            target.style.borderRadius = '0';
-            target.style.width = '100%';
-            target.style.maxWidth = '100%';
-          }
-
-          // Hide interactive-only buttons/icons from PDF export
-          const noPrint = clonedDoc.querySelectorAll('.print\\:hidden, .no-print');
-          noPrint.forEach((el) => {
-            el.style.display = 'none';
-          });
-        } catch (e) {}
-      };
 
       const opt = {
         margin: [6, 6, 6, 6],
@@ -530,6 +676,26 @@ const QuotationInvoiceModal = ({
             >
               <Printer size={15} />
               <span className="hidden sm:inline">Print</span>
+            </button>
+
+            {/* WhatsApp Bill Image Button */}
+            <button
+              onClick={handleSendWhatsApp}
+              disabled={isSendingWhatsApp}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+              title="Share Quotation Bill Image to Client on WhatsApp"
+            >
+              {isSendingWhatsApp ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Preparing...</span>
+                </>
+              ) : (
+                <>
+                  <MessageCircle size={15} />
+                  <span>WhatsApp Bill</span>
+                </>
+              )}
             </button>
 
             {/* Download PDF Button */}
@@ -765,7 +931,7 @@ const QuotationInvoiceModal = ({
           <div 
             ref={invoiceRef}
             id="printable-quotation-invoice"
-            className="w-full max-w-[800px] bg-white text-slate-900 px-6 sm:px-8 py-5 sm:py-6 rounded-2xl shadow-xl border border-slate-200 space-y-3 relative overflow-hidden h-fit"
+            className="w-full max-w-[800px] mx-auto bg-white text-slate-900 px-6 sm:px-8 py-5 sm:py-6 rounded-2xl shadow-xl border border-slate-200 space-y-3 relative overflow-hidden h-fit"
             style={{ 
               fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
               backgroundColor: '#ffffff',
@@ -802,9 +968,10 @@ const QuotationInvoiceModal = ({
               className="w-full rounded-full" 
             />
 
-            {/* Header: Company Logo & Document Metadata */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: '#e2e8f0' }}>
-              <div className="flex flex-col items-start space-y-1">
+            {/* Header: Company Logo, Center Document Title & Document Metadata */}
+            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: '#e2e8f0' }}>
+              {/* Left Column: Company Logo & Details */}
+              <div className="w-full sm:flex-1 flex flex-col items-center sm:items-start space-y-1 text-center sm:text-left">
                 {/* Official Company Logo */}
                 {logoLoaded ? (
                   <img 
@@ -828,31 +995,33 @@ const QuotationInvoiceModal = ({
                 </div>
               </div>
 
-              {/* Document Meta Block */}
-              <div className="flex flex-col sm:items-end space-y-1.5">
+              {/* Center Column: OFFICIAL QUOTATION Title Badge */}
+              <div className="w-full sm:flex-1 flex flex-col items-center justify-center pt-1 text-center">
                 <div 
                   style={{ letterSpacing: '2px', backgroundColor: '#0f172a', color: '#ffffff' }}
-                  className="inline-block px-3 py-0.5 text-[10.5px] font-black uppercase rounded-md shadow-xs"
+                  className="inline-flex items-center justify-center px-4 py-1.5 text-[11px] font-black uppercase rounded-md shadow-xs text-center leading-none"
                 >
                   OFFICIAL QUOTATION
                 </div>
-                <div className="sm:text-right space-y-0.5 text-xs">
-                  <p className="font-mono font-bold text-xs tracking-tight" style={{ color: '#0f172a' }}>
-                    {invoiceNumber}
-                  </p>
-                  <div className="flex items-center sm:justify-end gap-1.5 text-[11px]" style={{ color: '#475569' }}>
-                    <Calendar size={13} style={{ color: '#94a3b8' }} />
-                    <span>Date: <strong style={{ color: '#0f172a' }}>{issueDate}</strong></span>
-                    <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
-                      <Edit3 size={11} />
-                      <input
-                        type="date"
-                        value={customInvoiceDate}
-                        onChange={(e) => setCustomInvoiceDate(e.target.value)}
-                        className="sr-only"
-                      />
-                    </label>
-                  </div>
+              </div>
+
+              {/* Right Column: Reference Number & Date */}
+              <div className="w-full sm:flex-1 flex flex-col items-center sm:items-end space-y-1 text-center sm:text-right text-xs">
+                <p className="font-mono font-bold text-xs tracking-tight" style={{ color: '#0f172a' }}>
+                  {invoiceNumber}
+                </p>
+                <div className="flex items-center sm:justify-end gap-1.5 text-[11px]" style={{ color: '#475569' }}>
+                  <Calendar size={13} style={{ color: '#94a3b8' }} />
+                  <span>Date: <strong style={{ color: '#0f172a' }}>{issueDate}</strong></span>
+                  <label className="cursor-pointer text-indigo-600 hover:text-indigo-800 p-0.5 rounded hover:bg-indigo-50 transition-colors inline-flex items-center print:hidden" title="Click to edit date">
+                    <Edit3 size={11} />
+                    <input
+                      type="date"
+                      value={customInvoiceDate}
+                      onChange={(e) => setCustomInvoiceDate(e.target.value)}
+                      className="sr-only"
+                    />
+                  </label>
                 </div>
               </div>
             </div>

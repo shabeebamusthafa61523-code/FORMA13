@@ -67,7 +67,9 @@ const EditClientModal = ({ isOpen, onClose, client, onSuccess }) => {
 
       const payload = {
         ...client,
-        clientDate: formData.clientDate ? new Date(formData.clientDate) : new Date(),
+        clientDate: formData.clientDate 
+          ? new Date(`${formData.clientDate}T12:00:00.000Z`) 
+          : new Date(),
         clientName: cleanName,
         companyName: client.companyName || cleanName,
         phone: cleanPhone,

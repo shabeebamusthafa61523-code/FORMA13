@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard,
+  Coins,
   Users, 
   UserCheck,
   Building2,
@@ -122,6 +123,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
   const showClientLeads = isSuper || hasPerm('Client Leads', '/client-leads') || hasPerm('Leads', '/client-leads') || hasPerm('Clients', '/clients');
   const showFabrication = isSuper || hasPerm('Workspace', '/fabrication') || hasPerm('Fabrication', '/fabrication') || hasPerm('Fabrication Works', '/fabrication') || !userPermissions || userPermissions.length === 0;
   const showGeneralExpense = isSuper || hasPerm('General expense', '/general-expenses') || hasPerm('General Expense', '/general-expenses') || hasPerm('Expense', '/accounts/expenses') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
+  const showAdditionalIncome = isSuper || hasPerm('Additional Income', '/additional-income') || hasPerm('Income', '/additional-income') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showAccounts = isSuper || visibleAccountsSubItems.length > 0 || hasPerm('Accounts', '/accounts');
   const showMonthlyPnL = isSuper || hasPerm('Monthly P&L', '/monthly-pnl') || hasPerm('Monthly Profit & Loss', '/monthly-pnl') || hasPerm('Profit and Loss', '/accounts/reports') || hasPerm('Accounts', '/accounts') || !userPermissions || userPermissions.length === 0;
   const showShare = isSuper || hasPerm('Share', '/accounts/share') || hasPerm('Share', '/share') || hasPerm('Partner Share', '/accounts/share');
@@ -358,6 +360,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
                 </div>
               )}
             </div>
+          )}
+
+          {/* Additional Income (Direct Top-Level Menu Item) */}
+          {showAdditionalIncome && (
+            <Link
+              to="/additional-income"
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/additional-income'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title={isCollapsed ? 'Additional Income' : undefined}
+            >
+              <Coins size={20} className="shrink-0" />
+              {!isCollapsed && <span className="truncate">Additional Income</span>}
+            </Link>
           )}
 
           {/* Monthly Profit & Loss (Pure P&L) */}
@@ -622,6 +640,22 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen })
                 </div>
               )}
             </div>
+          )}
+
+          {/* Additional Income (Direct Top-Level Menu Item - Mobile) */}
+          {showAdditionalIncome && (
+            <Link
+              to="/additional-income"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold transition-all ${
+                activePath === '/additional-income'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Coins size={20} className="shrink-0" />
+              <span>Additional Income</span>
+            </Link>
           )}
 
           {/* Monthly Profit & Loss (Mobile) */}

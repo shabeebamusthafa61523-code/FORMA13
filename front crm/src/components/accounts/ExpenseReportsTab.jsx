@@ -306,6 +306,21 @@ const ExpenseReportsTab = () => {
       });
     });
 
+    // 1B. Day Additional Incomes
+    const dayAddlIncomes = Array.isArray(reportData?.additionalIncomes) ? reportData.additionalIncomes : [];
+    dayAddlIncomes.forEach(ai => {
+      combined.push({
+        _id: ai._id || ai.id,
+        flowType: 'INCOME',
+        date: ai.date || dailyDate,
+        title: `Additional Income: ${ai.source}`,
+        category: 'Additional Income',
+        payee: ai.source,
+        paymentMode: ai.paymentMode || 'Bank Transfer',
+        amount: Number(ai.amount || 0)
+      });
+    });
+
     // 2. Day Capitals
     dayCapitalsList.forEach(cap => {
       combined.push({
@@ -492,6 +507,21 @@ const ExpenseReportsTab = () => {
       });
     });
 
+    // 1B. Month Additional Incomes
+    const monthAddlIncomes = Array.isArray(reportData?.additionalIncomes) ? reportData.additionalIncomes : [];
+    monthAddlIncomes.forEach(ai => {
+      combined.push({
+        _id: ai._id || ai.id,
+        flowType: 'INCOME',
+        date: ai.date,
+        title: `Additional Income: ${ai.source}`,
+        category: 'Additional Income',
+        payee: ai.source,
+        paymentMode: ai.paymentMode || 'Bank Transfer',
+        amount: Number(ai.amount || 0)
+      });
+    });
+
     monthCapitalsList.forEach(cap => {
       combined.push({
         _id: cap._id || cap.id,
@@ -573,6 +603,21 @@ const ExpenseReportsTab = () => {
         payee: inc.clientName || 'Client',
         paymentMode: inc.paymentMethod || 'Bank Transfer',
         amount: getPaidIncomeAmt(inc)
+      });
+    });
+
+    // 1B. Lifetime Additional Incomes
+    const lifetimeAddlIncomes = Array.isArray(reportData?.additionalIncomes) ? reportData.additionalIncomes : [];
+    lifetimeAddlIncomes.forEach(ai => {
+      combined.push({
+        _id: ai._id || ai.id,
+        flowType: 'INCOME',
+        date: ai.date,
+        title: `Additional Income: ${ai.source}`,
+        category: 'Additional Income',
+        payee: ai.source,
+        paymentMode: ai.paymentMode || 'Bank Transfer',
+        amount: Number(ai.amount || 0)
       });
     });
 

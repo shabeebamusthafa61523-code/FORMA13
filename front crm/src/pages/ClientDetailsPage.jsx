@@ -5,7 +5,7 @@ import {
   FileText, Plus, ChevronRight, Edit, Hammer, CreditCard,
   CheckCircle2, AlertCircle, TrendingUp, Loader2, DollarSign,
   ShoppingCart, Users, Trash2, Edit3, X, Calendar, Clock, Printer,
-  ChevronDown, ChevronUp, Layers, Download, Percent
+  ChevronDown, ChevronUp, Layers, Download, Percent, MessageCircle
 } from 'lucide-react';
 import { getClientById } from '../services/clientService';
 import { 
@@ -1195,6 +1195,16 @@ const ClientDetailsPage = () => {
                 {formatCurrency(fin.totalQuotation)}
               </span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsInvoiceOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              title="Share Quotation Bill on WhatsApp"
+            >
+              <MessageCircle size={14} />
+              <span>WhatsApp Bill</span>
+            </button>
 
             <button
               type="button"
