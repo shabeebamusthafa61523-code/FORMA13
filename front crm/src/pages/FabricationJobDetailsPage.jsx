@@ -5,7 +5,7 @@ import {
   ShoppingCart, DollarSign, CheckCircle2, AlertCircle, Clock, 
   MapPin, Phone, Mail, FileText, Printer, Loader2, Save, X,
   CreditCard, ChevronRight, ChevronDown, Download, Percent, Receipt,
-  Layers, ListPlus, CornerDownRight, Check
+  Layers, ListPlus, CornerDownRight, Check, MessageCircle
 } from 'lucide-react';
 import { 
   getFabricationJobById,
@@ -424,6 +424,7 @@ const FabricationJobDetailsPage = () => {
     clientEmail: '',
     siteAddress: '',
     status: 'Confirmed / In Progress',
+    startDate: '',
     deliveryDate: '',
     notes: ''
   });
@@ -494,6 +495,7 @@ const FabricationJobDetailsPage = () => {
           clientEmail: res.data.clientEmail || '',
           siteAddress: res.data.siteAddress || '',
           status: res.data.status || 'Confirmed / In Progress',
+          startDate: res.data.startDate ? new Date(res.data.startDate).toISOString().split('T')[0] : (res.data.createdAt ? new Date(res.data.createdAt).toISOString().split('T')[0] : ''),
           deliveryDate: res.data.deliveryDate ? new Date(res.data.deliveryDate).toISOString().split('T')[0] : '',
           notes: res.data.notes || ''
         });
@@ -1158,7 +1160,8 @@ const FabricationJobDetailsPage = () => {
         clientEmail: editJobForm.clientEmail,
         siteAddress: editJobForm.siteAddress,
         status: editJobForm.status,
-        deliveryDate: editJobForm.deliveryDate ? new Date(editJobForm.deliveryDate) : undefined,
+        startDate: editJobForm.startDate ? new Date(`${editJobForm.startDate}T12:00:00.000Z`) : undefined,
+        deliveryDate: editJobForm.deliveryDate ? new Date(`${editJobForm.deliveryDate}T12:00:00.000Z`) : undefined,
         notes: editJobForm.notes
       });
       if (res && res.success) {
@@ -1420,6 +1423,16 @@ const FabricationJobDetailsPage = () => {
                 {formatCurrency(fin.totalQuotation)}
               </span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsInvoiceOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              title="Share Quotation Bill on WhatsApp"
+            >
+              <MessageCircle size={14} />
+              <span>WhatsApp Bill</span>
+            </button>
 
             <button
               type="button"
@@ -4815,19 +4828,14 @@ const FabricationJobDetailsPage = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Status
+                    Start Date
                   </label>
-                  <select
-                    value={editJobForm.status}
-                    onChange={(e) => setEditJobForm({ ...editJobForm, status: e.target.value })}
-                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value="Quotation Stage">Quotation Stage</option>
-                    <option value="Confirmed / In Progress">Confirmed / In Progress</option>
-                    <option value="On Hold">On Hold</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
+                  <input
+                    type="date"
+                    value={editJobForm.startDate}
+                    onChange={(e) => setEditJobForm({ ...editJobForm, startDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
                 </div>
 
                 <div>
@@ -4841,6 +4849,23 @@ const FabricationJobDetailsPage = () => {
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Status
+                </label>
+                <select
+                  value={editJobForm.status}
+                  onChange={(e) => setEditJobForm({ ...editJobForm, status: e.target.value })}
+                  className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="Quotation Stage">Quotation Stage</option>
+                  <option value="Confirmed / In Progress">Confirmed / In Progress</option>
+                  <option value="On Hold">On Hold</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">

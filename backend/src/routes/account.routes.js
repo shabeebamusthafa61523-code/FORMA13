@@ -62,7 +62,11 @@ import {
   servePublicPdf,
   getPartnerShareSummary,
   createPartnerDrawing,
-  deletePartnerDrawing
+  deletePartnerDrawing,
+  getAdditionalIncomes,
+  createAdditionalIncome,
+  updateAdditionalIncome,
+  deleteAdditionalIncome
 } from '../controllers/account.controller.js';
 import protectRoute from '../middleware/auth.middleware.js';
 import upload from '../middleware/upload.middleware.js';
@@ -117,6 +121,12 @@ router.delete('/income/:id/permanent', permanentDeleteIncome);
 router.get('/income/:id', getIncomeById);
 router.put('/income/:id', updateIncome);
 router.delete('/income/:id', deleteIncome);
+
+// ── Additional Income Routes ──
+router.get('/additional-income', getAdditionalIncomes);
+router.post('/additional-income', createAdditionalIncome);
+router.put('/additional-income/:id', updateAdditionalIncome);
+router.delete('/additional-income/:id', deleteAdditionalIncome);
 
 // ── Categories Routes ──
 router.get('/categories', getCategories);

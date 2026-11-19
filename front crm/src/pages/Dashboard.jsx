@@ -84,7 +84,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
     dayBook: { closingBalance: 0, count: 0, inflow: 0, outflow: 0, formatted: '₹0', subtext: 'Daily Cash In Hand' },
     profitAndLoss: { netProfit: 0, isProfit: true, margin: '0%', formatted: '₹0', subtext: 'Operational P&L Statement' },
     supplierCredit: { amount: 0, formatted: '₹0', subtext: 'Vendor Dues Payable' },
-    partnerShare: { totalProfit: 0, sharePerPartner: 0, formatted: '₹0', subtext: '50/50 Net Profit Split' },
+    partnerShare: { totalProfit: 0, sharePerPartner: 0, balancePerPartner: 0, totalRemainingBalance: 0, formatted: '₹0', subtext: 'Total Remaining Profit After Drawings' },
     drawings: { amount: 0, count: 0, formatted: '₹0', subtext: 'Owner Profit Withdrawals' },
     liquidPosition: { amount: 0, formatted: '₹0', subtext: 'True Liquid Position' }
   });
@@ -431,10 +431,28 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           ? totalReportData.supplierCreditTotal
           : 45826;
 
-        // 10. PARTNER PROFIT SHARE (50/50 Split of Net Profit)
+        // 10. PARTNER PROFIT SHARE & NET BALANCE (AFTER DRAWINGS)
         const halfProfitShare = partnerShareData?.halfProfitShare !== undefined
           ? partnerShareData.halfProfitShare
           : (netProfitVal / 2);
+
+        const o1Withdrawn = partnerShareData?.owner1?.totalWithdrawn !== undefined
+          ? partnerShareData.owner1.totalWithdrawn
+          : (totalOwnerDrawingsVal / 2);
+        const o2Withdrawn = partnerShareData?.owner2?.totalWithdrawn !== undefined
+          ? partnerShareData.owner2.totalWithdrawn
+          : (totalOwnerDrawingsVal / 2);
+
+        const o1Balance = partnerShareData?.owner1?.netBalance !== undefined
+          ? partnerShareData.owner1.netBalance
+          : (halfProfitShare - o1Withdrawn);
+        const o2Balance = partnerShareData?.owner2?.netBalance !== undefined
+          ? partnerShareData.owner2.netBalance
+          : (halfProfitShare - o2Withdrawn);
+
+        const totalRemainingBalance = o1Balance + o2Balance;
+        const avgBalance = (o1Balance + o2Balance) / 2;
+        const isBalanceEqual = Math.round(o1Balance) === Math.round(o2Balance);
 
         // 11. DAY BOOK (Cash Book Balance & Volume)
         const cbSummary = rawCashBook?.summary || {};
@@ -541,8 +559,13 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
           partnerShare: {
             totalProfit: netProfitVal,
             sharePerPartner: halfProfitShare,
-            formatted: `${formatINR(halfProfitShare)} / partner`,
-            subtext: `50/50 Split • Net Profit ${formatINR(netProfitVal)}`
+            drawingsPerPartner: (o1Withdrawn + o2Withdrawn) / 2,
+            balancePerPartner: avgBalance,
+            totalRemainingBalance: totalRemainingBalance,
+            owner1Balance: o1Balance,
+            owner2Balance: o2Balance,
+            formatted: (totalRemainingBalance < 0 ? '-' : '') + formatINR(Math.abs(totalRemainingBalance)),
+            subtext: `Total Profit ${formatINR(netProfitVal)} • Less ${formatINR(totalOwnerDrawingsVal)} Drawn`
           },
           drawings: {
             amount: totalOwnerDrawingsVal,
@@ -1619,7 +1642,40 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/reports')}
           />
 
-          {/* 5. PURCHASE */}
+          {/* 6. REMAINING PROFIT SHARE (AFTER DRAWINGS) */}
+          <StatCard
+            label="Remaining Share"
+            badge="Total Balance"
+            value={financialMetrics.partnerShare?.formatted || "₹62,410"}
+            icon={Users}
+            color={(financialMetrics.partnerShare?.totalRemainingBalance ?? 62410) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
+            subtext={financialMetrics.partnerShare?.subtext || "Total Profit ₹1,14,410 • Less ₹52,000 Drawn"}
+            onClick={() => navigate('/accounts/share')}
+          />
+
+          {/* 7. OWNER DRAWINGS */}
+          <StatCard
+            label="Owner Drawings"
+            badge={`${financialMetrics.drawings?.count || 4} Withdrawals`}
+            value={financialMetrics.drawings?.formatted || "₹52,000"}
+            icon={Wallet}
+            color="text-violet-600 dark:text-violet-400"
+            subtext={financialMetrics.drawings?.subtext || "Owner 1: ₹26,000 • Owner 2: ₹26,000"}
+            onClick={() => navigate('/accounts/share')}
+          />
+
+          {/* 8. DAY BOOK */}
+          <StatCard
+            label="Day Book"
+            badge={`${financialMetrics.dayBook.count} Entries`}
+            value={financialMetrics.dayBook.formatted}
+            icon={Clock}
+            color={financialMetrics.dayBook.closingBalance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}
+            subtext={financialMetrics.dayBook.subtext}
+            onClick={() => navigate('/accounts/cash-book')}
+          />
+
+          {/* 9. PURCHASE */}
           <StatCard
             label="Purchase"
             badge={`${financialMetrics.purchase.count} Vouchers`}
@@ -1652,17 +1708,6 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/salary')}
           />
 
-          {/* 8. DAY BOOK */}
-          <StatCard
-            label="Day Book"
-            badge={`${financialMetrics.dayBook.count} Entries`}
-            value={financialMetrics.dayBook.formatted}
-            icon={Clock}
-            color={financialMetrics.dayBook.closingBalance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}
-            subtext={financialMetrics.dayBook.subtext}
-            onClick={() => navigate('/accounts/cash-book')}
-          />
-
           {/* 9. SUPPLIER CREDIT */}
           <StatCard
             label="Supplier Credit"
@@ -1674,27 +1719,6 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
             onClick={() => navigate('/accounts/reports')}
           />
 
-          {/* 10. PARTNER SHARE */}
-          <StatCard
-            label="Partner Share"
-            badge="50/50 Split"
-            value={financialMetrics.partnerShare?.formatted || "₹13,238 / partner"}
-            icon={Users}
-            color="text-indigo-600 dark:text-indigo-400"
-            subtext={financialMetrics.partnerShare?.subtext || "50/50 Net Profit Split"}
-            onClick={() => navigate('/accounts/share')}
-          />
-
-          {/* 11. OWNER DRAWINGS */}
-          <StatCard
-            label="Owner Drawings"
-            badge={`${financialMetrics.drawings?.count || 4} Withdrawals`}
-            value={financialMetrics.drawings?.formatted || "₹52,000"}
-            icon={Wallet}
-            color="text-violet-600 dark:text-violet-400"
-            subtext={financialMetrics.drawings?.subtext || "Owner 1: ₹26,000 • Owner 2: ₹26,000"}
-            onClick={() => navigate('/accounts/share')}
-          />
 
           {/* 12. LIQUID POSITION */}
           <StatCard
@@ -1814,13 +1838,13 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
               <p className={`text-lg font-black font-mono mt-0.5 ${financialMetrics.profitAndLoss.isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {financialMetrics.profitAndLoss.formatted}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">Available for 50/50 split</p>
+              <p className="text-[10px] text-slate-400 mt-1">Total business surplus</p>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-xl p-3">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Supplier Credit Payable</p>
               <p className="text-lg font-black font-mono text-amber-400 mt-0.5">
-                {financialMetrics.supplierCredit?.formatted || "₹45,826"}
+                {financialMetrics.supplierCredit?.formatted || "₹0"}
               </p>
               <p className="text-[10px] text-slate-400 mt-1">Vendor accounts payable</p>
             </div>
@@ -1844,7 +1868,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
                 <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 font-mono">
                   <span>Drawn: <strong className="text-violet-300">{partnerShareSummary?.owner1?.totalWithdrawn !== undefined ? formatINR(partnerShareSummary.owner1.totalWithdrawn) : "₹26,000"}</strong></span>
                   <span>•</span>
-                  <span>Balance: <strong className="text-rose-400">{partnerShareSummary?.owner1?.netBalance !== undefined ? ((partnerShareSummary.owner1.netBalance < 0 ? '-' : '') + formatINR(Math.abs(partnerShareSummary.owner1.netBalance))) : "-₹12,763"}</strong> (Advance Drawn)</span>
+                  <span>Balance: <strong className={(partnerShareSummary?.owner1?.netBalance ?? 31205) >= 0 ? "text-emerald-400" : "text-rose-400"}>{partnerShareSummary?.owner1?.netBalance !== undefined ? ((partnerShareSummary.owner1.netBalance < 0 ? '-' : '+') + formatINR(Math.abs(partnerShareSummary.owner1.netBalance))) : "+₹31,205"}</strong> ({(partnerShareSummary?.owner1?.netBalance ?? 31205) >= 0 ? 'Remaining Profit' : 'Advance Drawn'})</span>
                 </div>
               </div>
               <button
@@ -1871,7 +1895,7 @@ const Dashboard = ({ isEmbedded = false, mdData = null }) => {
                 <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 font-mono">
                   <span>Drawn: <strong className="text-violet-300">{partnerShareSummary?.owner2?.totalWithdrawn !== undefined ? formatINR(partnerShareSummary.owner2.totalWithdrawn) : "₹26,000"}</strong></span>
                   <span>•</span>
-                  <span>Balance: <strong className="text-rose-400">{partnerShareSummary?.owner2?.netBalance !== undefined ? ((partnerShareSummary.owner2.netBalance < 0 ? '-' : '') + formatINR(Math.abs(partnerShareSummary.owner2.netBalance))) : "-₹12,763"}</strong> (Advance Drawn)</span>
+                  <span>Balance: <strong className={(partnerShareSummary?.owner2?.netBalance ?? 31205) >= 0 ? "text-emerald-400" : "text-rose-400"}>{partnerShareSummary?.owner2?.netBalance !== undefined ? ((partnerShareSummary.owner2.netBalance < 0 ? '-' : '+') + formatINR(Math.abs(partnerShareSummary.owner2.netBalance))) : "+₹31,205"}</strong> ({(partnerShareSummary?.owner2?.netBalance ?? 31205) >= 0 ? 'Remaining Profit' : 'Advance Drawn'})</span>
                 </div>
               </div>
               <button

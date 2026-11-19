@@ -341,3 +341,23 @@ export const settleSupplierCredit = async (vendorId, data) => {
   const response = await safePost(`/vendors/${vendorId}/settle-credit`, data);
   return response.data;
 };
+
+export const getAdditionalIncomes = async (params = {}) => {
+  const response = await safeGet('/additional-income', params);
+  return response.data;
+};
+
+export const createAdditionalIncome = async (data) => {
+  const response = await safePost('/additional-income', data);
+  return response.data;
+};
+
+export const updateAdditionalIncome = async (id, data) => {
+  const response = await safePut(`/additional-income/${id}`, data);
+  return response.data;
+};
+
+export const deleteAdditionalIncome = async (id) => {
+  const response = await safeDelete(`/additional-income/${id}`);
+  return response.data;
+};

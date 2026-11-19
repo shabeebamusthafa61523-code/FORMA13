@@ -57,6 +57,7 @@ import UserPermissionsPage from './pages/UserPermissionsPage';
 import SidebarPermissionsPage from './pages/SidebarPermissionsPage';
 import MdDashboard from './pages/MdDashboard';
 import AccountsPage from './pages/AccountsPage';
+import AdditionalIncomePage from './pages/AdditionalIncomePage';
 import GeneralExpensePage from './pages/GeneralExpensePage';
 import LeavesPage from './pages/LeavesPage';
 import ApprovalsPage from './pages/ApprovalsPage';
@@ -251,6 +252,8 @@ function App() {
         {/* Accounts Department Module Routes */}
         <Route path="/accounts" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/income" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
+        <Route path="/additional-income" element={<ProtectedRoute><MainLayout><AdditionalIncomePage /></MainLayout></ProtectedRoute>} />
+        <Route path="/accounts/additional-income" element={<ProtectedRoute><MainLayout><AdditionalIncomePage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/proforma" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/sales" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/accounts/ledger" element={<ProtectedRoute><MainLayout><AccountsPage /></MainLayout></ProtectedRoute>} />

@@ -30,6 +30,11 @@ const sanitizeClientPayload = (body) => {
   dateFields.forEach(field => {
     if (sanitized[field] === '' || sanitized[field] === undefined || sanitized[field] === null) {
       delete sanitized[field];
+    } else {
+      const parsed = new Date(sanitized[field]);
+      if (!isNaN(parsed.getTime())) {
+        sanitized[field] = parsed;
+      }
     }
   });
 

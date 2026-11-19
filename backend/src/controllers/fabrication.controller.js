@@ -401,8 +401,8 @@ export const updateFabricationJob = async (req, res) => {
     await job.save();
     try { await syncQuotationToSales(job); } catch (e) { console.error("Sync error:", e); }
 
-    // If job is linked to a client and name/contact was updated, sync back to Client and Leads
-    if (job.client && (clientName || clientPhone || clientEmail)) {
+    // If job is linked to a client and name/contact/date was updated, sync back to Client and Leads
+    if (job.client && (clientName || clientPhone || clientEmail || startDate)) {
       try {
         const clientUpdate = {};
         if (clientName) {
@@ -411,6 +411,7 @@ export const updateFabricationJob = async (req, res) => {
         }
         if (clientPhone) clientUpdate.phone = clientPhone;
         if (clientEmail) clientUpdate.email = clientEmail;
+        if (startDate) clientUpdate.clientDate = new Date(startDate);
         const updatedClient = await Client.findByIdAndUpdate(job.client, { $set: clientUpdate }, { new: true });
         if (updatedClient) {
           await syncClientChangesToLeadsAndWorkspace(updatedClient);

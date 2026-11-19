@@ -7,7 +7,9 @@ import {
   Filter,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Building2,
+  Layers
 } from 'lucide-react';
 import { getMonthlyPnLSummary } from '../services/accountsService';
 import { useToast } from '../components/ToastProvider';
@@ -29,7 +31,8 @@ const MonthlyPnLPage = () => {
   const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
   const [selectedYear, setSelectedYear] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [totalNetProfit, setTotalNetProfit] = useState(0);
+  const [totalNetProfitWithGen, setTotalNetProfitWithGen] = useState(0);
+  const [totalNetProfitWithoutGen, setTotalNetProfitWithoutGen] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -38,7 +41,12 @@ const MonthlyPnLPage = () => {
       const res = await getMonthlyPnLSummary(yearParam);
       if (res && res.success) {
         setMonthlyData(Array.isArray(res.data) ? res.data : []);
-        setTotalNetProfit(Number(res.totalNetProfit) || 0);
+        setTotalNetProfitWithGen(
+          Number(res.totalNetProfitWithGeneralExpense !== undefined ? res.totalNetProfitWithGeneralExpense : res.totalNetProfit) || 0
+        );
+        setTotalNetProfitWithoutGen(
+          Number(res.totalNetProfitWithoutGeneralExpense !== undefined ? res.totalNetProfitWithoutGeneralExpense : res.totalNetProfit) || 0
+        );
         if (Array.isArray(res.availableYears) && res.availableYears.length > 0) {
           setAvailableYears(res.availableYears);
         }
@@ -57,7 +65,7 @@ const MonthlyPnLPage = () => {
     fetchData();
   }, [fetchData]);
 
-  // Excel export data
+  // Excel export data with both P&L columns and breakdowns
   const excelData = useMemo(() => {
     return monthlyData.map((m, idx) => ({
       index: idx + 1,
@@ -67,9 +75,11 @@ const MonthlyPnLPage = () => {
       grossSalaries: m.salaries || 0,
       wageCredits: m.wageCredits || 0,
       netSalaries: m.netSalaries !== undefined ? m.netSalaries : m.salaries,
+      siteExpenses: m.siteExpenses || 0,
+      pnlWithoutGenExp: m.pnlWithoutGeneralExpense !== undefined ? m.pnlWithoutGeneralExpense : m.netProfit,
       generalExpenses: m.generalExpenses || 0,
       totalExpenses: m.totalExpenses || 0,
-      netProfit: m.netProfit,
+      pnlWithGenExp: m.pnlWithGeneralExpense !== undefined ? m.pnlWithGeneralExpense : m.netProfit,
       status: m.status
     }));
   }, [monthlyData]);
@@ -82,9 +92,11 @@ const MonthlyPnLPage = () => {
     { header: 'Gross Salaries (₹)', key: 'grossSalaries', width: 18 },
     { header: 'Wage Credits Deducted (₹)', key: 'wageCredits', width: 24 },
     { header: 'Net Salaries (₹)', key: 'netSalaries', width: 18 },
+    { header: 'Site Expenses (₹)', key: 'siteExpenses', width: 18 },
+    { header: 'P&L (Without Gen Exp) (₹)', key: 'pnlWithoutGenExp', width: 24 },
     { header: 'General Expenses (₹)', key: 'generalExpenses', width: 20 },
-    { header: 'Total Expenses (₹)', key: 'totalExpenses', width: 18 },
-    { header: 'Profit & Loss (₹)', key: 'netProfit', width: 20 },
+    { header: 'Total Outflows (₹)', key: 'totalExpenses', width: 18 },
+    { header: 'P&L (With Gen Exp) (₹)', key: 'pnlWithGenExp', width: 24 },
     { header: 'Status', key: 'status', width: 14 }
   ], []);
 
@@ -102,7 +114,7 @@ const MonthlyPnLPage = () => {
                 Monthly Profit & Loss
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                Historical monthly profit and loss summary
+                Historical monthly project site margin vs comprehensive net profit
               </p>
             </div>
           </div>
@@ -149,45 +161,94 @@ const MonthlyPnLPage = () => {
         </div>
       </div>
 
-      {/* 2. Cumulative P&L Banner */}
-      <div className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-        totalNetProfit >= 0
-          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
-          : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shrink-0 ${
-            totalNetProfit >= 0 ? 'bg-emerald-600' : 'bg-rose-600'
-          }`}>
-            {totalNetProfit >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
-          </div>
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-              Cumulative Profit & Loss {selectedYear !== 'all' ? `(${selectedYear})` : '(All Time)'}
-            </span>
-            <h2 className={`text-2xl font-black font-mono tracking-tight ${
-              totalNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+      {/* 2. Dual Cumulative P&L Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        {/* Card 1: P&L (Without General Expense) - Direct Site Performance */}
+        <div className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between gap-3 ${
+          totalNetProfitWithoutGen >= 0
+            ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+            : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-white shrink-0 shadow-xs ${
+              totalNetProfitWithoutGen >= 0 ? 'bg-emerald-600' : 'bg-rose-600'
             }`}>
-              {formatINR(totalNetProfit)}
-            </h2>
+              <Layers size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  P&L (Without General Exp)
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                  Site Margin
+                </span>
+              </div>
+              <h2 className={`text-2xl font-black font-mono tracking-tight mt-0.5 ${
+                totalNetProfitWithoutGen >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+              }`}>
+                {formatINR(totalNetProfitWithoutGen)}
+              </h2>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                Income − (Purchases + Wages + Site Exp)
+              </p>
+            </div>
+          </div>
+          <div className="hidden sm:block text-right">
+            <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-black uppercase tracking-wider ${
+              totalNetProfitWithoutGen >= 0
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'
+            }`}>
+              {totalNetProfitWithoutGen >= 0 ? 'Profit' : 'Loss'}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-            totalNetProfit >= 0
-              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
-              : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'
-          }`}>
-            Overall {totalNetProfit >= 0 ? 'Profit' : 'Loss'}
-          </span>
-          <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-            Across {monthlyData.length} recorded month{monthlyData.length !== 1 ? 's' : ''}
-          </span>
+        {/* Card 2: P&L (With General Expense) - Comprehensive Bottom-line */}
+        <div className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between gap-3 ${
+          totalNetProfitWithGen >= 0
+            ? 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/60'
+            : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-white shrink-0 shadow-xs ${
+              totalNetProfitWithGen >= 0 ? 'bg-indigo-600' : 'bg-rose-600'
+            }`}>
+              <Building2 size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  P&L (With General Exp)
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">
+                  Net Profit
+                </span>
+              </div>
+              <h2 className={`text-2xl font-black font-mono tracking-tight mt-0.5 ${
+                totalNetProfitWithGen >= 0 ? 'text-indigo-700 dark:text-indigo-400' : 'text-rose-700 dark:text-rose-400'
+              }`}>
+                {formatINR(totalNetProfitWithGen)}
+              </h2>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                Full Net Profit after Workshop/Office Overheads
+              </p>
+            </div>
+          </div>
+          <div className="hidden sm:block text-right">
+            <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-black uppercase tracking-wider ${
+              totalNetProfitWithGen >= 0
+                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300'
+                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'
+            }`}>
+              {totalNetProfitWithGen >= 0 ? 'Profit' : 'Loss'}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 3. The Pure Monthly Profit & Loss Table */}
+      {/* 3. The Pure Monthly Profit & Loss Table with Dual Columns */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-3">
@@ -207,21 +268,41 @@ const MonthlyPnLPage = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <th className="py-3 px-4 w-16 text-center">#</th>
+                  <th className="py-3 px-4 w-12 text-center">#</th>
                   <th className="py-3 px-4">Month</th>
-                  <th className="py-3 px-6 text-right">Profit & Loss</th>
-                  <th className="py-3 px-4 text-center w-36">Status</th>
+                  
+                  {/* Column 1: P&L (Without General Expense) */}
+                  <th className="py-3 px-5 text-right">
+                    <div>P&L (Without Gen. Exp)</div>
+                    <div className="text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 normal-case">
+                      Includes Site Expenses
+                    </div>
+                  </th>
+
+                  {/* Column 2: P&L (With General Expense) */}
+                  <th className="py-3 px-5 text-right">
+                    <div>P&L (With Gen. Exp)</div>
+                    <div className="text-[9.5px] font-semibold text-indigo-600 dark:text-indigo-400 normal-case">
+                      Full Net Profit
+                    </div>
+                  </th>
+
+                  <th className="py-3 px-4 text-center w-32">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
                 {monthlyData.map((item, index) => {
-                  const isProfit = Number(item.netProfit) >= 0;
+                  const pnlWithout = item.pnlWithoutGeneralExpense !== undefined ? Number(item.pnlWithoutGeneralExpense) : Number(item.netProfit);
+                  const pnlWith = item.pnlWithGeneralExpense !== undefined ? Number(item.pnlWithGeneralExpense) : Number(item.netProfit);
+                  const isSiteProfit = pnlWithout >= 0;
+                  const isNetProfit = pnlWith >= 0;
+
                   return (
                     <tr 
                       key={item.period} 
                       className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
-                        isProfit 
-                          ? 'border-l-4 border-l-emerald-500' 
+                        isNetProfit 
+                          ? 'border-l-4 border-l-indigo-500' 
                           : 'border-l-4 border-l-rose-500'
                       }`}
                     >
@@ -233,38 +314,60 @@ const MonthlyPnLPage = () => {
                       {/* Month Name */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          <Calendar size={15} className={isProfit ? 'text-emerald-600' : 'text-rose-600'} />
+                          <Calendar size={15} className={isNetProfit ? 'text-indigo-600' : 'text-rose-600'} />
                           <span className="font-bold text-slate-900 dark:text-white">
                             {item.monthName}
                           </span>
                         </div>
                       </td>
 
-                      {/* Profit & Loss Amount */}
-                      <td className="py-3.5 px-6 text-right">
+                      {/* Column 1: P&L Without General Expense (Includes Site Expense) */}
+                      <td className="py-3.5 px-5 text-right">
                         <span className={`font-mono font-black text-base ${
-                          isProfit 
+                          isSiteProfit 
                             ? 'text-emerald-700 dark:text-emerald-400' 
                             : 'text-rose-700 dark:text-rose-400'
                         }`}>
-                          {formatINR(item.netProfit)}
+                          {formatINR(pnlWithout)}
                         </span>
-                        {Number(item.supplierCredits || 0) > 0 && (
-                          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold font-sans mt-0.5">
-                            (Credit -₹{Number(item.supplierCredits).toLocaleString('en-IN')} deducted)
-                          </p>
-                        )}
+                        <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400 font-sans mt-0.5">
+                          {Number(item.siteExpenses || 0) > 0 ? (
+                            <span>Site Exp: ₹{Number(item.siteExpenses).toLocaleString('en-IN')}</span>
+                          ) : (
+                            <span>Direct Site Margin</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Column 2: P&L With General Expense (Comprehensive Net Profit) */}
+                      <td className="py-3.5 px-5 text-right">
+                        <span className={`font-mono font-black text-base ${
+                          isNetProfit 
+                            ? 'text-indigo-700 dark:text-indigo-400' 
+                            : 'text-rose-700 dark:text-rose-400'
+                        }`}>
+                          {formatINR(pnlWith)}
+                        </span>
+                        <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400 font-sans mt-0.5">
+                          {Number(item.generalExpenses || 0) > 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                              Gen Exp: -₹{Number(item.generalExpenses).toLocaleString('en-IN')}
+                            </span>
+                          ) : (
+                            <span>No Gen Exp</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Status Badge */}
                       <td className="py-3.5 px-4 text-center">
                         <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                          isProfit
+                          isNetProfit
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                             : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                         }`}>
-                          {isProfit ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
-                          <span>{isProfit ? 'Profit' : 'Loss'}</span>
+                          {isNetProfit ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+                          <span>{isNetProfit ? 'Profit' : 'Loss'}</span>
                         </span>
                       </td>
                     </tr>

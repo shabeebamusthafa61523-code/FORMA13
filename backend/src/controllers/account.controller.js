@@ -15,6 +15,7 @@ import Vendor from '../models/vendor.model.js';
 import SupplierPayment from '../models/supplierPayment.model.js';
 import SupplierCredit from '../models/supplierCredit.model.js';
 import FabricationJob from '../models/fabricationJob.model.js';
+import AdditionalIncome from '../models/additionalIncome.model.js';
 import { sendEmail } from '../services/emailService.js';
 
 const DEFAULT_CATEGORIES = [
@@ -965,6 +966,40 @@ export const getCashBook = async (req, res) => {
           description: i.description || ''
         };
       });
+
+      // Also query Additional Income records
+      const aiQuery = { isDeleted: { $ne: true } };
+      if (paymentMode) {
+        if (paymentMode === 'UPI_BANK' || paymentMode === 'UPI/BANK') {
+          aiQuery.paymentMode = { $in: ['UPI', 'Bank', 'Bank Transfer', 'upi', 'bank'] };
+        } else if (paymentMode === 'Cash' || paymentMode === 'CASH') {
+          aiQuery.paymentMode = { $regex: '^cash$', $options: 'i' };
+        } else {
+          aiQuery.paymentMode = paymentMode;
+        }
+      }
+      if (startDate || endDate) {
+        aiQuery.date = incomeQuery.date;
+      }
+
+      const aiList = await AdditionalIncome.find(aiQuery).sort({ date: -1, createdAt: -1 }).lean();
+      const aiEntries = aiList.map(ai => ({
+        _id: ai._id,
+        entryType: 'INCOME',
+        isPurchase: false,
+        type: 'Additional Income',
+        categoryName: 'Additional Income',
+        paidTo: ai.source,
+        paymentMode: ai.paymentMode || 'Bank Transfer',
+        amount: Number(ai.amount) || 0,
+        billedAmount: Number(ai.amount) || 0,
+        status: 'Received',
+        date: ai.date || ai.createdAt,
+        referenceNo: ai.referenceNo || '',
+        description: ai.notes ? `${ai.source} - ${ai.notes}` : `Additional Income: ${ai.source}`
+      }));
+
+      incomes = [...incomes, ...aiEntries];
     }
 
     // Combine and sort by date descending
@@ -1106,13 +1141,14 @@ export const getDailyReport = async (req, res) => {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits] = await Promise.all([
+    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits, additionalIncomes] = await Promise.all([
       Expense.find({ date: { $gte: startOfDay, $lte: endOfDay } }).sort({ date: -1 }),
       Income.find({ date: { $gte: startOfDay, $lte: endOfDay } }).sort({ date: -1 }),
       OpeningBalance.findOne().sort({ updatedAt: -1 }),
       ExpenseCategory.find(),
       SupplierCredit.find({ date: { $gte: startOfDay, $lte: endOfDay } }).lean(),
-      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean(),
+      AdditionalIncome.find({ isDeleted: { $ne: true }, date: { $gte: startOfDay, $lte: endOfDay } }).sort({ date: -1 }).lean()
     ]);
 
     const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
@@ -1134,7 +1170,9 @@ export const getDailyReport = async (req, res) => {
       return paid;
     };
 
-    const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalAdditionalIncome = (additionalIncomes || []).reduce((sum, ai) => sum + (Number(ai.amount) || 0), 0);
+    const primaryIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalIncome = primaryIncome + totalAdditionalIncome;
     const totalBilledIncome = incomes.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0);
 
     const isOwnerDrawing = (e) => {
@@ -1178,6 +1216,8 @@ export const getDailyReport = async (req, res) => {
         expenseOpeningBalance,
         categoryOpeningBalance: categoryOpeningBalanceTotal,
         openingBalance: incomeOpeningBalance - expenseOpeningBalance,
+        totalAdditionalIncome,
+        primaryIncome,
         totalIncome,
         totalBilledIncome,
         effectiveTotalIncome,
@@ -1202,7 +1242,8 @@ export const getDailyReport = async (req, res) => {
       },
       data: expenses,
       incomes,
-      supplierCredits: supplierCredits || []
+      supplierCredits: supplierCredits || [],
+      additionalIncomes: additionalIncomes || []
     });
   } catch (error) {
     console.error('getDailyReport Error:', error);
@@ -1220,13 +1261,14 @@ export const getMonthlyReport = async (req, res) => {
     const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
     const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
-    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits] = await Promise.all([
+    const [expenses, incomes, obRecord, allCategories, supplierCredits, jobsWithCredits, additionalIncomes] = await Promise.all([
       Expense.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).sort({ date: -1 }),
       Income.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).sort({ date: -1 }),
       OpeningBalance.findOne().sort({ updatedAt: -1 }),
       ExpenseCategory.find(),
       SupplierCredit.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).lean(),
-      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean(),
+      AdditionalIncome.find({ isDeleted: { $ne: true }, date: { $gte: startOfMonth, $lte: endOfMonth } }).sort({ date: -1 }).lean()
     ]);
 
     const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
@@ -1248,7 +1290,9 @@ export const getMonthlyReport = async (req, res) => {
       return paid;
     };
 
-    const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalAdditionalIncome = (additionalIncomes || []).reduce((sum, ai) => sum + (Number(ai.amount) || 0), 0);
+    const primaryIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalIncome = primaryIncome + totalAdditionalIncome;
     const totalBilledIncome = incomes.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0);
 
     const isOwnerDrawing = (e) => {
@@ -1292,6 +1336,8 @@ export const getMonthlyReport = async (req, res) => {
         expenseOpeningBalance,
         categoryOpeningBalance: categoryOpeningBalanceTotal,
         openingBalance: incomeOpeningBalance - expenseOpeningBalance,
+        totalAdditionalIncome,
+        primaryIncome,
         totalIncome,
         totalBilledIncome,
         effectiveTotalIncome,
@@ -1314,7 +1360,8 @@ export const getMonthlyReport = async (req, res) => {
       },
       data: expenses,
       incomes,
-      supplierCredits: supplierCredits || []
+      supplierCredits: supplierCredits || [],
+      additionalIncomes: additionalIncomes || []
     });
   } catch (error) {
     console.error('getMonthlyReport Error:', error);
@@ -1328,11 +1375,12 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
     const { year } = req.query;
     const filterYear = year && year !== 'all' ? parseInt(year, 10) : null;
 
-    const [expenses, incomes, supplierCredits, jobsWithCredits] = await Promise.all([
+    const [expenses, incomes, supplierCredits, jobsWithCredits, additionalIncomes] = await Promise.all([
       Expense.find({ status: { $ne: 'rejected' } }).lean(),
       Income.find({}).lean(),
       SupplierCredit.find({}).lean(),
-      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean()
+      FabricationJob.find({ 'wageCredits.0': { $exists: true } }, 'wageCredits').lean(),
+      AdditionalIncome.find({ isDeleted: { $ne: true } }).lean()
     ]);
 
     const monthNames = [
@@ -1361,6 +1409,12 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
     };
     const isPur = (e) => e.isPurchase || String(e.categoryName || '').toLowerCase().includes('purchase') || String(e.categoryName || '').toLowerCase().includes('inventory');
     const isSalary = (e) => e.type === 'Salary' || String(e.categoryName || '').toLowerCase() === 'salary';
+    const isSiteExpense = (e) => Boolean(
+      e.syncSource?.module === 'Fabrication' || 
+      e.syncSource?.fabricationJobId || 
+      (e.description || '').startsWith('[FAB-') ||
+      (e.type === 'Expense' && e.syncSource?.isAutoSynced)
+    );
 
     const monthsMap = {};
 
@@ -1390,13 +1444,18 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
           grossPurchases: 0,
           supplierCredits: 0,
           netPurchases: 0,
+          siteExpenses: 0,
           generalExpenses: 0,
           salaries: 0,
           wageCredits: 0,
           netSalaries: 0,
+          totalSiteDirectCosts: 0,
+          pnlWithoutGeneralExpense: 0,
           totalExpenses: 0,
+          pnlWithGeneralExpense: 0,
           netProfit: 0,
-          status: 'Profit'
+          status: 'Profit',
+          siteStatus: 'Profit'
         };
       }
       return monthsMap[key];
@@ -1412,7 +1471,17 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
       }
     });
 
-    // 2. Expenses
+    // 1B. Additional Incomes
+    (additionalIncomes || []).forEach(ai => {
+      const date = ai.date || ai.createdAt;
+      const key = getMonthKey(date);
+      if (key) {
+        const m = initMonth(key);
+        m.incomeTotal += (Number(ai.amount) || 0);
+      }
+    });
+
+    // 2. Expenses (Purchases, Salaries, Site Expenses vs General Overheads)
     expenses.forEach(e => {
       if (isOwnerDrawing(e)) return;
       const date = e.date || e.createdAt;
@@ -1427,6 +1496,8 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
         }
       } else if (isSalary(e)) {
         m.salaries += amt;
+      } else if (isSiteExpense(e)) {
+        m.siteExpenses += amt;
       } else {
         m.generalExpenses += amt;
       }
@@ -1454,26 +1525,38 @@ export const getMonthlyPnLSummaryList = async (req, res) => {
       });
     });
 
-    // 4. Calculate Net Profit & Loss
+    // 4. Calculate Net Profit & Loss (With & Without General Overheads)
     const resultList = Object.keys(monthsMap)
       .sort((a, b) => b.localeCompare(a))
       .map(key => {
         const item = monthsMap[key];
         item.netPurchases = Math.max(0, item.grossPurchases - item.supplierCredits);
         item.netSalaries = Math.max(0, item.salaries - (item.wageCredits || 0));
-        item.totalExpenses = item.netPurchases + item.generalExpenses + item.netSalaries;
-        item.netProfit = Math.round((item.incomeTotal - item.totalExpenses) * 100) / 100;
-        item.status = item.netProfit >= 0 ? 'Profit' : 'Loss';
+        
+        // Site Operational Direct Costs = Net Purchases + Net Salaries + Direct Site Expenses
+        item.totalSiteDirectCosts = item.netPurchases + item.netSalaries + (item.siteExpenses || 0);
+        item.pnlWithoutGeneralExpense = Math.round((item.incomeTotal - item.totalSiteDirectCosts) * 100) / 100;
+        item.siteStatus = item.pnlWithoutGeneralExpense >= 0 ? 'Profit' : 'Loss';
+
+        // Total Company Costs = Site Direct Costs + General Overhead Expenses
+        item.totalExpenses = item.totalSiteDirectCosts + (item.generalExpenses || 0);
+        item.pnlWithGeneralExpense = Math.round((item.incomeTotal - item.totalExpenses) * 100) / 100;
+        item.netProfit = item.pnlWithGeneralExpense;
+        item.status = item.pnlWithGeneralExpense >= 0 ? 'Profit' : 'Loss';
+        
         return item;
       });
 
-    const totalNetProfit = resultList.reduce((sum, item) => sum + item.netProfit, 0);
+    const totalNetProfitWithGeneralExpense = resultList.reduce((sum, item) => sum + item.pnlWithGeneralExpense, 0);
+    const totalNetProfitWithoutGeneralExpense = resultList.reduce((sum, item) => sum + item.pnlWithoutGeneralExpense, 0);
     const availableYears = Array.from(new Set(Object.values(monthsMap).map(m => m.year))).sort((a, b) => b - a);
 
     return res.status(200).json({
       success: true,
       data: resultList,
-      totalNetProfit,
+      totalNetProfit: totalNetProfitWithGeneralExpense,
+      totalNetProfitWithGeneralExpense,
+      totalNetProfitWithoutGeneralExpense,
       availableYears: availableYears.length > 0 ? availableYears : [new Date().getFullYear()]
     });
   } catch (error) {
@@ -1588,7 +1671,7 @@ export const getSalaryReport = async (req, res) => {
 
 export const getTotalReport = async (req, res) => {
   try {
-    const [expenses, incomes, capitals, obRecord, allCategories, salaryPayments, vendors, jobs, supplierPayments, supplierCredits] = await Promise.all([
+    const [expenses, incomes, capitals, obRecord, allCategories, salaryPayments, vendors, jobs, supplierPayments, supplierCredits, additionalIncomes] = await Promise.all([
       Expense.find().sort({ date: -1 }),
       Income.find().sort({ date: -1 }),
       Capital.find().sort({ date: -1 }),
@@ -1598,7 +1681,8 @@ export const getTotalReport = async (req, res) => {
       Vendor.find({ isActive: true }).sort({ name: 1 }).lean(),
       FabricationJob.find({ $or: [{ 'purchasesAndExpenses.0': { $exists: true } }, { 'wageCredits.0': { $exists: true } }] }, { purchasesAndExpenses: 1, wageCredits: 1 }).lean(),
       SupplierPayment.find({}).lean(),
-      SupplierCredit.find({}).lean()
+      SupplierCredit.find({}).lean(),
+      AdditionalIncome.find({ isDeleted: { $ne: true } }).sort({ date: -1 }).lean()
     ]);
 
     const incomeOpeningBalance = obRecord ? (obRecord.incomeAmount ?? obRecord.amount ?? 0) : 0;
@@ -1621,8 +1705,10 @@ export const getTotalReport = async (req, res) => {
     };
 
     // 1. Incomes
-    const totalIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
-    const totalBilledIncome = incomes.reduce((sum, i) => sum + (Number(i.totalAmount || i.amount) || 0), 0);
+    const totalAdditionalIncome = (additionalIncomes || []).reduce((sum, ai) => sum + (Number(ai.amount) || 0), 0);
+    const primaryIncome = incomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
+    const totalIncome = primaryIncome + totalAdditionalIncome;
+    const totalBilledIncome = incomes.reduce((sum, i) => sum + (Number(i.totalAmount || i.amount) || 0), 0) + totalAdditionalIncome;
 
     // 2. Capital Inflows
     const totalCapital = capitals.reduce((sum, cap) => sum + (Number(cap.totalCapital || 0) || (Number(cap.amount || 0) + Number(cap.openingBalance || 0))), 0);
@@ -1744,6 +1830,8 @@ export const getTotalReport = async (req, res) => {
         expenseOpeningBalance,
         baseExpenseOpeningBalance,
         categoryOpeningBalance: categoryOpeningBalanceTotal,
+        totalAdditionalIncome,
+        primaryIncome,
         totalBilledIncome,
         totalIncome,
         totalCapital,
@@ -1768,6 +1856,7 @@ export const getTotalReport = async (req, res) => {
         trueNetPosition,
         counts: {
           incomes: incomes.length,
+          additionalIncomes: (additionalIncomes || []).length,
           expenses: expenses.length,
           capitals: capitals.length,
           salaries: salaryPayments.length,
@@ -1777,6 +1866,7 @@ export const getTotalReport = async (req, res) => {
       },
       data: expenses,
       incomes,
+      additionalIncomes: additionalIncomes || [],
       capitals,
       salaryPayments,
       vendors: enrichedVendors,
@@ -3758,7 +3848,7 @@ export const getVendorPurchases = async (req, res) => {
 export const getPartnerShareSummary = async (req, res) => {
   try {
     // 1. Fetch all fabrication job orders, drawings, expenses, incomes, and salaries
-    const [jobs, drawingExpenses, allExpenses, allIncomes, salaryPayments, allSupplierCredits, allVendors] = await Promise.all([
+    const [jobs, drawingExpenses, allExpenses, allIncomes, salaryPayments, allSupplierCredits, allVendors, additionalIncomes] = await Promise.all([
       FabricationJob.find({ jobId: { $ne: 'FAB-GLOBAL-CONFIG' } }).sort({ createdAt: -1 }),
       Expense.find({
         $or: [
@@ -3770,7 +3860,8 @@ export const getPartnerShareSummary = async (req, res) => {
       Income.find({}).lean(),
       SalaryPayment.find({}).lean(),
       SupplierCredit.find({}).lean(),
-      Vendor.find({ isActive: true }).lean()
+      Vendor.find({ isActive: true }).lean(),
+      AdditionalIncome.find({ isDeleted: { $ne: true } }).lean()
     ]);
 
     let totalQuotationRevenue = 0;
@@ -3860,7 +3951,8 @@ export const getPartnerShareSummary = async (req, res) => {
       return paid;
     };
     const incomeCollTotal = allIncomes.reduce((sum, i) => sum + getPaidIncomeAmt(i), 0);
-    const effectiveTotalReceived = Math.max(totalAmountReceived, incomeCollTotal);
+    const totalAdditionalIncome = (additionalIncomes || []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+    const effectiveTotalReceived = Math.max(totalAmountReceived, incomeCollTotal) + totalAdditionalIncome;
 
     // Business Net Profit = Revenue Inflows - Total Operating Outflows
     const totalNetProfit = effectiveTotalReceived - totalOperatingCosts;
@@ -3905,6 +3997,7 @@ export const getPartnerShareSummary = async (req, res) => {
         totalQuotationRevenue,
         totalDirectCosts,
         totalNetWorkProfit,
+        totalAdditionalIncome,
         totalAmountReceived: effectiveTotalReceived,
         totalOperatingCosts,
         purchaseTotal,
@@ -4610,6 +4703,179 @@ export const settleSupplierCredit = async (req, res) => {
     }
   } catch (error) {
     console.error('settleSupplierCredit Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+// ==========================================
+// ADDITIONAL INCOME CONTROLLERS
+// ==========================================
+
+export const getAdditionalIncomes = async (req, res) => {
+  try {
+    const { startDate, endDate, paymentMode, search } = req.query;
+    const query = { isDeleted: { $ne: true } };
+
+    if (paymentMode && paymentMode !== 'all') {
+      if (paymentMode === 'UPI_BANK' || paymentMode === 'UPI/BANK') {
+        query.paymentMode = { $in: ['UPI', 'Bank', 'Bank Transfer', 'upi', 'bank'] };
+      } else if (paymentMode === 'Cash' || paymentMode === 'CASH') {
+        query.paymentMode = { $regex: '^cash$', $options: 'i' };
+      } else {
+        query.paymentMode = paymentMode;
+      }
+    }
+
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = new Date(startDate);
+      if (endDate) query.date.$lte = new Date(endDate + 'T23:59:59.999Z');
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      const searchConditions = [
+        { source: { $regex: q, $options: 'i' } },
+        { referenceNo: { $regex: q, $options: 'i' } },
+        { notes: { $regex: q, $options: 'i' } },
+        { createdByName: { $regex: q, $options: 'i' } }
+      ];
+      query.$or = searchConditions;
+    }
+
+    const additionalIncomes = await AdditionalIncome.find(query).sort({ date: -1, createdAt: -1 });
+    const totalAmount = additionalIncomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+    const paymentModeBreakdown = additionalIncomes.reduce((acc, item) => {
+      const mode = item.paymentMode || 'Other';
+      acc[mode] = (acc[mode] || 0) + (Number(item.amount) || 0);
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        totalAmount,
+        totalEntries: additionalIncomes.length,
+        paymentModeBreakdown
+      },
+      data: additionalIncomes
+    });
+  } catch (error) {
+    console.error('getAdditionalIncomes Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createAdditionalIncome = async (req, res) => {
+  try {
+    const { source, amount, date, paymentMode, referenceNo, notes } = req.body;
+
+    if (!source || !source.trim()) {
+      return res.status(400).json({ success: false, message: 'Source of additional income is required.' });
+    }
+
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid positive income amount is required.' });
+    }
+
+    const creatorId = req.user?.id || req.user?._id;
+    const creatorName = req.user?.name || 'Accountant';
+
+    const newIncome = new AdditionalIncome({
+      source: source.trim(),
+      amount: parsedAmount,
+      date: date ? new Date(date) : new Date(),
+      paymentMode: paymentMode || 'Bank Transfer',
+      referenceNo: referenceNo ? referenceNo.trim() : '',
+      notes: notes ? notes.trim() : '',
+      createdBy: creatorId,
+      createdByName: creatorName
+    });
+
+    await newIncome.save();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Additional income recorded successfully.',
+      data: newIncome
+    });
+  } catch (error) {
+    console.error('createAdditionalIncome Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateAdditionalIncome = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { source, amount, date, paymentMode, referenceNo, notes } = req.body;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ success: false, message: 'Invalid income ID.' });
+    }
+
+    const record = await AdditionalIncome.findOne({ _id: id, isDeleted: { $ne: true } });
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Additional income record not found.' });
+    }
+
+    if (source !== undefined) {
+      if (!source.trim()) {
+        return res.status(400).json({ success: false, message: 'Source is required.' });
+      }
+      record.source = source.trim();
+    }
+
+    if (amount !== undefined) {
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Valid positive income amount is required.' });
+      }
+      record.amount = parsedAmount;
+    }
+
+    if (date !== undefined) record.date = new Date(date);
+    if (paymentMode !== undefined) record.paymentMode = paymentMode;
+    if (referenceNo !== undefined) record.referenceNo = referenceNo.trim();
+    if (notes !== undefined) record.notes = notes.trim();
+
+    await record.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Additional income record updated successfully.',
+      data: record
+    });
+  } catch (error) {
+    console.error('updateAdditionalIncome Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteAdditionalIncome = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ success: false, message: 'Invalid income ID.' });
+    }
+
+    const record = await AdditionalIncome.findById(id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Additional income record not found.' });
+    }
+
+    record.isDeleted = true;
+    await record.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Additional income record deleted successfully.'
+    });
+  } catch (error) {
+    console.error('deleteAdditionalIncome Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
