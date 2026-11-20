@@ -555,26 +555,14 @@ const QuotationInvoiceModal = ({
         throw new Error('Could not generate quotation image.');
       }
 
-      const text = `Hello *${clientName}*,
-
-Here is your *Fabrication Quotation & Work Measurements* from *FABTEC*:
-📋 Ref: *${invoiceNumber}*
-📅 Date: ${issueDate}
-💰 Total Quotation: *₹${Math.round(totalQuoted).toLocaleString('en-IN')}*
-💵 Advance Required: *₹${Math.round(totalQuoted * 0.5).toLocaleString('en-IN')}*
-⚠️ Balance Remaining: *₹${Math.round(balanceDue).toLocaleString('en-IN')}*
-
-Thank you for choosing FABTEC!`;
-
-      // 1. Mobile & Modern Web Share API: Shares Picture Image file directly to WhatsApp
+      // 1. Mobile & Modern Web Share API: Shares Picture Image file directly to WhatsApp (Only image)
       if (navigator.canShare && navigator.canShare({ files: [imgData.file] })) {
         try {
           await navigator.share({
             files: [imgData.file],
-            title: `Quotation ${invoiceNumber}`,
-            text: text
+            title: `Quotation ${invoiceNumber}`
           });
-          if (showToast) showToast('Quotation image & text shared to WhatsApp!', 'success');
+          if (showToast) showToast('Quotation image shared to WhatsApp!', 'success');
           return;
         } catch (shareError) {
           if (shareError.name !== 'AbortError') {
@@ -605,8 +593,8 @@ Thank you for choosing FABTEC!`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 10000);
 
-      // 4. Open WhatsApp Web / App with text pre-filled
-      const whatsappUrl = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(text)}`;
+      // 4. Open WhatsApp Web / App directly to client chat without prefilled text
+      const whatsappUrl = `https://api.whatsapp.com/send?phone=${digits}`;
       window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 
       if (showToast) {
