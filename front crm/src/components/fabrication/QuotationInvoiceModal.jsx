@@ -400,6 +400,35 @@ const QuotationInvoiceModal = ({
         } catch (e) {}
       });
 
+      // Process external <link rel="stylesheet"> tags (convert to clean inline <style> or remove for html2canvas compatibility in production)
+      const linkElements = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
+      linkElements.forEach((link) => {
+        try {
+          let cssText = '';
+          const sheet = Array.from(document.styleSheets).find(
+            (s) => s.href === link.href || (s.ownerNode && s.ownerNode.href === link.href)
+          );
+          if (sheet) {
+            try {
+              const rules = sheet.cssRules || sheet.rules;
+              if (rules) {
+                cssText = Array.from(rules).map((r) => r.cssText).join('\n');
+              }
+            } catch (sheetErr) {}
+          }
+          if (cssText) {
+            const cleanCss = replaceOklch(cssText);
+            const newStyle = clonedDoc.createElement('style');
+            newStyle.textContent = cleanCss;
+            if (link.parentNode) link.parentNode.replaceChild(newStyle, link);
+          } else if (link.parentNode) {
+            link.parentNode.removeChild(link);
+          }
+        } catch (e) {
+          if (link.parentNode) link.parentNode.removeChild(link);
+        }
+      });
+
       const allElements = clonedDoc.querySelectorAll('*');
       allElements.forEach((el) => {
         try {
@@ -407,6 +436,14 @@ const QuotationInvoiceModal = ({
           if (inlineStyle && (inlineStyle.includes('oklab') || inlineStyle.includes('oklch') || inlineStyle.includes('color-mix'))) {
             el.setAttribute('style', replaceOklch(inlineStyle));
           }
+        } catch (e) {}
+      });
+
+      // Ensure images in clonedDoc use crossOrigin to prevent canvas tainting
+      const images = clonedDoc.querySelectorAll('img');
+      images.forEach((img) => {
+        try {
+          img.crossOrigin = 'anonymous';
         } catch (e) {}
       });
 
@@ -448,10 +485,14 @@ const QuotationInvoiceModal = ({
     const targetWidth = 800;
     const targetHeight = element.scrollHeight || element.offsetHeight || 1200;
 
-    const canvas = await html2canvas(element, {
+    const html2canvasFunc = typeof html2canvas === 'function' ? html2canvas : (html2canvas.default || window.html2canvas);
+    if (typeof html2canvasFunc !== 'function') {
+      throw new Error('html2canvas library is not loaded');
+    }
+
+    const canvas = await html2canvasFunc(element, {
       scale: 2,
       useCORS: true,
-      allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
       width: targetWidth,
@@ -461,7 +502,23 @@ const QuotationInvoiceModal = ({
       onclone: sanitizeClonedDocStyles
     });
 
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.98));
+    let blob = null;
+    try {
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.98));
+    } catch (blobErr) {
+      console.warn('canvas.toBlob failed, attempting toDataURL fallback:', blobErr);
+    }
+
+    if (!blob) {
+      try {
+        const dataUrl = canvas.toDataURL('image/png', 0.98);
+        const res = await fetch(dataUrl);
+        blob = await res.blob();
+      } catch (dataErr) {
+        console.error('canvas.toDataURL fallback failed:', dataErr);
+      }
+    }
+
     if (!blob) return null;
 
     const file = new File([blob], filename, { type: 'image/png' });
@@ -546,7 +603,7 @@ Thank you for choosing FABTEC!`;
       link.href = URL.createObjectURL(imgData.blob);
       link.download = imgData.filename;
       link.click();
-      URL.revokeObjectURL(link.href);
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
 
       // 4. Open WhatsApp Web / App with text pre-filled
       const whatsappUrl = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(text)}`;
