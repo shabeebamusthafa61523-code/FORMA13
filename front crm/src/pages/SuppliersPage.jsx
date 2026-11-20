@@ -210,8 +210,9 @@ const SuppliersPage = () => {
 
   const handleOpenSettleModal = (creditItem) => {
     setSelectedCreditToSettle(creditItem);
+    const dueVal = creditItem.dueAmount !== undefined ? creditItem.dueAmount : (creditItem.credit || creditItem.amount || '');
     setSettleForm({
-      amount: String(creditItem.credit || creditItem.amount || ''),
+      amount: String(dueVal),
       paymentMode: 'Bank Transfer',
       date: new Date().toISOString().split('T')[0],
       referenceNo: creditItem.refNo || creditItem.billNumber || '',
@@ -1890,8 +1891,21 @@ const SuppliersPage = () => {
                                     <span className="text-slate-300 dark:text-slate-600">—</span>
                                   )}
                                 </td>
-                                <td className="py-2 px-3 text-right whitespace-nowrap font-bold text-rose-600 dark:text-rose-400 font-mono">
-                                  ₹{Number(item.credit || item.amount || 0).toLocaleString('en-IN')}
+                                <td className="py-2 px-3 text-right whitespace-nowrap font-mono">
+                                  {item.paidAmount > 0 && item.dueAmount > 0 ? (
+                                    <div className="flex flex-col items-end">
+                                      <span className="font-bold text-rose-600 dark:text-rose-400">
+                                        Due: ₹{Number(item.dueAmount).toLocaleString('en-IN')}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400">
+                                        Bill: ₹{Number(item.amount || item.credit || 0).toLocaleString('en-IN')} | Paid: ₹{Number(item.paidAmount).toLocaleString('en-IN')}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className={`font-bold ${item.isSettled ? 'text-slate-700 dark:text-slate-300' : 'text-rose-600 dark:text-rose-400'}`}>
+                                      ₹{Number(item.credit || item.amount || 0).toLocaleString('en-IN')}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="py-2 px-3 text-center whitespace-nowrap">
                                   {item.isSettled ? (
@@ -1906,8 +1920,17 @@ const SuppliersPage = () => {
                                         </span>
                                       )}
                                     </div>
+                                  ) : item.paidAmount > 0 ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300">
+                                        ₹{Number(item.dueAmount).toLocaleString('en-IN')} Due (Partial)
+                                      </span>
+                                      <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
+                                        ₹{Number(item.paidAmount).toLocaleString('en-IN')} Paid
+                                      </span>
+                                    </div>
                                   ) : (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300">
                                       Credit Due
                                     </span>
                                   )}
@@ -1932,7 +1955,7 @@ const SuppliersPage = () => {
                                       title="Settle this specific credit bill"
                                     >
                                       <CheckCircle2 size={12} />
-                                      <span>Settle Bill</span>
+                                      <span>Settle {item.dueAmount > 0 ? `(₹${Number(item.dueAmount).toLocaleString('en-IN')})` : 'Bill'}</span>
                                     </button>
                                   )}
                                 </td>
@@ -2201,9 +2224,20 @@ const SuppliersPage = () => {
 
             <form onSubmit={handleSaveSettleCredit} className="space-y-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Settlement Amount (₹) <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                    Settlement Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  {Number(settleForm.amount) !== Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0) && (
+                    <button
+                      type="button"
+                      onClick={() => setSettleForm({ ...settleForm, amount: String(selectedCreditToSettle.credit || selectedCreditToSettle.amount || '') })}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      Pay Full (₹{Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0).toLocaleString('en-IN')})
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   required
@@ -2214,6 +2248,48 @@ const SuppliersPage = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                 />
               </div>
+
+              {/* Dynamic Balance Display */}
+              {(() => {
+                const billAmt = Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0);
+                const settleAmt = Number(settleForm.amount || 0);
+                const balAmt = Math.max(0, Math.round((billAmt - settleAmt) * 100) / 100);
+                if (settleAmt > 0 && settleAmt < billAmt) {
+                  return (
+                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                          Remaining Credit Balance:
+                        </span>
+                        <span className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                          ₹{balAmt.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-amber-700 dark:text-amber-400 leading-snug">
+                        Partial settlement: <strong>₹{settleAmt.toLocaleString('en-IN')}</strong> will be settled now. The remaining balance of <strong>₹{balAmt.toLocaleString('en-IN')}</strong> will remain as active pending credit for <strong>{activeSupplier.name}</strong>.
+                      </p>
+                    </div>
+                  );
+                } else if (settleAmt > billAmt) {
+                  return (
+                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[11px] text-rose-700 dark:text-rose-300 font-semibold flex items-center gap-1.5">
+                      <AlertTriangle size={14} className="text-rose-500 shrink-0" />
+                      <span>Settlement amount cannot exceed the bill amount of ₹{billAmt.toLocaleString('en-IN')}.</span>
+                    </div>
+                  );
+                } else if (settleAmt === billAmt && billAmt > 0) {
+                  return (
+                    <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-500" />
+                        <span>Full Settlement (Entire bill cleared)</span>
+                      </span>
+                      <span className="font-mono text-xs font-bold">₹{billAmt.toLocaleString('en-IN')}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
@@ -2282,7 +2358,7 @@ const SuppliersPage = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={settleSubmitting}
+                  disabled={settleSubmitting || Number(settleForm.amount || 0) <= 0 || Number(settleForm.amount || 0) > Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0)}
                   className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {settleSubmitting ? (
@@ -2293,7 +2369,11 @@ const SuppliersPage = () => {
                   ) : (
                     <>
                       <CheckCircle2 size={13} />
-                      <span>Confirm Settlement</span>
+                      <span>
+                        {Number(settleForm.amount || 0) > 0 && Number(settleForm.amount || 0) < Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount || 0)
+                          ? `Settle ₹${Number(settleForm.amount).toLocaleString('en-IN')} (Keep ₹${Math.max(0, Math.round((Number(selectedCreditToSettle.credit || selectedCreditToSettle.amount) - Number(settleForm.amount)) * 100) / 100).toLocaleString('en-IN')} Due)`
+                          : 'Confirm Settlement'}
+                      </span>
                     </>
                   )}
                 </button>

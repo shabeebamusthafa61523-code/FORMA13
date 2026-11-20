@@ -3526,7 +3526,13 @@ export const getVendors = async (req, res) => {
 
     const vendorStats = {};
     vendors.forEach(v => {
-      vendorStats[String(v._id)] = { count: 0, totalAmount: 0, creditPurchases: 0 };
+      vendorStats[String(v._id)] = {
+        count: 0,
+        totalAmount: 0,
+        creditPurchases: 0,
+        workspacePendingDue: 0,
+        totalSettledInJobs: 0
+      };
     });
 
     jobs.forEach(job => {
@@ -3541,9 +3547,15 @@ export const getVendors = async (req, res) => {
               const amt = Number(item.amount || 0);
               stats.count += 1;
               stats.totalAmount += amt;
-              const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement?.isSettled);
+              const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement && (item.creditSettlement.isSettled || item.creditSettlement.settledAmount > 0));
               if (isCredit) {
                 stats.creditPurchases += amt;
+                const paid = (item.payments && item.payments.length > 0)
+                  ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+                  : (item.creditSettlement?.isSettled ? Number(item.creditSettlement.settledAmount || amt) : (item.paymentMode !== 'Credit/Pay Later' ? amt : 0));
+                const due = Math.max(0, Math.round((amt - paid) * 100) / 100);
+                stats.workspacePendingDue += due;
+                stats.totalSettledInJobs += paid;
               }
             }
           }
@@ -3556,13 +3568,17 @@ export const getVendors = async (req, res) => {
       const ob = Number(v.openingBalance || 0);
       const limit = Number(v.creditLimit || 0);
       const terms = Number(v.paymentTermsDays || 30);
-      const stats = vendorStats[vId] || { count: 0, totalAmount: 0, creditPurchases: 0 };
-      const totalPaid = paymentsByVendor[vId] || 0;
+      const stats = vendorStats[vId] || { count: 0, totalAmount: 0, creditPurchases: 0, workspacePendingDue: 0, totalSettledInJobs: 0 };
+      const recordedSupplierPayments = paymentsByVendor[vId] || 0;
       const directCredit = creditsByVendor[vId] || 0;
       const directCount = creditsCountByVendor[vId] || 0;
 
+      // Standalone direct credits pending due
+      const directCreditsDue = credits.filter(c => String(c.vendor) === vId && !c.isSettled).reduce((s, c) => s + Number(c.amount || 0), 0);
+
       const totalCreditPurchases = stats.creditPurchases + directCredit;
-      const balance = (ob + totalCreditPurchases) - totalPaid;
+      const balance = Math.round((ob + directCreditsDue + stats.workspacePendingDue) * 100) / 100;
+      const totalPaid = Math.max(recordedSupplierPayments, (totalCreditPurchases - (directCreditsDue + stats.workspacePendingDue)));
 
       let status = 'SETTLED';
       if (balance > 0) {
@@ -4182,23 +4198,46 @@ export const recordSupplierPayment = async (req, res) => {
         for (const item of job.purchasesAndExpenses) {
           if (remainingToApply <= 0) break;
           const isPendingCredit = new RegExp(cleanVName, "i").test(item.vendorName || "") &&
-                                  item.paymentMode === "Credit/Pay Later" &&
+                                  (item.paymentMode === "Credit/Pay Later" || item.isCreditPurchase) &&
                                   !item.creditSettlement?.isSettled;
 
           if (isPendingCredit) {
             const itemAmt = Number(item.amount || 0);
-            item.paymentMode = paymentMode || "Bank Transfer";
+            const currentItemPaid = (item.payments && item.payments.length > 0)
+              ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+              : Number(item.creditSettlement?.settledAmount || 0);
+            const currentItemDue = Math.max(0, Math.round((itemAmt - currentItemPaid) * 100) / 100);
+
+            if (currentItemDue <= 0) continue;
+
+            const applyAmount = Math.min(currentItemDue, remainingToApply);
+
+            if (!item.payments) item.payments = [];
+            item.payments.push({
+              date: date ? new Date(date) : new Date(),
+              amount: applyAmount,
+              paymentMode: paymentMode || "Bank Transfer",
+              referenceNo: referenceNo ? referenceNo.trim() : ("PAY-" + String(payment._id).slice(-6)),
+              notes: notes || ("Settled via Supplier Payment to " + vendor.name),
+              supplierPaymentId: payment._id,
+              recordedBy: req.user?._id || null
+            });
+
+            const newTotalPaid = item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+            const remainingDue = Math.max(0, Math.round((itemAmt - newTotalPaid) * 100) / 100);
+
             item.isCreditPurchase = true;
             item.creditSettlement = {
-              isSettled: true,
+              isSettled: remainingDue === 0,
               settledDate: date ? new Date(date) : new Date(),
               settledPaymentMode: paymentMode || "Bank Transfer",
-              settledAmount: Math.min(itemAmt, remainingToApply),
+              settledAmount: newTotalPaid,
               referenceNo: referenceNo ? referenceNo.trim() : ("PAY-" + String(payment._id).slice(-6)),
               notes: notes || ("Settled via Supplier Payment to " + vendor.name),
               supplierPaymentId: payment._id
             };
-            remainingToApply -= itemAmt;
+
+            remainingToApply -= applyAmount;
             jobUpdated = true;
 
             try {
@@ -4444,6 +4483,12 @@ export const getSupplierLedger = async (req, res) => {
           const isSettledCredit = Boolean(item.creditSettlement?.isSettled || (item.isCreditPurchase && !isCurrentlyCredit));
 
           if (isCurrentlyCredit || isSettledCredit) {
+            const totalPaidForItem = (item.payments && item.payments.length > 0)
+              ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+              : (item.creditSettlement?.isSettled ? Number(item.creditSettlement.settledAmount || amt) : (item.paymentMode !== 'Credit/Pay Later' ? amt : 0));
+            const dueForItem = Math.max(0, Math.round((amt - totalPaidForItem) * 100) / 100);
+            const isFullySettled = dueForItem === 0 && (totalPaidForItem > 0 || Boolean(item.creditSettlement?.isSettled));
+
             creditPurchases.push({
               _id: item._id,
               itemId: item._id,
@@ -4459,13 +4504,16 @@ export const getSupplierLedger = async (req, res) => {
               refNo: item.billNumber || job.jobId,
               amount: amt,
               credit: amt,
+              paidAmount: totalPaidForItem,
+              dueAmount: dueForItem,
+              payments: item.payments || [],
               paymentMode: item.paymentMode || 'Credit/Pay Later',
-              isCreditMode: isCurrentlyCredit,
-              isSettled: isSettledCredit,
-              settlementInfo: isSettledCredit ? {
+              isCreditMode: !isFullySettled,
+              isSettled: isFullySettled,
+              settlementInfo: isFullySettled ? {
                 settledDate: item.creditSettlement?.settledDate || item.updatedAt,
                 settledPaymentMode: item.creditSettlement?.settledPaymentMode || item.paymentMode,
-                settledAmount: item.creditSettlement?.settledAmount || amt,
+                settledAmount: totalPaidForItem,
                 referenceNo: item.creditSettlement?.referenceNo || '',
                 notes: item.creditSettlement?.notes || ''
               } : null,
@@ -4478,6 +4526,7 @@ export const getSupplierLedger = async (req, res) => {
 
     directCreditsLedger.forEach(c => {
       const isSettled = Boolean(c.isSettled);
+      const cAmt = Number(c.amount || 0);
       creditPurchases.push({
         _id: c._id,
         creditId: c._id,
@@ -4491,15 +4540,17 @@ export const getSupplierLedger = async (req, res) => {
         itemDescription: c.itemDescription || 'Direct Credit Bill',
         billNumber: c.billNumber || '',
         refNo: c.billNumber || 'CREDIT-BILL',
-        amount: Number(c.amount || 0),
-        credit: Number(c.amount || 0),
+        amount: cAmt,
+        credit: cAmt,
+        paidAmount: isSettled ? cAmt : 0,
+        dueAmount: isSettled ? 0 : cAmt,
         paymentMode: 'Credit/Pay Later',
         isCreditMode: !isSettled,
         isSettled: isSettled,
         settlementInfo: isSettled ? {
           settledDate: c.settledDate || c.updatedAt,
           settledPaymentMode: c.settledPaymentMode || 'Bank Transfer',
-          settledAmount: Number(c.amount || 0),
+          settledAmount: cAmt,
           referenceNo: c.settlementReference || '',
           notes: c.settlementNotes || ''
         } : null,
@@ -4514,7 +4565,27 @@ export const getSupplierLedger = async (req, res) => {
     const totalCreditBilled = ledgerEntries.filter(e => e.type === 'PURCHASE' || e.type === 'OPENING_BALANCE').reduce((sum, e) => sum + e.credit, 0);
     const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const creditPurchasesOnly = ledgerEntries.filter(e => e.isCreditMode && e.type === 'PURCHASE').reduce((sum, e) => sum + e.credit, 0);
-    const currentCreditBalance = (openingBal + creditPurchasesOnly) - totalPaid;
+
+    // Calculate live pending due matching workspace logic
+    let workspacePendingDue = 0;
+    jobs.forEach(job => {
+      (job.purchasesAndExpenses || []).forEach(item => {
+        if (regex.test(item.vendorName || '')) {
+          const amt = Number(item.amount || 0);
+          const isCredit = item.paymentMode === 'Credit/Pay Later' || item.isCreditPurchase || Boolean(item.creditSettlement && (item.creditSettlement.isSettled || item.creditSettlement.settledAmount > 0));
+          if (isCredit) {
+            const paid = (item.payments && item.payments.length > 0)
+              ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+              : (item.creditSettlement?.isSettled ? Number(item.creditSettlement.settledAmount || amt) : (item.paymentMode !== 'Credit/Pay Later' ? amt : 0));
+            const due = Math.max(0, Math.round((amt - paid) * 100) / 100);
+            workspacePendingDue += due;
+          }
+        }
+      });
+    });
+
+    const directCreditsDue = directCreditsLedger.filter(c => !c.isSettled).reduce((s, c) => s + Number(c.amount || 0), 0);
+    const currentCreditBalance = Math.round((openingBal + directCreditsDue + workspacePendingDue) * 100) / 100;
 
     return res.status(200).json({
       success: true,
@@ -4620,8 +4691,6 @@ export const settleSupplierCredit = async (req, res) => {
     const vendor = await Vendor.findById(id);
     if (!vendor) return res.status(404).json({ success: false, message: 'Supplier not found' });
 
-    const settleAmount = Number(amount || 0);
-
     if (source === 'Fabrication' || itemId) {
       const job = await FabricationJob.findOne({
         $or: [
@@ -4635,29 +4704,67 @@ export const settleSupplierCredit = async (req, res) => {
       const item = job.purchasesAndExpenses.id(itemId);
       if (!item) return res.status(404).json({ success: false, message: 'Purchase item not found in job' });
 
+      const originalAmount = Number(item.amount || 0);
+
+      // Calculate how much has already been paid across payment logs
+      const alreadyPaid = (item.payments && item.payments.length > 0)
+        ? item.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+        : Number(item.creditSettlement?.settledAmount || 0);
+
+      const currentDue = Math.max(0, Math.round((originalAmount - alreadyPaid) * 100) / 100);
+      const settleAmount = Number(amount || currentDue);
+
+      if (settleAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Settlement amount must be greater than 0' });
+      }
+
+      if (settleAmount > currentDue) {
+        return res.status(400).json({
+          success: false,
+          message: `Settlement amount (₹${settleAmount}) cannot exceed the due balance of ₹${currentDue}`
+        });
+      }
+
       const payment = await SupplierPayment.create({
         vendor: vendor._id,
         vendorName: vendor.name,
         date: date ? new Date(date) : new Date(),
-        amount: settleAmount || Number(item.amount || 0),
+        amount: settleAmount,
         paymentMode: paymentMode || 'Bank Transfer',
         referenceNo: referenceNo || item.billNumber || `SETTLE-${job.jobId}`,
         fabricationJobId: job.jobId,
-        notes: notes || `Settled Credit for Job ${job.jobId}: ${item.itemDescription || item.category}`,
+        notes: notes || `Settled Credit for Job ${job.jobId}: ${item.itemDescription || item.category} (Paid ₹${settleAmount})`,
         recordedBy: req.user?._id || null
       });
 
-      item.paymentMode = paymentMode || 'Bank Transfer';
+      if (!item.payments) {
+        item.payments = [];
+      }
+
+      item.payments.push({
+        date: date ? new Date(date) : new Date(),
+        amount: settleAmount,
+        paymentMode: paymentMode || 'Bank Transfer',
+        referenceNo: payment.referenceNo,
+        notes: notes || '',
+        supplierPaymentId: payment._id,
+        recordedBy: req.user?._id || null
+      });
+
+      const newTotalPaid = item.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const remainingBalance = Math.max(0, Math.round((originalAmount - newTotalPaid) * 100) / 100);
+
       item.isCreditPurchase = true;
       item.creditSettlement = {
-        isSettled: true,
+        isSettled: remainingBalance === 0,
         settledDate: date ? new Date(date) : new Date(),
         settledPaymentMode: paymentMode || 'Bank Transfer',
-        settledAmount: payment.amount,
+        settledAmount: newTotalPaid,
         referenceNo: payment.referenceNo,
         notes: notes || '',
         supplierPaymentId: payment._id
       };
+
       await job.save();
 
       try {
@@ -4666,36 +4773,76 @@ export const settleSupplierCredit = async (req, res) => {
         console.error('[SettleCredit] Sync error:', syncErr);
       }
 
+      const msg = remainingBalance > 0
+        ? `Credit bill partially settled: ₹${settleAmount} paid via ${payment.paymentMode}. Remaining balance of ₹${remainingBalance} kept as pending credit.`
+        : `Credit bill of ₹${settleAmount} fully settled via ${payment.paymentMode}. Job ${job.jobId} updated.`;
+
       return res.status(200).json({
         success: true,
-        message: `Credit bill of ₹${payment.amount} settled via ${payment.paymentMode}. Job ${job.jobId} updated.`,
+        message: msg,
         data: { payment, job }
       });
     } else if (source === 'Direct Credit' || creditId) {
       const credit = await SupplierCredit.findById(creditId);
+      if (!credit) return res.status(404).json({ success: false, message: 'Supplier credit not found' });
+
+      const originalAmount = Number(credit.amount || 0);
+      const settleAmount = Number(amount || originalAmount);
+
+      if (settleAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Settlement amount must be greater than 0' });
+      }
+
+      if (settleAmount > originalAmount) {
+        return res.status(400).json({
+          success: false,
+          message: `Settlement amount (₹${settleAmount}) cannot exceed the bill amount of ₹${originalAmount}`
+        });
+      }
+
+      const remainingAmount = Math.max(0, Math.round((originalAmount - settleAmount) * 100) / 100);
+
       const payment = await SupplierPayment.create({
         vendor: vendor._id,
         vendorName: vendor.name,
         date: date ? new Date(date) : new Date(),
-        amount: settleAmount || (credit ? Number(credit.amount || 0) : 0),
+        amount: settleAmount,
         paymentMode: paymentMode || 'Bank Transfer',
-        referenceNo: referenceNo || (credit ? credit.billNumber : 'SETTLE-CREDIT'),
-        notes: notes || `Settled Direct Credit Bill ${credit?.billNumber || ''}`,
+        referenceNo: referenceNo || credit.billNumber || 'SETTLE-CREDIT',
+        notes: notes || `Settled Direct Credit Bill ${credit?.billNumber || ''}${remainingAmount > 0 ? ` (Partial: ₹${settleAmount} of ₹${originalAmount})` : ''}`,
         recordedBy: req.user?._id || null
       });
 
-      if (credit) {
-        credit.isSettled = true;
-        credit.settledDate = date ? new Date(date) : new Date();
-        credit.settledPaymentMode = paymentMode || 'Bank Transfer';
-        credit.settlementReference = payment.referenceNo;
-        credit.supplierPaymentId = payment._id;
-        await credit.save();
+      credit.amount = settleAmount;
+      credit.isSettled = true;
+      credit.settledDate = date ? new Date(date) : new Date();
+      credit.settledPaymentMode = paymentMode || 'Bank Transfer';
+      credit.settlementReference = payment.referenceNo;
+      credit.supplierPaymentId = payment._id;
+      if (remainingAmount > 0) {
+        credit.notes = (credit.notes ? credit.notes + ' | ' : '') + `Partial settlement of ₹${settleAmount} (Original: ₹${originalAmount})`;
       }
+      await credit.save();
+
+      if (remainingAmount > 0) {
+        await SupplierCredit.create({
+          vendor: vendor._id,
+          vendorName: vendor.name,
+          billNumber: credit.billNumber ? `${credit.billNumber}-BAL` : '',
+          amount: remainingAmount,
+          date: credit.date || new Date(),
+          notes: `Remaining balance from Bill #${credit.billNumber || ''} (Original: ₹${originalAmount}, Settled: ₹${settleAmount})`,
+          isSettled: false
+        });
+      }
+
+      const msg = remainingAmount > 0
+        ? `Direct credit bill partially settled: ₹${settleAmount} paid via ${payment.paymentMode}. Remaining balance of ₹${remainingAmount} kept as pending credit.`
+        : `Direct credit bill of ₹${payment.amount} fully settled via ${payment.paymentMode}.`;
 
       return res.status(200).json({
         success: true,
-        message: `Direct credit bill of ₹${payment.amount} settled via ${payment.paymentMode}.`,
+        message: msg,
         data: { payment }
       });
     } else {

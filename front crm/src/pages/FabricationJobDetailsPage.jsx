@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Hammer, Plus, Trash2, Edit3, Calendar, Users, 
@@ -26,6 +26,7 @@ import {
   updatePurchaseExpense,
   deletePurchaseExpense,
   settleJobPurchaseCredit,
+  deletePurchasePaymentLog,
   addClientPayment,
   updateClientPayment,
   deleteClientPayment,
@@ -187,6 +188,109 @@ const FabricationJobDetailsPage = () => {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
 
+  // Single Purchase Logs Modal State & Handlers
+  const [selectedPurchaseForLogs, setSelectedPurchaseForLogs] = useState(null);
+  const [isPurchaseLogsModalOpen, setIsPurchaseLogsModalOpen] = useState(false);
+  const [logsInlineSettleForm, setLogsInlineSettleForm] = useState({
+    amount: '',
+    paymentMode: 'Bank Transfer',
+    date: new Date().toISOString().split('T')[0],
+    referenceNo: '',
+    notes: ''
+  });
+  const [logsInlineSubmitting, setLogsInlineSubmitting] = useState(false);
+
+  const handleOpenPurchaseLogs = (entry) => {
+    setSelectedPurchaseForLogs(entry);
+    const orig = Number(entry.amount || 0);
+    const paid = (entry.payments && entry.payments.length > 0)
+      ? entry.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+      : (entry.creditSettlement?.isSettled ? Number(entry.creditSettlement?.settledAmount || orig) : (entry.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+    const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+
+    setLogsInlineSettleForm({
+      amount: String(due > 0 ? due : orig),
+      paymentMode: 'Bank Transfer',
+      date: new Date().toISOString().split('T')[0],
+      referenceNo: entry.billNumber ? `SETTLE-${entry.billNumber}` : '',
+      notes: ''
+    });
+    setIsPurchaseLogsModalOpen(true);
+  };
+
+  const handleConfirmLogsInlineSettle = async (e) => {
+    e.preventDefault();
+    if (!selectedPurchaseForLogs || !job) return;
+    setLogsInlineSubmitting(true);
+    try {
+      const res = await settleJobPurchaseCredit(job._id, selectedPurchaseForLogs._id, {
+        amount: Number(logsInlineSettleForm.amount),
+        paymentMode: logsInlineSettleForm.paymentMode,
+        date: logsInlineSettleForm.date,
+        referenceNo: logsInlineSettleForm.referenceNo,
+        notes: logsInlineSettleForm.notes
+      });
+      if (res && res.success) {
+        showToast(res.message || 'Payment recorded successfully', 'success');
+        setJob(res.data);
+        const updatedItem = res.data.purchasesAndExpenses.find(p => p._id === selectedPurchaseForLogs._id);
+        if (updatedItem) {
+          setSelectedPurchaseForLogs(updatedItem);
+          const orig = Number(updatedItem.amount || 0);
+          const paid = (updatedItem.payments && updatedItem.payments.length > 0)
+            ? updatedItem.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+            : (updatedItem.creditSettlement?.isSettled ? Number(updatedItem.creditSettlement?.settledAmount || orig) : (updatedItem.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+          const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+          setLogsInlineSettleForm({
+            amount: String(due > 0 ? due : orig),
+            paymentMode: 'Bank Transfer',
+            date: new Date().toISOString().split('T')[0],
+            referenceNo: updatedItem.billNumber ? `SETTLE-${updatedItem.billNumber}` : '',
+            notes: ''
+          });
+        }
+      } else {
+        showToast(res?.message || 'Failed to record payment', 'error');
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to record payment', 'error');
+    } finally {
+      setLogsInlineSubmitting(false);
+    }
+  };
+
+  const handleDeletePaymentLog = async (paymentId) => {
+    if (!selectedPurchaseForLogs || !job) return;
+    if (!window.confirm('Are you sure you want to delete this payment log? This will update the purchase balance and remove the payment from supplier ledger.')) return;
+    try {
+      const res = await deletePurchasePaymentLog(job._id, selectedPurchaseForLogs._id, paymentId);
+      if (res && res.success) {
+        showToast(res.message || 'Payment log deleted successfully', 'success');
+        setJob(res.data);
+        const updatedItem = res.data.purchasesAndExpenses.find(p => p._id === selectedPurchaseForLogs._id);
+        if (updatedItem) {
+          setSelectedPurchaseForLogs(updatedItem);
+          const orig = Number(updatedItem.amount || 0);
+          const paid = (updatedItem.payments && updatedItem.payments.length > 0)
+            ? updatedItem.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+            : (updatedItem.creditSettlement?.isSettled ? Number(updatedItem.creditSettlement?.settledAmount || orig) : (updatedItem.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+          const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+          setLogsInlineSettleForm({
+            amount: String(due > 0 ? due : orig),
+            paymentMode: 'Bank Transfer',
+            date: new Date().toISOString().split('T')[0],
+            referenceNo: updatedItem.billNumber ? `SETTLE-${updatedItem.billNumber}` : '',
+            notes: ''
+          });
+        }
+      } else {
+        showToast(res?.message || 'Failed to delete payment log', 'error');
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to delete payment log', 'error');
+    }
+  };
+
   // Settle Credit Purchase Modal State & Handlers
   const [isSettleCreditModalOpen, setIsSettleCreditModalOpen] = useState(false);
   const [creditItemToSettle, setCreditItemToSettle] = useState(null);
@@ -201,8 +305,14 @@ const FabricationJobDetailsPage = () => {
 
   const handleOpenSettleCredit = (entry) => {
     setCreditItemToSettle(entry);
+    const orig = Number(entry.amount || 0);
+    const paid = (entry.payments && entry.payments.length > 0)
+      ? entry.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+      : (entry.creditSettlement?.isSettled ? Number(entry.creditSettlement?.settledAmount || orig) : (entry.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+    const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+
     setCreditSettleForm({
-      amount: String(entry.amount || ''),
+      amount: String(due > 0 ? due : orig),
       paymentMode: 'Bank Transfer',
       date: new Date().toISOString().split('T')[0],
       referenceNo: entry.billNumber || '',
@@ -228,6 +338,10 @@ const FabricationJobDetailsPage = () => {
         setJob(res.data);
         setIsSettleCreditModalOpen(false);
         setCreditItemToSettle(null);
+        if (selectedPurchaseForLogs) {
+          const updatedItem = res.data.purchasesAndExpenses.find(p => p._id === selectedPurchaseForLogs._id);
+          if (updatedItem) setSelectedPurchaseForLogs(updatedItem);
+        }
       } else {
         showToast(res?.message || 'Failed to settle credit', 'error');
       }
@@ -1229,8 +1343,55 @@ const FabricationJobDetailsPage = () => {
     ? Math.min(100, Math.round((fin.totalAmountReceived / fin.totalQuotation) * 100))
     : 0;
 
+  const creditItems = (job.purchasesAndExpenses || []).filter(item => {
+    return (
+      item.paymentMode === 'Credit/Pay Later' ||
+      item.isCreditPurchase ||
+      Boolean(item.creditSettlement && (item.creditSettlement.isSettled || item.creditSettlement.settledAmount > 0))
+    );
+  });
+
+  const creditSummary = (() => {
+    let totalCreditProcured = 0;
+    let totalSettled = 0;
+    let pendingDue = 0;
+
+    creditItems.forEach(item => {
+      const amt = Number(item.amount || 0);
+      const paid = (item.payments && item.payments.length > 0)
+        ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+        : (item.creditSettlement?.isSettled ? Number(item.creditSettlement.settledAmount || amt) : (item.paymentMode !== 'Credit/Pay Later' ? amt : 0));
+      const due = Math.max(0, Math.round((amt - paid) * 100) / 100);
+
+      totalCreditProcured += amt;
+      totalSettled += paid;
+      pendingDue += due;
+    });
+
+    return {
+      totalCreditProcured,
+      totalSettled,
+      pendingDue,
+      count: creditItems.length,
+      pendingCount: creditItems.filter(p => {
+        const amt = Number(p.amount || 0);
+        const paid = (p.payments && p.payments.length > 0)
+          ? p.payments.reduce((s, x) => s + (Number(x.amount) || 0), 0)
+          : (p.creditSettlement?.isSettled ? Number(p.creditSettlement.settledAmount || amt) : (p.paymentMode !== 'Credit/Pay Later' ? amt : 0));
+        return Math.max(0, Math.round((amt - paid) * 100) / 100) > 0;
+      }).length
+    };
+  })();
+
   const filteredPurchasesAndExpenses = (job.purchasesAndExpenses || []).filter(item => {
     if (expenseFilter === 'All') return true;
+    if (expenseFilter === 'CreditLogs') {
+      return (
+        item.paymentMode === 'Credit/Pay Later' ||
+        item.isCreditPurchase ||
+        Boolean(item.creditSettlement && (item.creditSettlement.isSettled || item.creditSettlement.settledAmount > 0))
+      );
+    }
     return item.type === expenseFilter;
   });
 
@@ -2456,7 +2617,7 @@ const FabricationJobDetailsPage = () => {
         {/* Filter Pills, Hide/Show Qty & Unit Toggle, & Download PDF Button */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {['All', 'Purchase', 'Expense'].map(type => (
                 <button
                   key={type}
@@ -2470,9 +2631,30 @@ const FabricationJobDetailsPage = () => {
                   {type === 'All' ? `All Entries (${purchasesCount})` : type === 'Purchase' ? `Purchases (${job?.purchasesAndExpenses?.filter(p => p.type === 'Purchase').length || 0})` : `Site Expenses (${job?.purchasesAndExpenses?.filter(p => p.type === 'Expense').length || 0})`}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={() => setExpenseFilter('CreditLogs')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  expenseFilter === 'CreditLogs'
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+                }`}
+                title="View Credit Purchases & Settlement Audit Logs"
+              >
+                <span>💳 Credit & Settle Logs</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  expenseFilter === 'CreditLogs' ? 'bg-amber-600 text-white' : 'bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100'
+                }`}>
+                  {creditSummary.count}
+                </span>
+                {creditSummary.pendingCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title={`${creditSummary.pendingCount} credit bill(s) pending settlement`} />
+                )}
+              </button>
             </div>
 
-            {expenseFilter !== 'Expense' && (
+            {expenseFilter !== 'Expense' && expenseFilter !== 'CreditLogs' && (
               <button
                 type="button"
                 onClick={() => setHideTableQtyUnit(prev => !prev)}
@@ -2499,19 +2681,90 @@ const FabricationJobDetailsPage = () => {
           </button>
         </div>
 
+        {/* Credit Logs Summary Cards */}
+        {expenseFilter === 'CreditLogs' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
+                Total Credit Procured
+              </span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black font-mono text-slate-900 dark:text-white">
+                  {formatCurrency(creditSummary.totalCreditProcured)}
+                </span>
+                <span className="text-[10px] text-slate-400">({creditSummary.count} bills/entries)</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 block mb-0.5">
+                Total Credit Settled / Paid
+              </span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(creditSummary.totalSettled)}
+                </span>
+                <span className="text-[10px] text-emerald-600/80 font-medium">Cleared to suppliers</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400 block mb-0.5">
+                  Outstanding Credit Due
+                </span>
+                {creditSummary.pendingDue > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">
+                    {creditSummary.pendingCount} Pending
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className={`text-lg font-black font-mono ${creditSummary.pendingDue > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  {formatCurrency(creditSummary.pendingDue)}
+                </span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                  {creditSummary.pendingDue > 0 ? 'Payable to vendors' : 'All Dues Cleared'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* PURCHASES & EXPENSES TABLE */}
         {filteredPurchasesAndExpenses.length === 0 ? (
           <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-            <ShoppingCart size={28} className="mx-auto text-slate-400 mb-1.5" />
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No purchases or expenses logged</p>
-            <p className="text-[11px] text-slate-400">Record steel sheets, tubular pipes, fasteners, and workshop expenses above.</p>
+            {expenseFilter === 'CreditLogs' ? (
+              <>
+                <CreditCard size={28} className="mx-auto text-amber-500 mb-1.5" />
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">No Credit Purchases or Settlement Logs</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">All purchases for this job were paid in cash or online transfer.</p>
+              </>
+            ) : (
+              <>
+                <ShoppingCart size={28} className="mx-auto text-slate-400 mb-1.5" />
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">No purchases or expenses logged</p>
+                <p className="text-[11px] text-slate-400">Record steel sheets, tubular pipes, fasteners, and workshop expenses above.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  {expenseFilter === 'Expense' ? (
+                  {expenseFilter === 'CreditLogs' ? (
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-amber-500/10 text-[11px] font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider">
+                      <th className="py-3 px-4">Date & Bill #</th>
+                      <th className="py-3 px-4">Supplier / Vendor</th>
+                      <th className="py-3 px-4">Item & Category</th>
+                      <th className="py-3 px-4 text-right">Bill Amount</th>
+                      <th className="py-3 px-4">Settlement Audit Log</th>
+                      <th className="py-3 px-4 text-right">Balance Due</th>
+                      <th className="py-3 px-4 text-center">Status</th>
+                      <th className="py-3 px-4 text-center">Action</th>
+                    </tr>
+                  ) : expenseFilter === 'Expense' ? (
                     <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       <th className="py-3 px-4">Date</th>
                       <th className="py-3 px-4">Type & Category</th>
@@ -2541,7 +2794,177 @@ const FabricationJobDetailsPage = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredPurchasesAndExpenses.map((entry) => (
-                    expenseFilter === 'Expense' ? (
+                    expenseFilter === 'CreditLogs' ? (
+                      <tr key={entry._id} className="hover:bg-amber-50/30 dark:hover:bg-amber-950/20 transition-colors">
+                        {/* 1. Date & Bill # */}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                            {formatDate(entry.date)}
+                          </div>
+                          {entry.billNumber && (
+                            <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                              #{entry.billNumber}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 2. Supplier / Vendor */}
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg font-bold text-slate-800 dark:text-slate-100 text-xs">
+                            🏪 {entry.vendorName || 'Supplier'}
+                          </span>
+                        </td>
+
+                        {/* 3. Item Description & Category */}
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[200px]" title={entry.itemDescription || entry.category}>
+                            {entry.itemDescription || entry.category}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {entry.category}
+                          </span>
+                        </td>
+
+                        {(() => {
+                          const orig = Number(entry.amount || 0);
+                          const paid = (entry.payments && entry.payments.length > 0)
+                            ? entry.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+                            : (entry.creditSettlement?.isSettled ? Number(entry.creditSettlement.settledAmount || orig) : (entry.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+                          const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+
+                          return (
+                            <>
+                              {/* 4. Bill Amount */}
+                              <td className="py-3 px-4 text-right whitespace-nowrap text-xs">
+                                <div className="font-black font-mono text-slate-800 dark:text-slate-200">
+                                  {formatCurrency(orig)}
+                                </div>
+                                {paid > 0 && due > 0 && (
+                                  <div className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                    Paid: {formatCurrency(paid)}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* 5. Settlement Audit Log */}
+                              <td className="py-3 px-4">
+                                {entry.payments && entry.payments.length > 0 ? (
+                                  <div className="text-xs space-y-0.5">
+                                    <div className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                                      <CheckCircle2 size={12} className="text-emerald-600" />
+                                      <span>Paid {formatCurrency(paid)} ({entry.payments.length} log{entry.payments.length > 1 ? 's' : ''})</span>
+                                    </div>
+                                    <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                      Latest: <strong>{entry.payments[entry.payments.length - 1].paymentMode}</strong>
+                                      {entry.payments[entry.payments.length - 1].date && ` on ${formatDate(entry.payments[entry.payments.length - 1].date)}`}
+                                    </div>
+                                    {entry.payments[entry.payments.length - 1].referenceNo && (
+                                      <div className="text-[9.5px] font-mono text-indigo-600 dark:text-indigo-400">
+                                        Ref: {entry.payments[entry.payments.length - 1].referenceNo}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : entry.creditSettlement?.isSettled ? (
+                                  <div className="text-xs space-y-0.5">
+                                    <div className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                                      <CheckCircle2 size={12} className="text-emerald-600" />
+                                      <span>Paid {formatCurrency(entry.creditSettlement.settledAmount || orig)}</span>
+                                    </div>
+                                    <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                      via <strong>{entry.creditSettlement.settledPaymentMode || entry.paymentMode}</strong>
+                                      {entry.creditSettlement.settledDate && ` on ${formatDate(entry.creditSettlement.settledDate)}`}
+                                    </div>
+                                    {entry.creditSettlement.referenceNo && (
+                                      <div className="text-[9.5px] font-mono text-indigo-600 dark:text-indigo-400">
+                                        Ref: {entry.creditSettlement.referenceNo}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-slate-400 space-y-0.5">
+                                    <span className="italic">Unsettled credit</span>
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* 6. Balance Due */}
+                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                                {due <= 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                    <Check size={12} />
+                                    <span>₹0 (Cleared)</span>
+                                  </span>
+                                ) : (
+                                  <span className="font-black font-mono text-rose-600 dark:text-rose-400 text-sm">
+                                    {formatCurrency(due)}
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 7. Status */}
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                {due <= 0 ? (
+                                  <span className="inline-block px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">
+                                    Fully Cleared
+                                  </span>
+                                ) : paid > 0 ? (
+                                  <span className="inline-block px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300">
+                                    Partially Settled
+                                  </span>
+                                ) : (
+                                  <span className="inline-block px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">
+                                    Pending Due
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 8. Action (SETTLE BUTTON, LOGS, EDIT, DELETE) */}
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {due > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSettleCredit(entry)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-xs cursor-pointer"
+                                      title="Add Payment / Settle this credit bill"
+                                    >
+                                      <CreditCard size={13} />
+                                      <span>Settle</span>
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
+                                      <Check size={12} className="text-emerald-500" />
+                                      <span>Settled</span>
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => handleOpenPurchaseLogs(entry)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition ml-1"
+                                    title="Show Payment & Audit Logs for this entry"
+                                  >
+                                    <Receipt size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => openEditExpenseModal(entry)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                    title="Edit Entry"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => promptDeleteExpense(entry)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                    title="Delete Entry"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          );
+                        })()}
+                      </tr>
+                    ) : expenseFilter === 'Expense' ? (
                       <tr key={entry._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                         <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
                           {formatDate(entry.date)}
@@ -2553,7 +2976,12 @@ const FabricationJobDetailsPage = () => {
                           <span className="text-slate-600 dark:text-slate-300 font-semibold">{entry.category}</span>
                         </td>
                         <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {formatCurrency(entry.amount)}
+                          <div>{formatCurrency(entry.amount)}</div>
+                          {(entry.billNumber?.endsWith('-BAL') || entry.notes?.toLowerCase().includes('remaining balance') || entry.itemDescription?.toLowerCase().includes('(balance')) && (
+                            <span className="inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800">
+                              Balance Due
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           {entry.creditSettlement?.isSettled ? (
@@ -2565,6 +2993,11 @@ const FabricationJobDetailsPage = () => {
                                 <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
                                 <span>Settled ({entry.creditSettlement.settledPaymentMode || entry.paymentMode || 'Paid'})</span>
                               </span>
+                              {entry.notes?.toLowerCase().includes('partial settlement') && (
+                                <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                  Partially Settled
+                                </span>
+                              )}
                               <span
                                 className="text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5 max-w-[130px] truncate"
                                 title={entry.creditSettlement.referenceNo ? `Ref: ${entry.creditSettlement.referenceNo}` : ''}
@@ -2574,17 +3007,24 @@ const FabricationJobDetailsPage = () => {
                               </span>
                             </div>
                           ) : (
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                              entry.paymentMode === 'Credit/Pay Later'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                : entry.paymentMode === 'UPI'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                                : entry.paymentMode === 'Bank Transfer'
-                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                            }`}>
-                              {entry.paymentMode || 'Cash'}
-                            </span>
+                            <div className="flex flex-col items-center">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                                entry.paymentMode === 'Credit/Pay Later'
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                  : entry.paymentMode === 'UPI'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                  : entry.paymentMode === 'Bank Transfer'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              }`}>
+                                {entry.paymentMode || 'Cash'}
+                              </span>
+                              {(entry.paymentMode === 'Credit/Pay Later' && !entry.creditSettlement?.isSettled && (entry.billNumber?.endsWith('-BAL') || entry.notes?.toLowerCase().includes('remaining balance') || entry.itemDescription?.toLowerCase().includes('(balance'))) && (
+                                <span className="block text-[9px] font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                                  Pending Balance
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
@@ -2597,12 +3037,19 @@ const FabricationJobDetailsPage = () => {
                                 type="button"
                                 onClick={() => handleOpenSettleCredit(entry)}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer mr-1"
-                                title="Settle this specific credit bill"
+                                title="Add Payment / Settle this purchase"
                               >
-                                <CheckCircle2 size={11} />
+                                <CreditCard size={11} />
                                 <span>Settle</span>
                               </button>
                             )}
+                            <button
+                              onClick={() => handleOpenPurchaseLogs(entry)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition"
+                              title="Show Payment & Audit Logs for this entry"
+                            >
+                              <Receipt size={14} />
+                            </button>
                             <button
                               onClick={() => openEditExpenseModal(entry)}
                               className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
@@ -2685,75 +3132,135 @@ const FabricationJobDetailsPage = () => {
                             </td>
                           </>
                         )}
-                        <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {formatCurrency(entry.amount)}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          {entry.creditSettlement?.isSettled ? (
-                            <div className="flex flex-col items-center">
-                              <span
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300"
-                                title={`Settled on ${new Date(entry.creditSettlement.settledDate || entry.updatedAt).toLocaleDateString('en-IN')}${entry.creditSettlement.referenceNo ? ` | Ref: ${entry.creditSettlement.referenceNo}` : ''}`}
-                              >
-                                <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
-                                <span>Settled ({entry.creditSettlement.settledPaymentMode || entry.paymentMode || 'Paid'})</span>
-                              </span>
-                              <span
-                                className="text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5 max-w-[130px] truncate"
-                                title={entry.creditSettlement.referenceNo ? `Ref: ${entry.creditSettlement.referenceNo}` : ''}
-                              >
-                                {entry.creditSettlement.settledDate ? new Date(entry.creditSettlement.settledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Settled'}
-                                {entry.creditSettlement.referenceNo ? ` • ${entry.creditSettlement.referenceNo}` : ''}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                              entry.paymentMode === 'Credit/Pay Later'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                : entry.paymentMode === 'UPI'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                                : entry.paymentMode === 'Bank Transfer'
-                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                            }`}>
-                              {entry.paymentMode || 'Cash'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {entry.paymentMode === 'Credit/Pay Later' && !entry.creditSettlement?.isSettled && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenSettleCredit(entry)}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer mr-1"
-                                title="Settle this specific credit bill"
-                              >
-                                <CheckCircle2 size={11} />
-                                <span>Settle</span>
-                              </button>
-                            )}
-                            <button
-                              onClick={() => openEditExpenseModal(entry)}
-                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Edit Entry"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                            <button
-                              onClick={() => promptDeleteExpense(entry)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
-                              title="Delete Entry"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
+                        {(() => {
+                          const orig = Number(entry.amount || 0);
+                          const paid = (entry.payments && entry.payments.length > 0)
+                            ? entry.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+                            : (entry.creditSettlement?.isSettled ? Number(entry.creditSettlement.settledAmount || orig) : (entry.paymentMode !== 'Credit/Pay Later' ? orig : 0));
+                          const due = Math.max(0, Math.round((orig - paid) * 100) / 100);
+
+                          return (
+                            <>
+                              <td className="py-3 px-4 text-right font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                                <div className="font-black font-mono">{formatCurrency(orig)}</div>
+                                {paid > 0 && due > 0 && (
+                                  <div className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                    Paid: {formatCurrency(paid)}
+                                  </div>
+                                )}
+                                {paid > 0 && due > 0 && (
+                                  <div className="text-[10px] font-black text-rose-600 dark:text-rose-400">
+                                    Due: {formatCurrency(due)}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                {(entry.paymentMode === 'Credit/Pay Later' || entry.isCreditPurchase) ? (
+                                  due <= 0 ? (
+                                    <div className="flex flex-col items-center">
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300"
+                                      >
+                                        <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                        <span>Settled ({entry.creditSettlement?.settledPaymentMode || 'Credit'})</span>
+                                      </span>
+                                      <span className="text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                        {paid > 0 ? `Paid: ${formatCurrency(paid)}` : 'Cleared'}
+                                      </span>
+                                    </div>
+                                  ) : paid > 0 ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-block px-2 py-0.5 rounded text-[10.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300">
+                                        Credit (Partial)
+                                      </span>
+                                      <span className="text-[10px] font-black font-mono text-rose-600 dark:text-rose-400 mt-0.5">
+                                        {formatCurrency(due)} Due
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-block px-2 py-0.5 rounded text-[10.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                        Credit/Pay Later
+                                      </span>
+                                      <span className="text-[10px] font-black font-mono text-rose-600 dark:text-rose-400 mt-0.5">
+                                        {formatCurrency(due)} Due
+                                      </span>
+                                    </div>
+                                  )
+                                ) : (
+                                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    entry.paymentMode === 'UPI'
+                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                      : entry.paymentMode === 'Bank Transfer'
+                                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                      : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                  }`}>
+                                    {entry.paymentMode || 'Cash'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {(entry.paymentMode === 'Credit/Pay Later' || entry.isCreditPurchase) && due > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSettleCredit(entry)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition shadow-2xs cursor-pointer mr-1"
+                                      title="Add Payment / Settle this purchase"
+                                    >
+                                      <CreditCard size={11} />
+                                      <span>Settle</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleOpenPurchaseLogs(entry)}
+                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition"
+                                    title="Show Payment & Audit Logs for this purchase"
+                                  >
+                                    <Receipt size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => openEditExpenseModal(entry)}
+                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                    title="Edit Entry"
+                                  >
+                                    <Edit3 size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => promptDeleteExpense(entry)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                                    title="Delete Entry"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          );
+                        })()}
                       </tr>
                     )
                   ))}
                   {/* Subtotal row */}
-                  {expenseFilter === 'Expense' ? (
+                  {expenseFilter === 'CreditLogs' ? (
+                    <tr className="bg-amber-500/10 font-bold border-t-2 border-amber-300 dark:border-amber-700">
+                      <td colSpan={3} className="py-2.5 px-4 text-right text-[11px] uppercase text-amber-800 dark:text-amber-300 tracking-wider">
+                        Credit Logs Summary:
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-black font-mono text-slate-800 dark:text-white text-xs">
+                        {formatCurrency(creditSummary.totalCreditProcured)}
+                      </td>
+                      <td className="py-2.5 px-4 text-left font-bold text-emerald-700 dark:text-emerald-400 text-xs">
+                        Paid: {formatCurrency(creditSummary.totalSettled)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-black font-mono text-rose-600 dark:text-rose-400 text-sm">
+                        Due: {formatCurrency(creditSummary.pendingDue)}
+                      </td>
+                      <td colSpan={2} className="py-2.5 px-4 text-center text-xs text-slate-500 font-semibold">
+                        {creditSummary.pendingCount > 0 ? `${creditSummary.pendingCount} Bill(s) Pending` : 'All Cleared'}
+                      </td>
+                    </tr>
+                  ) : expenseFilter === 'Expense' ? (
                     <tr className="bg-slate-50 dark:bg-slate-800/60 font-bold border-t-2 border-slate-200 dark:border-slate-700">
                       <td colSpan={2} className="py-2.5 px-4 text-right text-[11px] uppercase text-slate-500 tracking-wider">
                         Site Operational Expenses Total:
@@ -4540,73 +5047,508 @@ const FabricationJobDetailsPage = () => {
         </div>
       )}
 
-      {/* 3.1 Workspace Settle Credit Modal */}
-      {isSettleCreditModalOpen && creditItemToSettle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-amber-500 text-white">
-                  <CheckCircle2 size={16} />
+      {/* 3.0 Single Purchase Payment & Audit Logs Modal */}
+      {isPurchaseLogsModalOpen && selectedPurchaseForLogs && (() => {
+        const billAmt = Number(selectedPurchaseForLogs.amount || 0);
+        const payments = selectedPurchaseForLogs.payments || [];
+        const totalPaid = payments.length > 0
+          ? payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+          : (selectedPurchaseForLogs.creditSettlement?.isSettled ? Number(selectedPurchaseForLogs.creditSettlement.settledAmount || billAmt) : (selectedPurchaseForLogs.paymentMode !== 'Credit/Pay Later' ? billAmt : 0));
+        const remainingDue = Math.max(0, Math.round((billAmt - totalPaid) * 100) / 100);
+        const pctPaid = billAmt > 0 ? Math.min(100, Math.round((totalPaid / billAmt) * 100)) : 100;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 max-h-[92vh] flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 border border-indigo-100 dark:border-indigo-900/50">
+                    <Receipt size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>Purchase Payment & Audit Logs</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                        {selectedPurchaseForLogs.type}
+                      </span>
+                    </h3>
+                    <span className="text-[11px] text-slate-500">
+                      Job {job.jobId} • Complete lifecycle & transaction audit trail
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Settle Supplier Credit
-                  </h3>
-                  <span className="text-[10px] text-slate-500">
-                    Clear credit purchase & sync directly to supplier ledger
+                <button
+                  onClick={() => { setIsPurchaseLogsModalOpen(false); setSelectedPurchaseForLogs(null); }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                {/* Purchase Details Card */}
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Supplier / Vendor:</span>
+                    <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                      🏪 {selectedPurchaseForLogs.vendorName || 'Not specified'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Description / Category:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[240px]">
+                      {selectedPurchaseForLogs.itemDescription || selectedPurchaseForLogs.category}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Date & Bill Number:</span>
+                    <span className="text-slate-700 dark:text-slate-300 font-mono">
+                      {formatDate(selectedPurchaseForLogs.date)} {selectedPurchaseForLogs.billNumber ? `• Bill #${selectedPurchaseForLogs.billNumber}` : ''}
+                    </span>
+                  </div>
+                  {selectedPurchaseForLogs.quantity && Number(selectedPurchaseForLogs.rate) > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Quantity & Rate:</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-mono">
+                        {selectedPurchaseForLogs.quantity} {selectedPurchaseForLogs.unit || 'Nos'} @ {formatCurrency(selectedPurchaseForLogs.rate)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Financial Split Grid */}
+                  <div className="pt-2.5 mt-2 border-t border-slate-200/80 dark:border-slate-700/80 grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Total Bill</div>
+                      <div className="text-xs font-black font-mono text-slate-900 dark:text-white mt-0.5">
+                        {formatCurrency(billAmt)}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                      <div className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Paid ({pctPaid}%)</div>
+                      <div className="text-xs font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {formatCurrency(totalPaid)}
+                      </div>
+                    </div>
+                    <div className={`p-2 rounded-lg border ${remainingDue > 0 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800' : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60'}`}>
+                      <div className={`text-[10px] uppercase font-bold ${remainingDue > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>Balance Due</div>
+                      <div className={`text-xs font-black font-mono mt-0.5 ${remainingDue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        {remainingDue > 0 ? formatCurrency(remainingDue) : '₹0 (Cleared)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden mt-1">
+                    <div
+                      className={`h-full transition-all duration-300 ${remainingDue === 0 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                      style={{ width: `${pctPaid}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Payment & Audit Timeline Logs */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Clock size={13} />
+                      <span>Payment History & Logs ({payments.length} log{payments.length === 1 ? '' : 's'})</span>
+                    </h4>
+                    {remainingDue > 0 && (
+                      <span className="text-[10px] font-black text-rose-600 dark:text-rose-400 font-mono">
+                        {formatCurrency(remainingDue)} Pending
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {/* 1. Initial Purchase Creation Log */}
+                    <div className="p-3 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" />
+                          <span>Initial Purchase Logged</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {formatDate(selectedPurchaseForLogs.date)}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 pl-3.5">
+                        Mode: <strong className="font-semibold">{selectedPurchaseForLogs.paymentMode}</strong> • Bill Amount: <strong>{formatCurrency(billAmt)}</strong>
+                      </div>
+                      {selectedPurchaseForLogs.notes && (
+                        <div className="text-[10px] text-slate-400 italic pl-3.5">
+                          Note: {selectedPurchaseForLogs.notes}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Dynamic Payments from payments array */}
+                    {payments.length > 0 ? (
+                      payments.map((p, idx) => (
+                        <div key={p._id || idx} className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                              <CheckCircle2 size={13} className="text-emerald-600" />
+                              <span>Payment #{idx + 1}: {formatCurrency(p.amount)}</span>
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400 font-mono">
+                                {formatDate(p.date)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePaymentLog(p._id)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition cursor-pointer"
+                                title="Delete this payment log"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-emerald-900 dark:text-emerald-200 pl-4 space-y-0.5">
+                            <div>
+                              Paid via <strong>{p.paymentMode || 'Bank Transfer'}</strong>
+                            </div>
+                            {p.referenceNo && (
+                              <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                                Ref / UTR: {p.referenceNo}
+                              </div>
+                            )}
+                            {p.notes && (
+                              <div className="text-[10px] italic text-emerald-700 dark:text-emerald-400">
+                                Remarks: {p.notes}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : selectedPurchaseForLogs.creditSettlement?.isSettled ? (
+                      /* Legacy settlement card */
+                      <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-600" />
+                            <span>Credit Settlement Cleared</span>
+                          </span>
+                          <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400 font-mono">
+                            {formatDate(selectedPurchaseForLogs.creditSettlement.settledDate || selectedPurchaseForLogs.updatedAt)}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-emerald-900 dark:text-emerald-200 pl-4 space-y-0.5">
+                          <div>
+                            Paid: <strong>{formatCurrency(selectedPurchaseForLogs.creditSettlement.settledAmount || billAmt)}</strong> via <strong>{selectedPurchaseForLogs.creditSettlement.settledPaymentMode || selectedPurchaseForLogs.paymentMode}</strong>
+                          </div>
+                          {selectedPurchaseForLogs.creditSettlement.referenceNo && (
+                            <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                              Reference / UTR: {selectedPurchaseForLogs.creditSettlement.referenceNo}
+                            </div>
+                          )}
+                          {selectedPurchaseForLogs.creditSettlement.notes && (
+                            <div className="text-[10px] italic text-emerald-700 dark:text-emerald-400">
+                              Remarks: {selectedPurchaseForLogs.creditSettlement.notes}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : selectedPurchaseForLogs.paymentMode === 'Credit/Pay Later' ? (
+                      <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                            <Clock size={13} className="text-amber-600" />
+                            <span>Credit Outstanding / Pending</span>
+                          </span>
+                          <span className="text-xs font-black font-mono text-amber-700 dark:text-amber-300">
+                            {formatCurrency(billAmt)} Due
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-amber-700 dark:text-amber-400">
+                          No payments recorded yet. Record payments towards this purchase below.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Check size={13} className="text-emerald-600" />
+                          <span>Full payment cleared at time of purchase ({selectedPurchaseForLogs.paymentMode})</span>
+                        </span>
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          {formatCurrency(billAmt)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline "Add Payment / Settle" Form inside Modal */}
+                {remainingDue > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-1.5">
+                        <CreditCard size={14} className="text-indigo-600" />
+                        <span>Record Payment towards this Purchase</span>
+                      </span>
+                      <span className="text-[11px] font-black font-mono text-rose-600 dark:text-rose-400">
+                        Due: {formatCurrency(remainingDue)}
+                      </span>
+                    </div>
+                    <form onSubmit={handleConfirmLogsInlineSettle} className="space-y-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block mb-0.5">Amount (₹) *</label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="1"
+                            max={remainingDue}
+                            required
+                            value={logsInlineSettleForm.amount}
+                            onChange={(e) => setLogsInlineSettleForm({ ...logsInlineSettleForm, amount: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block mb-0.5">Payment Mode *</label>
+                          <select
+                            value={logsInlineSettleForm.paymentMode}
+                            onChange={(e) => setLogsInlineSettleForm({ ...logsInlineSettleForm, paymentMode: e.target.value })}
+                            className="w-full px-2 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                          >
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="UPI">UPI</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Cheque">Cheque</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block mb-0.5">Payment Date *</label>
+                          <input
+                            type="date"
+                            required
+                            value={logsInlineSettleForm.date}
+                            onChange={(e) => setLogsInlineSettleForm({ ...logsInlineSettleForm, date: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block mb-0.5">Ref / UTR #</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. UTR123456"
+                            value={logsInlineSettleForm.referenceNo}
+                            onChange={(e) => setLogsInlineSettleForm({ ...logsInlineSettleForm, referenceNo: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 block mb-0.5">Notes / Remarks</label>
+                        <input
+                          type="text"
+                          placeholder="Optional remarks..."
+                          value={logsInlineSettleForm.notes}
+                          onChange={(e) => setLogsInlineSettleForm({ ...logsInlineSettleForm, notes: e.target.value })}
+                          className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={logsInlineSubmitting || Number(logsInlineSettleForm.amount) <= 0 || Number(logsInlineSettleForm.amount) > remainingDue}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <CreditCard size={13} />
+                        <span>{logsInlineSubmitting ? 'Recording Payment...' : `Record Payment of ${formatCurrency(logsInlineSettleForm.amount || 0)}`}</span>
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer with Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const itemToEdit = selectedPurchaseForLogs;
+                      setIsPurchaseLogsModalOpen(false);
+                      setSelectedPurchaseForLogs(null);
+                      openEditExpenseModal(itemToEdit);
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 size={13} />
+                    <span>Edit Purchase</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const itemToDelete = selectedPurchaseForLogs;
+                      setIsPurchaseLogsModalOpen(false);
+                      setSelectedPurchaseForLogs(null);
+                      promptDeleteExpense(itemToDelete);
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete Purchase</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setIsPurchaseLogsModalOpen(false); setSelectedPurchaseForLogs(null); }}
+                    className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 3.1 Workspace Settle Credit Modal */}
+      {isSettleCreditModalOpen && creditItemToSettle && (() => {
+        const billAmt = Number(creditItemToSettle.amount || 0);
+        const payments = creditItemToSettle.payments || [];
+        const alreadyPaid = payments.length > 0
+          ? payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+          : (creditItemToSettle.creditSettlement?.isSettled ? Number(creditItemToSettle.creditSettlement.settledAmount || billAmt) : 0);
+        const dueAmt = Math.max(0, Math.round((billAmt - alreadyPaid) * 100) / 100);
+        const settleAmt = Number(creditSettleForm.amount || 0);
+        const balAmt = Math.max(0, Math.round((dueAmt - settleAmt) * 100) / 100);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-amber-500 text-white">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Settle Supplier Credit
+                    </h3>
+                    <span className="text-[10px] text-slate-500">
+                      Clear credit purchase & sync directly to supplier ledger
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setIsSettleCreditModalOpen(false); setCreditItemToSettle(null); }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">Supplier:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    🏪 {creditItemToSettle.vendorName || 'Supplier'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">Item / Category:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
+                    {creditItemToSettle.itemDescription || creditItemToSettle.category}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">Original Bill Amount:</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                    {formatCurrency(billAmt)}
+                  </span>
+                </div>
+                {alreadyPaid > 0 && (
+                  <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400">
+                    <span className="font-medium">Already Paid:</span>
+                    <span className="font-bold font-mono">
+                      {formatCurrency(alreadyPaid)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span className="font-bold text-slate-600 dark:text-slate-300">Remaining Due Balance:</span>
+                  <span className="font-black font-mono text-rose-600 dark:text-rose-400 text-sm">
+                    {formatCurrency(dueAmt)}
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => { setIsSettleCreditModalOpen(false); setCreditItemToSettle(null); }}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1.5">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Supplier:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {creditItemToSettle.vendorName || 'Supplier'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Item / Category:</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
-                  {creditItemToSettle.itemDescription || creditItemToSettle.category}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Credit Bill Amount:</span>
-                <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
-                  {formatCurrency(creditItemToSettle.amount)}
-                </span>
-              </div>
-            </div>
-
-            <form onSubmit={handleConfirmSettleCredit} className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                  Settlement Amount (₹) *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={creditSettleForm.amount}
-                  onChange={(e) => setCreditSettleForm({ ...creditSettleForm, amount: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <form onSubmit={handleConfirmSettleCredit} className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                    Settlement Mode *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                      Settlement Amount (₹) *
+                    </label>
+                    {settleAmt !== dueAmt && (
+                      <button
+                        type="button"
+                        onClick={() => setCreditSettleForm({ ...creditSettleForm, amount: String(dueAmt || '') })}
+                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        Pay Full Due ({formatCurrency(dueAmt)})
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    min="1"
+                    max={dueAmt}
+                    required
+                    value={creditSettleForm.amount}
+                    onChange={(e) => setCreditSettleForm({ ...creditSettleForm, amount: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Dynamic Balance Display */}
+                {settleAmt > 0 && settleAmt < dueAmt && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                        Remaining Credit Balance:
+                      </span>
+                      <span className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                        {formatCurrency(balAmt)}
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-amber-700 dark:text-amber-400 leading-snug">
+                      Partial settlement: <strong>{formatCurrency(settleAmt)}</strong> will be settled now. The remaining balance of <strong>{formatCurrency(balAmt)}</strong> will stay in Workspace as a pending credit bill for <strong>{creditItemToSettle.vendorName || 'Supplier'}</strong>.
+                    </p>
+                  </div>
+                )}
+                {settleAmt > dueAmt && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[11px] text-rose-700 dark:text-rose-300 font-semibold flex items-center gap-1.5">
+                    <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                    <span>Settlement amount cannot exceed the remaining due balance of {formatCurrency(dueAmt)}.</span>
+                  </div>
+                )}
+                {settleAmt === dueAmt && dueAmt > 0 && (
+                  <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 size={13} className="text-emerald-500" />
+                      <span>Full Settlement (Entire credit bill cleared)</span>
+                    </span>
+                    <span className="font-mono text-xs font-bold">{formatCurrency(dueAmt)}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      Settlement Mode *
+                    </label>
                   <select
                     value={creditSettleForm.paymentMode}
                     onChange={(e) => setCreditSettleForm({ ...creditSettleForm, paymentMode: e.target.value })}
@@ -4669,17 +5611,22 @@ const FabricationJobDetailsPage = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={creditSettleSubmitting}
+                  disabled={creditSettleSubmitting || settleAmt <= 0 || settleAmt > dueAmt}
                   className="px-4 py-1.5 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-600 text-white shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {creditSettleSubmitting && <Loader2 size={12} className="animate-spin" />}
-                  <span>Confirm Settlement</span>
+                  <span>
+                    {settleAmt > 0 && settleAmt < dueAmt
+                      ? `Settle ${formatCurrency(settleAmt)} (Keep ${formatCurrency(balAmt)} Due)`
+                      : 'Confirm Settlement'}
+                  </span>
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+      );
+    })()}
 
       {/* 4. Edit Client Payment Modal */}
       {isPaymentModalOpen && (

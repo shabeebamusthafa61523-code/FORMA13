@@ -40,6 +40,7 @@ router.post('/jobs/:id/expenses', fabricationController.addPurchaseExpense);
 router.put('/jobs/:id/expenses/:expenseId', fabricationController.updatePurchaseExpense);
 router.delete('/jobs/:id/expenses/:expenseId', fabricationController.deletePurchaseExpense);
 router.post('/jobs/:id/expenses/:expenseId/settle-credit', fabricationController.settleJobPurchaseCredit);
+router.delete('/jobs/:id/expenses/:expenseId/payments/:paymentId', fabricationController.deletePurchasePaymentLog);
 
 // 5. Client Payments Received ("Amount Given") CRUD
 router.post('/jobs/:id/payments', fabricationController.addClientPayment);

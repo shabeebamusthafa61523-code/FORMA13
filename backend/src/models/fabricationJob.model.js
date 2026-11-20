@@ -93,7 +93,17 @@ const purchaseExpenseSchema = new mongoose.Schema({
     referenceNo: { type: String, default: '', trim: true },
     notes: { type: String, default: '', trim: true },
     supplierPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierPayment', default: null }
-  }
+  },
+  payments: [{
+    date: { type: Date, default: Date.now },
+    amount: { type: Number, required: true },
+    paymentMode: { type: String, default: 'Bank Transfer' },
+    referenceNo: { type: String, default: '', trim: true },
+    notes: { type: String, default: '', trim: true },
+    supplierPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierPayment', default: null },
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    createdAt: { type: Date, default: Date.now }
+  }]
 }, { _id: true, timestamps: true });
 
 const clientPaymentSchema = new mongoose.Schema({
@@ -256,11 +266,16 @@ fabricationJobSchema.methods.recalculateFinancials = function () {
     if (item.type === 'Purchase') {
       grossPurchases += amt;
       const isCredit = /credit/i.test(item.paymentMode || '') || item.isCreditPurchase;
+      const totalPaid = (item.payments && item.payments.length > 0)
+        ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+        : Number(item.creditSettlement?.settledAmount || 0);
       const isSettled = Boolean(item.creditSettlement && item.creditSettlement.isSettled);
-      if (isCredit && !isSettled) {
-        totalPurchaseCredit += amt;
-      }
-      if (isSettled) {
+
+      if (isCredit) {
+        const remainingDue = isSettled ? 0 : Math.max(0, amt - totalPaid);
+        totalPurchaseCredit += remainingDue;
+        totalSettledCredit += (amt - remainingDue);
+      } else {
         totalSettledCredit += amt;
       }
     } else {

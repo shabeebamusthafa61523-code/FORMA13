@@ -1927,7 +1927,26 @@ export const settleJobPurchaseCredit = async (req, res) => {
     const item = job.purchasesAndExpenses.id(expenseId);
     if (!item) return res.status(404).json({ success: false, message: 'Purchase/expense record not found' });
 
-    const settleAmount = Number(amount || item.amount || 0);
+    const originalAmount = Number(item.amount || 0);
+
+    // Calculate how much has already been paid across payment logs
+    const alreadyPaid = (item.payments && item.payments.length > 0)
+      ? item.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+      : Number(item.creditSettlement?.settledAmount || 0);
+
+    const currentDue = Math.max(0, Math.round((originalAmount - alreadyPaid) * 100) / 100);
+    const settleAmount = Number(amount || currentDue);
+
+    if (settleAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Payment amount must be greater than 0' });
+    }
+
+    if (currentDue > 0 && settleAmount > currentDue) {
+      return res.status(400).json({
+        success: false,
+        message: `Payment amount (₹${settleAmount}) cannot exceed the remaining due balance of ₹${currentDue}`
+      });
+    }
 
     // 1. Resolve or create Vendor
     let vendor = null;
@@ -1947,19 +1966,35 @@ export const settleJobPurchaseCredit = async (req, res) => {
         paymentMode: paymentMode || 'Bank Transfer',
         referenceNo: referenceNo || item.billNumber || `SETTLE-${job.jobId}`,
         fabricationJobId: job.jobId,
-        notes: notes || `Settled Credit from Workspace Job ${job.jobId}: ${item.itemDescription || item.category || 'Purchase'}`,
+        notes: notes || `Payment for Job ${job.jobId}: ${item.itemDescription || item.category || 'Purchase'} (Paid ₹${settleAmount})`,
         recordedBy: req.user?._id || null
       });
     }
 
-    // 3. Mark line item as settled
-    item.paymentMode = paymentMode || 'Bank Transfer';
+    // 3. Add to item.payments log (Payment logs only show in modal, NO extra rows in purchases!)
+    if (!item.payments) {
+      item.payments = [];
+    }
+
+    item.payments.push({
+      date: date ? new Date(date) : new Date(),
+      amount: settleAmount,
+      paymentMode: paymentMode || 'Bank Transfer',
+      referenceNo: payment ? payment.referenceNo : (referenceNo || `SETTLE-${job.jobId}`),
+      notes: notes || '',
+      supplierPaymentId: payment ? payment._id : null,
+      recordedBy: req.user?._id || null
+    });
+
+    const newTotalPaid = item.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const remainingBalance = Math.max(0, Math.round((originalAmount - newTotalPaid) * 100) / 100);
+
     item.isCreditPurchase = true;
     item.creditSettlement = {
-      isSettled: true,
+      isSettled: remainingBalance === 0,
       settledDate: date ? new Date(date) : new Date(),
       settledPaymentMode: paymentMode || 'Bank Transfer',
-      settledAmount: settleAmount,
+      settledAmount: newTotalPaid,
       referenceNo: payment ? payment.referenceNo : (referenceNo || `SETTLE-${job.jobId}`),
       notes: notes || '',
       supplierPaymentId: payment ? payment._id : null
@@ -1973,13 +2008,56 @@ export const settleJobPurchaseCredit = async (req, res) => {
       console.error('[settleJobPurchaseCredit] Sync error:', syncErr);
     }
 
+    const message = remainingBalance > 0
+      ? `Payment of ₹${settleAmount} recorded. Remaining balance: ₹${remainingBalance}.`
+      : `Purchase fully settled (₹${newTotalPaid} paid in full).`;
+
     return res.status(200).json({
       success: true,
-      message: `Credit purchase of ₹${settleAmount} settled via ${paymentMode}.`,
+      message,
       data: job
     });
   } catch (error) {
     console.error('settleJobPurchaseCredit error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Delete a specific payment log from a purchase
+export const deletePurchasePaymentLog = async (req, res) => {
+  try {
+    const { id, expenseId, paymentId } = req.params;
+    const job = await FabricationJob.findById(id);
+    if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const item = job.purchasesAndExpenses.id(expenseId);
+    if (!item) return res.status(404).json({ success: false, message: 'Purchase record not found' });
+
+    const payLog = item.payments.id(paymentId);
+    if (payLog) {
+      if (payLog.supplierPaymentId) {
+        await SupplierPayment.findByIdAndDelete(payLog.supplierPaymentId);
+      }
+      payLog.deleteOne();
+    }
+
+    const newTotalPaid = (item.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const originalAmount = Number(item.amount || 0);
+    const remainingBalance = Math.max(0, Math.round((originalAmount - newTotalPaid) * 100) / 100);
+
+    item.creditSettlement.isSettled = remainingBalance === 0 && newTotalPaid > 0;
+    item.creditSettlement.settledAmount = newTotalPaid;
+
+    await job.save();
+    await syncPurchaseOrExpense(job, item);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment log removed successfully',
+      data: job
+    });
+  } catch (error) {
+    console.error('deletePurchasePaymentLog error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
