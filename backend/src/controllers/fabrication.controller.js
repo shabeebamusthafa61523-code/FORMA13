@@ -1090,19 +1090,40 @@ export const updatePurchaseExpense = async (req, res) => {
     if (unit !== undefined) entry.unit = unit;
     if (rate !== undefined) entry.rate = Number(rate);
     if (paymentMode !== undefined) {
-        entry.paymentMode = paymentMode;
-        if (/credit/i.test(paymentMode)) {
-          entry.isCreditPurchase = true;
-          if (entry.creditSettlement) {
-            entry.creditSettlement.isSettled = false;
+      entry.paymentMode = paymentMode;
+      if (/credit/i.test(paymentMode)) {
+        entry.isCreditPurchase = true;
+        if (entry.creditSettlement) {
+          // If this item was previously settled, delete the linked SupplierPayment so Suppliers reflects the due amount
+          if (entry.creditSettlement.supplierPaymentId) {
+            try {
+              await SupplierPayment.findByIdAndDelete(entry.creditSettlement.supplierPaymentId);
+            } catch (delErr) {
+              console.error('[updatePurchaseExpense] Error deleting supplier payment:', delErr);
+            }
+            entry.creditSettlement.supplierPaymentId = null;
           }
-        } else {
-          entry.isCreditPurchase = false;
-          if (entry.creditSettlement) {
-            entry.creditSettlement.isSettled = false;
+          entry.creditSettlement.isSettled = false;
+          entry.creditSettlement.settledDate = null;
+          entry.creditSettlement.settledPaymentMode = '';
+          entry.creditSettlement.settledAmount = 0;
+          entry.creditSettlement.referenceNo = '';
+        }
+      } else {
+        entry.isCreditPurchase = false;
+        if (entry.creditSettlement) {
+          if (entry.creditSettlement.supplierPaymentId) {
+            try {
+              await SupplierPayment.findByIdAndDelete(entry.creditSettlement.supplierPaymentId);
+            } catch (delErr) {
+              console.error('[updatePurchaseExpense] Error deleting supplier payment:', delErr);
+            }
+            entry.creditSettlement.supplierPaymentId = null;
           }
+          entry.creditSettlement.isSettled = false;
         }
       }
+    }
     if (receiptUrl !== undefined) entry.receiptUrl = receiptUrl;
     if (notes !== undefined) entry.notes = notes;
 
@@ -1134,6 +1155,15 @@ export const deletePurchaseExpense = async (req, res) => {
     const { id, expenseId } = req.params;
     const job = await FabricationJob.findById(id);
     if (!job) return res.status(404).json({ success: false, message: 'Fabrication job not found' });
+
+    const entryToDelete = job.purchasesAndExpenses.id(expenseId);
+    if (entryToDelete && entryToDelete.creditSettlement?.supplierPaymentId) {
+      try {
+        await SupplierPayment.findByIdAndDelete(entryToDelete.creditSettlement.supplierPaymentId);
+      } catch (delErr) {
+        console.error('[deletePurchaseExpense] Error deleting supplier payment:', delErr);
+      }
+    }
 
     job.purchasesAndExpenses.pull(expenseId);
     await job.save();
